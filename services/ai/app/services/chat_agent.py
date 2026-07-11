@@ -16,12 +16,13 @@ Usage:
 """
 
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 from pydantic_ai import Agent
 
 from app.core.logging import get_logger
-from app.schemas.chat_intent_schema import TurnIntent
+from app.schemas.chat_intent_schema import INTENT_OUTPUT_TYPES, TurnIntent
 
 logger = get_logger(__name__)
 
@@ -186,9 +187,9 @@ def build_agent(resolved_model) -> "Agent[None, TurnIntent]":
     """
     agent = Agent(
         resolved_model.model,
-        output_type=TurnIntent,
+        output_type=INTENT_OUTPUT_TYPES,
         system_prompt=SYSTEM_PROMPT,
         model_settings={"temperature": 0.1},
     )
     agent.instrument = True
-    return agent
+    return cast("Agent[None, TurnIntent]", agent)

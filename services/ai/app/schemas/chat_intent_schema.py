@@ -58,3 +58,14 @@ TurnIntent = Annotated[
     ],
     Field(discriminator="intent"),
 ]
+
+# Type-checker-friendly form for Agent(output_type=...) — PydanticAI expands a
+# union into one output tool per member either way, so this is runtime-identical
+# to passing TurnIntent, but it satisfies the `Sequence[...]` overload.
+INTENT_OUTPUT_TYPES = [
+    CreateBudgetIntent,
+    AddLineIntent,
+    UpdateBudgetIntent,
+    GetSummaryIntent,
+    ClarifyIntent,
+]

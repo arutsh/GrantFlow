@@ -37,7 +37,8 @@ async def create_budget_service(
 
     if valid_user["role"] == "superuser":
         if not budget.owner_id:
-            # FIXME: This is temp workaround to allow superusers to create budgets without specifying an owner_id.
+            # FIXME: Temp workaround to allow superusers to create budgets
+            # without specifying an owner_id.
             budget.owner_id = "444b3399-88ef-454f-b353-f160d3c9b44e"
             # raise DomainError(
             #     "Superuser must specify owner_id (not associated with a customer).",
