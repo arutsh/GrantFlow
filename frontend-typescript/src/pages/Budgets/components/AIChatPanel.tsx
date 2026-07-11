@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import Button from "@/components/ui/Button";
-import { streamAiCreateBudget } from "@/api/budgetApi";
+import { streamAiChat } from "@/api/budgetApi";
 import { useAiChat } from "@/context/AiChatContext";
 
 export interface ChatMessage {
@@ -9,36 +8,63 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   isError?: boolean;
+  isStreaming?: boolean;
 }
 
 export const WELCOME_MESSAGE: ChatMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Describe the budget you need and I'll generate a draft for you. You can refine it after it's created.",
+    "How can I help with your budget? You can ask me to create a budget, add lines, or update existing ones.",
 };
 
+type StreamStatus =
+  | { type: "idle" }
+  | { type: "thinking" }
+  | { type: "tool"; name: string }
+  | { type: "streaming" };
+
 export function AIChatPanel() {
-  const navigate = useNavigate();
-  const { messages, setMessages, contextBudget, closeAi } = useAiChat();
+  const {
+    messages,
+    setMessages,
+    contextBudget,
+    closeAi,
+    sessionId,
+    setSessionId,
+    chatBudgetId,
+    setChatBudgetId,
+  } = useAiChat();
 
   const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamStatus, setStreamStatus] = useState("");
+  const [status, setStatus] = useState<StreamStatus>({ type: "idle" });
   const abortRef = useRef<AbortController | null>(null);
+  const streamingIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const isStreaming = status.type !== "idle";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamStatus]);
-
-  const buildPrompt = (userMessage: string) => {
-    if (!contextBudget) return userMessage;
-    return `Current budget:\n${JSON.stringify(contextBudget)}\n\nUser request: ${userMessage}`;
-  };
+  }, [messages, status]);
 
   const addMessage = (msg: Omit<ChatMessage, "id">) => {
-    setMessages((prev) => [...prev, { ...msg, id: crypto.randomUUID() }]);
+    const id = crypto.randomUUID();
+    setMessages((prev) => [...prev, { ...msg, id }]);
+    return id;
+  };
+
+  const statusLabel = (): string => {
+    switch (status.type) {
+      case "thinking":
+        return "Thinking...";
+      case "tool":
+        return `Running: ${status.name.replace(/_/g, " ")}…`;
+      case "streaming":
+        return "Responding…";
+      default:
+        return "";
+    }
   };
 
   const handleSend = () => {
@@ -47,40 +73,76 @@ export function AIChatPanel() {
 
     addMessage({ role: "user", content: text });
     setInput("");
-    setIsStreaming(true);
-    setStreamStatus("Starting...");
+    setStatus({ type: "thinking" });
 
-    abortRef.current = streamAiCreateBudget(
-      buildPrompt(text),
-      (status: string) => setStreamStatus(status),
-      (budgetId: string) => {
-        setIsStreaming(false);
-        setStreamStatus("");
-        addMessage({
-          role: "assistant",
-          content: "Budget created — opening it now.",
-        });
-        closeAi();
-        navigate(`/budgets/${budgetId}`);
+    const assistantId = addMessage({
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+    });
+    streamingIdRef.current = assistantId;
+
+    abortRef.current = streamAiChat(
+      text,
+      sessionId,
+      contextBudget?.id?.toString() ?? chatBudgetId,
+      {
+        onThinking: () => setStatus({ type: "thinking" }),
+        onText: (delta) => {
+          setStatus({ type: "streaming" });
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: m.content + delta }
+                : m
+            )
+          );
+        },
+        onToolCall: (toolName) =>
+          setStatus({ type: "tool", name: toolName }),
+        onActionResult: () => setStatus({ type: "streaming" }),
+        onDone: (response, budgetId) => {
+          if (budgetId) setChatBudgetId(budgetId);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: response, isStreaming: false }
+                : m
+            )
+          );
+          streamingIdRef.current = null;
+          setStatus({ type: "idle" });
+        },
+        onError: (message) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: message, isError: true, isStreaming: false }
+                : m
+            )
+          );
+          streamingIdRef.current = null;
+          setStatus({ type: "idle" });
+        },
+        onUnavailable: () => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: "AI is not available. Ask your admin to configure an API key.",
+                    isError: true,
+                    isStreaming: false,
+                  }
+                : m
+            )
+          );
+          streamingIdRef.current = null;
+          setStatus({ type: "idle" });
+        },
       },
-      (errMsg: string) => {
-        setIsStreaming(false);
-        setStreamStatus("");
-        addMessage({
-          role: "assistant",
-          content: errMsg || "Something went wrong. Try rephrasing.",
-          isError: true,
-        });
-      },
-      () => {
-        setIsStreaming(false);
-        setStreamStatus("");
-        addMessage({
-          role: "assistant",
-          content: "AI is not available right now.",
-          isError: true,
-        });
-      }
+      (id) => setSessionId(id),
+      "budgets",
     );
   };
 
@@ -129,15 +191,18 @@ export function AIChatPanel() {
               }`}
             >
               {msg.content}
+              {msg.isStreaming && (
+                <span className="inline-block w-1 h-4 ml-0.5 bg-slate-500 animate-pulse rounded-sm" />
+              )}
             </div>
           </div>
         ))}
 
-        {isStreaming && (
+        {isStreaming && status.type !== "streaming" && (
           <div className="flex justify-start">
             <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm text-slate-500 flex items-center gap-2">
               <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin flex-shrink-0" />
-              {streamStatus}
+              {statusLabel()}
             </div>
           </div>
         )}
@@ -156,8 +221,8 @@ export function AIChatPanel() {
             disabled={isStreaming}
             placeholder={
               contextBudget
-                ? "Refine this budget, e.g. 'add a travel line at $3k'..."
-                : "Describe your budget..."
+                ? "Refine this budget, e.g. 'add a travel line at £3k'..."
+                : "Describe your budget or ask me to create one..."
             }
             className="flex-1 resize-none border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:opacity-50"
           />

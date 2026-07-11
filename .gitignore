@@ -220,3 +220,4 @@ package.json
 plans/
 scripts/
 docs/Supabase
+.claude/

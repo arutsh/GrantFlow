@@ -1,97 +1,50 @@
-import anyio
-from unittest.mock import AsyncMock, MagicMock, patch
+"""Tests for the Ollama path in resolve_model (replaces OllamaProvider unit tests).
 
-from app.services.provider import OllamaProvider
+OllamaProvider was removed in Phase 8. Ollama is now wired through
+PydanticAI's OpenAIModel with an Ollama-compatible base_url.
+"""
+from unittest.mock import MagicMock, patch
 
-# Sentinel values — network calls are fully mocked so Ollama never needs to be running.
-_BASE_URL = "http://ollama-test.invalid"
-_MODEL = "llama3.2"
-
-
-def _make_provider() -> OllamaProvider:
-    return OllamaProvider(base_url=_BASE_URL, model=_MODEL)
+from app.services.provider import ResolvedModel, resolve_model
 
 
-def _make_chunk(content: str):
-    chunk = MagicMock()
-    chunk.choices = [MagicMock()]
-    chunk.choices[0].delta.content = content
-    return chunk
+def _make_ollama_key(model_name="llama3.2", base_url="http://ollama:11434"):
+    user_key = MagicMock()
+    user_key.provider.name = "ollama"
+    user_key.model_name = model_name
+    user_key.encrypted_key = None
+    user_key.base_url = base_url
+    return user_key
 
 
-def _make_async_stream(tokens: list[str]):
-    """Async generator that yields mock chunks — matches AsyncStream[ChatCompletionChunk]."""
-    chunks = [_make_chunk(t) for t in tokens]
+class TestResolveModelOllama:
+    def test_ollama_key_returns_resolved_model(self):
+        user_key = _make_ollama_key()
+        resolved = resolve_model(user_key=user_key)
+        assert isinstance(resolved, ResolvedModel)
+        assert resolved.provider_name == "ollama"
+        assert resolved.model_name == "llama3.2"
 
-    async def _gen():
-        for chunk in chunks:
-            yield chunk
+    def test_ollama_uses_base_url_from_key(self):
+        user_key = _make_ollama_key(base_url="http://custom-ollama:11434")
+        resolved = resolve_model(user_key=user_key)
+        assert resolved is not None
 
-    return _gen()
+    def test_ollama_falls_back_to_settings_url_when_no_base_url(self):
+        user_key = _make_ollama_key()
+        user_key.base_url = None
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.OLLAMA_URL = "http://settings-ollama:11434"
+            mock_settings.ENCRYPTION_KEY = "key"
+            resolved = resolve_model(user_key=user_key)
+        assert resolved is not None
+        assert resolved.provider_name == "ollama"
 
-
-class TestOllamaProvider:
-    def test_stream_yields_tokens_in_order(self):
-        tokens = ["{", '"budget_name"', ': "Test"', "}"]
-
-        async def _run():
-            provider = _make_provider()
-            create_mock = AsyncMock(return_value=_make_async_stream(tokens))
-            with patch.object(provider._client.chat.completions, "create", new=create_mock):
-                collected = []
-                async for token in await provider.stream("parse this"):
-                    collected.append(token)
-                assert collected == tokens
-
-        anyio.run(_run)
-
-    def test_complete_returns_full_response(self):
-        async def _run():
-            provider = _make_provider()
-
-            mock_response = MagicMock()
-            mock_response.choices = [MagicMock()]
-            mock_response.choices[0].message.content = '{"budget_name": "Test"}'
-
-            with patch.object(
-                provider._client.chat.completions,
-                "create",
-                new=AsyncMock(return_value=mock_response),
-            ):
-                result = await provider.complete("parse this")
-                assert result == '{"budget_name": "Test"}'
-
-        anyio.run(_run)
-
-    def test_handles_connection_error_gracefully(self):
-        async def _run():
-            provider = _make_provider()
-            create_mock = AsyncMock(side_effect=ConnectionError("refused"))
-            with patch.object(provider._client.chat.completions, "create", new=create_mock):
-                try:
-                    async for _ in await provider.stream("test"):
-                        pass
-                    assert False, "Expected exception to propagate"
-                except (ConnectionError, Exception):
-                    pass
-
-        anyio.run(_run)
-
-    def test_system_prompt_is_included_in_messages(self):
-        async def _run():
-            provider = _make_provider()
-            captured_messages = []
-
-            async def fake_create(**kwargs):
-                captured_messages.extend(kwargs.get("messages", []))
-                return _make_async_stream([])
-
-            with patch.object(provider._client.chat.completions, "create", new=fake_create):
-                async for _ in await provider.stream("user text", system_prompt="You are X"):
-                    pass
-
-            assert captured_messages[0]["role"] == "system"
-            assert captured_messages[0]["content"] == "You are X"
-            assert captured_messages[1]["role"] == "user"
-
-        anyio.run(_run)
+    def test_ollama_returns_none_when_no_url_available(self):
+        user_key = _make_ollama_key()
+        user_key.base_url = None
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.OLLAMA_URL = None
+            mock_settings.ENCRYPTION_KEY = "key"
+            resolved = resolve_model(user_key=user_key)
+        assert resolved is None

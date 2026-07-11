@@ -1,4 +1,3 @@
-import anthropic as anthropic_sdk
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +7,7 @@ from app.crud.ai_provider import get_by_name, list_active
 from app.crud.user_provider_key import delete_key, get_key, upsert_key
 from app.db.session import AsyncSessionLocal
 from app.models.ai_provider import AIModelName
+from app.services.provider import _REGISTRY
 from app.utils.encryption import encrypt
 from app.utils.security import get_validated_user
 
@@ -56,18 +56,9 @@ async def _validate_key_with_provider(
             status_code=422,
             detail=f"Invalid key format for {provider_name} (expected prefix: {key_prefix})",
         )
-    if provider_name == "anthropic" and key:
-        try:
-            client = anthropic_sdk.AsyncAnthropic(api_key=key)
-            await client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=1,
-                messages=[{"role": "user", "content": "hi"}],
-            )
-        except anthropic_sdk.AuthenticationError:
-            raise HTTPException(status_code=422, detail="Anthropic key is invalid or inactive")
-        except Exception:
-            raise HTTPException(status_code=502, detail="Could not reach Anthropic to validate key")
+    adapter = _REGISTRY.get(provider_name)
+    if adapter and key:
+        await adapter.validate_key(key)
 
 
 @router.get("", response_model=SettingsResponse)
@@ -107,6 +98,7 @@ async def save_ai_settings(
     await _validate_key_with_provider(provider.name, provider.key_prefix, body.key)
     encrypted = encrypt(body.key, settings.ENCRYPTION_KEY) if body.key else None
     user_id = str(valid_user["user_id"])
+    customer_id = str(valid_user["customer_id"]) if valid_user.get("customer_id") else user_id
     await upsert_key(
         user_id=user_id,
         provider_id=str(provider.id),
@@ -114,6 +106,7 @@ async def save_ai_settings(
         model_name=body.model.value,
         base_url=body.base_url,
         db=db,
+        customer_id=customer_id,
     )
     return await get_ai_settings(valid_user=valid_user, db=db)
 

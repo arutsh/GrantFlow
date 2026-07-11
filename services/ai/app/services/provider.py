@@ -1,178 +1,110 @@
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, cast
+from dataclasses import dataclass
 
-import anthropic as anthropic_sdk
-from openai import AsyncOpenAI, AsyncStream
-from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam
+from fastapi import Depends
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIChatModel
 
 from app.core.logging import get_logger
+from app.utils.security import get_validated_user
 
 logger = get_logger(__name__)
 
 
-class BaseProvider(ABC):
+@dataclass
+class ResolvedModel:
+    """PydanticAI model ready for use in an Agent, plus metadata for audit logging."""
+
+    model: AnthropicModel | OpenAIChatModel
+    provider_name: str
+    model_name: str
+
+
+class ProviderAdapter(ABC):
     @abstractmethod
-    async def stream(self, prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
-        raise NotImplementedError
+    def build(self, user_key) -> ResolvedModel | None: ...
 
-    @abstractmethod
-    async def complete(self, prompt: str, system_prompt: str = "") -> str:
-        raise NotImplementedError
-
-    @property
-    def provider_name(self) -> str:
-        return self.__class__.__name__.lower().replace("provider", "")
-
-    @property
-    def model_name(self) -> str:
-        return ""
+    async def validate_key(self, key: str) -> None:
+        pass  # default: no live validation needed (e.g. Ollama)
 
 
-class NullProvider(BaseProvider):
-    """Returns ai_available=False for every request. Used when no AI key is configured."""
-
-    async def stream(self, prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
-        async def _gen():
-            yield "event: unavailable\ndata: {}\n\n"
-
-        return _gen()
-
-    async def complete(self, prompt: str, system_prompt: str = "") -> str:
-        return ""
-
-    @property
-    def provider_name(self) -> str:
-        return "none"
+_REGISTRY: dict[str, ProviderAdapter] = {}
 
 
-class OllamaProvider(BaseProvider):
-    """Ollama via OpenAI-compatible API. Used in development mode."""
+def register(name: str):
+    def decorator(cls: type[ProviderAdapter]) -> type[ProviderAdapter]:
+        _REGISTRY[name] = cls()
+        return cls
+    return decorator
 
-    def __init__(self, base_url: str, model: str) -> None:
-        self._model = model
-        self._client = AsyncOpenAI(
-            base_url=f"{base_url.rstrip('/')}/v1",
-            api_key="ollama",
+
+def resolve_model(user_key=None, *, customer_id: str = "") -> ResolvedModel | None:
+    """Return a PydanticAI model for the active provider key, or None if unavailable."""
+    if user_key is None:
+        return None
+
+    if not user_key.provider:
+        logger.warning("provider_key_no_provider", customer_id=customer_id)
+        return None
+
+    provider_name = user_key.provider.name
+
+    if user_key.model_name is None:
+        logger.warning(
+            "provider_key_missing_model",
+            customer_id=customer_id,
+            provider=provider_name,
         )
+        return None
 
-    @property
-    def model_name(self) -> str:
-        return self._model
+    adapter = _REGISTRY.get(provider_name)
+    if adapter is None:
+        logger.warning(
+            "provider_not_registered",
+            customer_id=customer_id,
+            provider=provider_name,
+        )
+        return None
 
-    async def stream(self, prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
-        messages: list[ChatCompletionMessageParam] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+    resolved = adapter.build(user_key)
+    if resolved is None:
+        logger.warning(
+            "provider_adapter_build_failed",
+            customer_id=customer_id,
+            provider=provider_name,
+            model=user_key.model_name,
+        )
+        return None
 
-        async def _gen():
-            try:
-                response = cast(
-                    AsyncStream[ChatCompletionChunk],
-                    await self._client.chat.completions.create(
-                        model=self._model,
-                        messages=messages,
-                        stream=True,
-                        temperature=0,
-                    ),
-                )
-                async for chunk in response:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        yield delta
-            except Exception as exc:
-                logger.error("ollama_stream_error", error=str(exc))
-                raise
-
-        return _gen()
-
-    async def complete(self, prompt: str, system_prompt: str = "") -> str:
-        messages: list[ChatCompletionMessageParam] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        try:
-            response = await self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-                temperature=0,
-            )
-            return response.choices[0].message.content or ""
-        except Exception as exc:
-            logger.error("ollama_complete_error", error=str(exc))
-            raise
+    logger.debug(
+        "provider_resolved",
+        customer_id=customer_id,
+        provider=resolved.provider_name,
+        model=resolved.model_name,
+    )
+    return resolved
 
 
-class AnthropicProvider(BaseProvider):
-    """Anthropic Claude via the official SDK. Used for BYOK and cloud mode."""
+async def get_resolved_model(
+    valid_user: dict = Depends(get_validated_user),
+) -> ResolvedModel | None:
+    """FastAPI dependency — injects a resolved provider model into route handlers."""
+    from app.crud.user_provider_key import get_active_key_for_customer
+    from app.db.session import AsyncSessionLocal
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6") -> None:
-        self._model = model
-        self._client = anthropic_sdk.AsyncAnthropic(api_key=api_key)
+    user_id = str(valid_user["user_id"])
+    customer_id = str(valid_user["customer_id"]) if valid_user.get("customer_id") else user_id
 
-    @property
-    def model_name(self) -> str:
-        return self._model
+    async with AsyncSessionLocal() as db:
+        user_key = await get_active_key_for_customer(customer_id, db)
 
-    @property
-    def provider_name(self) -> str:
-        return "anthropic"
+    if user_key is None:
+        logger.info("no_active_provider_key", customer_id=customer_id)
+        return None
 
-    async def stream(self, prompt: str, system_prompt: str = "") -> AsyncIterator[str]:
-        async def _gen():
-            try:
-                ctx = self._client.messages.stream(
-                    model=self._model,
-                    max_tokens=2048,
-                    system=system_prompt if system_prompt else anthropic_sdk.NOT_GIVEN,  # type: ignore[arg-type]  # noqa: E501
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                async with ctx as stream:
-                    async for text in stream.text_stream:
-                        yield text
-            except Exception as exc:
-                logger.error("anthropic_stream_error", error=str(exc))
-                raise
-
-        return _gen()
-
-    async def complete(self, prompt: str, system_prompt: str = "") -> str:
-        try:
-            _system = (  # type: ignore[assignment]
-                system_prompt if system_prompt else anthropic_sdk.NOT_GIVEN
-            )
-            response = await self._client.messages.create(
-                model=self._model,
-                max_tokens=2048,
-                system=_system,  # type: ignore[arg-type]
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return next(
-                (b.text for b in response.content if isinstance(b, anthropic_sdk.types.TextBlock)),
-                "",
-            )
-        except Exception as exc:
-            logger.error("anthropic_complete_error", error=str(exc))
-            raise
+    return resolve_model(user_key, customer_id=customer_id)
 
 
-def resolve_provider(
-    user_key=None,  # UserProviderKey | None — avoid circular import
-) -> BaseProvider:
-    from app.core.config import settings
-    from app.utils.encryption import decrypt
-
-    if user_key and user_key.provider:
-        provider_name = user_key.provider.name
-        model = user_key.model_name
-        if model is None:
-            raise ValueError(f"provider key for user {user_key.user_id} has no model_name set")
-        if provider_name == "anthropic" and user_key.encrypted_key:
-            api_key = decrypt(user_key.encrypted_key, settings.ENCRYPTION_KEY)
-            return AnthropicProvider(api_key=api_key, model=model)
-        if provider_name == "ollama":
-            base_url = user_key.base_url or settings.OLLAMA_URL
-            if base_url:
-                return OllamaProvider(base_url=base_url, model=model)
-    return NullProvider()
+# Import adapters to trigger their @register decorators
+from app.services.adapters.anthropic import AnthropicAdapter  # noqa: E402, F401
+from app.services.adapters.ollama import OllamaAdapter  # noqa: E402, F401

@@ -2,10 +2,11 @@ import anyio
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.user_provider_key import delete_key, get_active_key, get_key, upsert_key
+from app.crud.user_provider_key import delete_key, get_active_key_for_customer, get_key, upsert_key
 from app.models.user_provider_key import UserProviderKey
 
 USER_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CUSTOMER_ID = "cccccccc-0000-0000-0000-000000000003"
 PROVIDER_ID = "bbbbbbbb-0000-0000-0000-000000000002"
 
 
@@ -49,20 +50,20 @@ class TestGetKey:
         assert result is row
 
 
-class TestGetActiveKey:
+class TestGetActiveKeyForCustomer:
     def test_returns_none_when_no_key(self):
         db = _make_mock_db()
         db.execute = AsyncMock(return_value=_scalars_first_result(None))
-        result = anyio.run(get_active_key, USER_ID, db)
+        result = anyio.run(get_active_key_for_customer, CUSTOMER_ID, db)
         assert result is None
 
     def test_returns_row_with_encrypted_key(self):
         db = _make_mock_db()
         row = UserProviderKey()
-        row.user_id = USER_ID
+        row.customer_id = CUSTOMER_ID
         row.encrypted_key = "enc_value"
         db.execute = AsyncMock(return_value=_scalars_first_result(row))
-        result = anyio.run(get_active_key, USER_ID, db)
+        result = anyio.run(get_active_key_for_customer, CUSTOMER_ID, db)
         assert result is row
 
 
