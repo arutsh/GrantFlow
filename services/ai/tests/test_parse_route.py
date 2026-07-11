@@ -4,12 +4,10 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.services.provider import NullProvider
 from main import app
 from app.api.parse_routes import get_validated_user
+from app.services.provider import get_resolved_model
 from tests.factories.user import make_valid_user
-
-_GET_SETTINGS = "app.api.parse_routes.get_settings"
 
 client = TestClient(app)
 
@@ -48,6 +46,7 @@ class TestParseBudgetStream:
     @classmethod
     def teardown_class(cls):
         app.dependency_overrides.pop(get_validated_user, None)
+        app.dependency_overrides.pop(get_resolved_model, None)
         try:
             r = redis.from_url(settings.REDIS_URL, decode_responses=True)
             r.delete(f"rate_limit:ai:{cls.customer_id}")
@@ -56,9 +55,9 @@ class TestParseBudgetStream:
             pass
 
     def test_null_provider_stream_returns_unavailable_event(self):
-        with (
-            patch("app.api.parse_routes.resolve_provider", return_value=NullProvider()),
-            patch(_GET_SETTINGS, new=AsyncMock(return_value=None)),
+        app.dependency_overrides[get_resolved_model] = lambda: None
+        with patch(
+            "app.api.parse_routes.check_and_increment", new=AsyncMock(return_value=(True, 0))
         ):
             response = client.get("/api/v1/ai/parse-budget/stream?text=test")
         assert response.status_code == 200
@@ -66,8 +65,8 @@ class TestParseBudgetStream:
         assert "event: unavailable" in response.text
 
     def test_rate_limit_header_present_in_response(self):
-        with patch(_GET_SETTINGS, new=AsyncMock(return_value=None)):
-            response = client.get("/api/v1/ai/parse-budget/stream?text=test")
+        app.dependency_overrides[get_resolved_model] = lambda: None
+        response = client.get("/api/v1/ai/parse-budget/stream?text=test")
         assert response.status_code == 200
         assert "x-ratelimit-limit" in response.headers
 

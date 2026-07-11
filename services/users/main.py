@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from app.api import user_routes, customer_routes, auth_routes, ai_settings_routes
 from app.db.init_db import init_db
@@ -39,6 +40,8 @@ async def lifespan(app: FastAPI):
     from opentelemetry import trace
 
     logger.info("app_startup", service="users")
+    chat_proxy_timeout = 600.0 if settings.debug else 60.0
+    app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(chat_proxy_timeout))
     try:
         async with asyncio.timeout(30):
             await init_publisher()
@@ -47,6 +50,7 @@ async def lifespan(app: FastAPI):
         logger.error("startup_timeout", timeout_seconds=30, service="users")
         raise
     yield
+    await app.state.http_client.aclose()
     logger.info("app_shutdown", service="users")
     await close_publisher()
     logger.info("event_publisher_stopped")

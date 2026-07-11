@@ -37,10 +37,13 @@ async def create_budget_service(
 
     if valid_user["role"] == "superuser":
         if not budget.owner_id:
-            raise DomainError(
-                "Superuser must specify owner_id (not associated with a customer).",
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
-            )
+            # FIXME: Temp workaround to allow superusers to create budgets
+            # without specifying an owner_id.
+            budget.owner_id = "444b3399-88ef-454f-b353-f160d3c9b44e"
+            # raise DomainError(
+            #     "Superuser must specify owner_id (not associated with a customer).",
+            #     status.HTTP_422_UNPROCESSABLE_ENTITY,
+            # )
         # TODO revisit this, do we really need to validate if user is ngo or donor?
         # validate_customer_type(budget.owner_id, "ngo", raise_domain_error=True)
 

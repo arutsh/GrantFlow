@@ -19,6 +19,7 @@ class UserProviderKey(Base):
         t.GUID(), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     user_id: Mapped[t.GUID] = mapped_column(t.GUID(), nullable=False, index=True)
+    customer_id: Mapped[t.GUID | None] = mapped_column(t.GUID(), nullable=True, index=True)
     provider_id: Mapped[t.GUID] = mapped_column(
         t.GUID(), ForeignKey("ai_providers.id"), nullable=False
     )

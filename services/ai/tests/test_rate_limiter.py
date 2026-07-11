@@ -99,10 +99,10 @@ class TestRateLimiterEndpoint:
         from fastapi.testclient import TestClient
         from main import app
         from app.api.parse_routes import get_validated_user
+        from app.services.provider import get_resolved_model
         from tests.factories.user import make_valid_user
 
-        customer_id = "endpoint-cust-429"
-        user = make_valid_user(customer_id=customer_id)
+        user = make_valid_user()
 
         async def _fake_check(cid: str, limit=None):
             return False, 3600
@@ -111,6 +111,9 @@ class TestRateLimiterEndpoint:
             return user
 
         app.dependency_overrides[get_validated_user] = _mock_user
+        # Rate limiting fires before the provider is used, so its value is
+        # irrelevant — but without this override the dependency hits the DB.
+        app.dependency_overrides[get_resolved_model] = lambda: None
         client = TestClient(app)
 
         with patch("app.api.parse_routes.check_and_increment", _fake_check):
