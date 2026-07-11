@@ -1,102 +1,111 @@
+import uuid
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 
-# from app.api.budget_routes import router
-from main import app  # Make sure your FastAPI app includes the router
-
-# If your app is not available, you can create a test app:
-# from fastapi import FastAPI
-# app = FastAPI()
-# app.include_router(router)
+from main import app
+from app.core.exceptions import DomainError
+from shared.security.dependencies import get_validated_user
 
 client = TestClient(app)
 
+CUSTOMER_ID = str(uuid.uuid4())
+VALID_USER = {
+    "user_id": str(uuid.uuid4()),
+    "customer_id": CUSTOMER_ID,
+    "role": "user",
+    "token": "testtoken",
+}
 
-@pytest.fixture
-def auth_headers():
-    # Simulate authentication header
-    return {"Authorization": "Bearer testtoken"}
+
+@pytest.fixture(autouse=True)
+def _override_auth():
+    app.dependency_overrides[get_validated_user] = lambda: VALID_USER
+    yield
+    app.dependency_overrides = {}
 
 
-def test_create_budget_endpoint(auth_headers):
-    payload = {
-        "name": "Test Budget",
-        "owner_id": "ngo123",
-        "funding_customer_id": "donor456",
-        "external_funder_name": "name123",
-    }
-    # Patch create_budget to avoid DB calls
-    with patch("app.crud.budget_crud.create_budget") as mock_create, patch(
-        "app.utils.security.get_current_user", return_value={"user_id": "user789"}
+def test_create_budget_endpoint():
+    budget_id = str(uuid.uuid4())
+    payload = {"name": "Test Budget", "external_funder_name": "name123"}
+
+    with patch(
+        "app.api.budget_routes.create_budget_service",
+        AsyncMock(return_value={"id": budget_id, "name": "Test Budget"}),
+    ) as mock_create:
+        response = client.post("/api/v1/budgets/", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Test Budget"
+    mock_create.assert_awaited_once()
+
+
+def test_get_budget_endpoint_found():
+    budget_id = str(uuid.uuid4())
+
+    with patch(
+        "app.api.budget_routes.get_budget_service",
+        AsyncMock(return_value={"id": budget_id, "name": "Test Budget"}),
+    ), patch("app.api.budget_routes.get_budget_lines_service", return_value=[]):
+        response = client.get(f"/api/v1/budgets/{budget_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Test Budget"
+    assert body["lines"] == []
+
+
+def test_get_budget_endpoint_not_found():
+    budget_id = str(uuid.uuid4())
+
+    with patch(
+        "app.api.budget_routes.get_budget_service",
+        AsyncMock(side_effect=DomainError("Budget Not found", 400)),
     ):
-        mock_create.return_value = MagicMock(
-            id=1,
-            name="Test Budget",
-            owner_id="ngo123",
-            funding_customer_id="donor456",
-            external_funder_name="name123",
-        )
-        response = client.post("/budgets/", json=payload, headers=auth_headers)
-        assert response.status_code == 200
-        assert response.json()["status"] == "created"
-        assert response.json()["budget"]["name"] == "Test Budget"
+        response = client.get(f"/api/v1/budgets/{budget_id}")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Budget Not found"
 
 
-def test_get_budget_endpoint_found(auth_headers):
-    with patch("app.crud.budget_crud.get_budget") as mock_get, patch(
-        "app.utils.security.get_current_user", return_value={"user_id": "user789"}
+def test_update_budget_endpoint():
+    budget_id = str(uuid.uuid4())
+    payload = {"name": "Updated Budget"}
+
+    with patch(
+        "app.api.budget_routes.update_budget_service",
+        AsyncMock(return_value={"id": budget_id, "name": "Updated Budget"}),
     ):
-        mock_get.return_value = {
-            "id": 1,
-            "name": "Test Budget",
-            "ngo_id": "ngo123",
-            "donor_id": "donor456",
-        }
-        response = client.get("/budgets/1", headers=auth_headers)
-        assert response.status_code == 200
-        assert response.json()["name"] == "Test Budget"
+        response = client.patch(f"/api/v1/budgets/{budget_id}", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated Budget"
 
 
-def test_get_budget_endpoint_not_found(auth_headers):
-    with patch("app.crud.budget_crud.get_budget") as mock_get, patch(
-        "app.utils.security.get_current_user", return_value={"user_id": "user789"}
+def test_update_budget_endpoint_not_found_returns_404():
+    budget_id = str(uuid.uuid4())
+
+    with patch(
+        "app.api.budget_routes.update_budget_service",
+        AsyncMock(return_value=None),
     ):
-        mock_get.return_value = None
-        response = client.get("/budgets/999", headers=auth_headers)
-        assert response.status_code == 200
-        assert response.json()["error"] == "Budget not found"
+        response = client.patch(f"/api/v1/budgets/{budget_id}", json={"name": "X"})
+
+    assert response.status_code == 404
 
 
-def test_update_budget_endpoint(auth_headers):
-    payload = {
-        "name": "Updated Budget",
-        "ngo_id": "ngo123",
-        "donor_id": "donor456",
-        "confidence": 0.95,
-    }
-    with patch("app.crud.budget_crud.update_budget") as mock_update, patch(
-        "app.utils.security.get_current_user", return_value={"user_id": "user789"}
+def test_get_budgets():
+    with patch(
+        "app.api.budget_routes.list_budget_service",
+        AsyncMock(
+            return_value=[
+                {"id": str(uuid.uuid4()), "name": "Budget1"},
+                {"id": str(uuid.uuid4()), "name": "Budget2"},
+            ]
+        ),
     ):
-        mock_update.return_value = {
-            "id": 1,
-            "name": "Updated Budget",
-            "ngo_id": "ngo123",
-            "donor_id": "donor456",
-        }
-        response = client.put("/budgets/1", json=payload, headers=auth_headers)
-        assert response.status_code == 200
-        assert response.json()["name"] == "Updated Budget"
+        response = client.get("/api/v1/budgets/")
 
-
-def test_get_budgets(auth_headers):
-    with patch("app.crud.budget_crud.list_budgets") as mock_list, patch(
-        "app.utils.security.get_current_user", return_value={"user_id": "user789"}
-    ):
-        mock_list.return_value = [
-            {"id": 1, "name": "Budget1", "ngo_id": "ngo123", "donor_id": "donor456"},
-            {"id": 2, "name": "Budget2", "ngo_id": "ngo124", "donor_id": "donor457"},
-        ]
-        response = client.get("/budgets/", headers=auth_headers)
-        assert response.status_code == 200
-        assert len(response.json()) == 2
+    assert response.status_code == 200
+    assert len(response.json()) == 2

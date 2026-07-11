@@ -16,19 +16,13 @@ def _make_mock_db():
 
 def _scalar_result(value):
     result = MagicMock()
-    result.scalar_one_or_none.return_value = value
-    return result
-
-
-def _scalars_result(values):
-    result = MagicMock()
-    result.scalars.return_value.all.return_value = values
+    result.unique.return_value.scalar_one_or_none.return_value = value
     return result
 
 
 def _scalars_first_result(value):
     result = MagicMock()
-    result.scalars.return_value.first.return_value = value
+    result.unique.return_value.scalars.return_value.first.return_value = value
     return result
 
 
