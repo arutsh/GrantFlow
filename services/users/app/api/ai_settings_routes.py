@@ -90,11 +90,11 @@ async def proxy_chat_stream(
         raise HTTPException(status_code=503, detail="AI service is unavailable")
 
     if ai_response.status_code >= 400:
-        body = await ai_response.aread()
+        error_body = await ai_response.aread()
         await ai_response.aclose()
         raise HTTPException(
             status_code=ai_response.status_code,
-            detail=body.decode(errors="replace"),
+            detail=error_body.decode(errors="replace"),
         )
 
     session_id_header = ai_response.headers.get("x-session-id", "")
