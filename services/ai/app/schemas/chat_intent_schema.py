@@ -5,6 +5,7 @@ fields it can into one of these fixed shapes — it never decides whether to
 act. `chat_orchestrator.py` reads the result and decides, in code, whether
 enough information is present to actually call the budget service.
 """
+
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field

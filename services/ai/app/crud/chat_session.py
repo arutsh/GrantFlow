@@ -1,4 +1,5 @@
 """CRUD for AIChatSession and AIChatMessage."""
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -24,9 +25,7 @@ async def get_or_create_session(
     now = datetime.now(timezone.utc)
 
     if session_id:
-        result = await db.execute(
-            select(AIChatSession).where(AIChatSession.id == session_id)
-        )
+        result = await db.execute(select(AIChatSession).where(AIChatSession.id == session_id))
         session = result.scalar_one_or_none()
         if session and str(session.customer_id) == customer_id:
             return session
@@ -44,9 +43,7 @@ async def get_or_create_session(
     return session
 
 
-async def load_message_history(
-    session_id: str, db: AsyncSession
-) -> list[AIChatMessage]:
+async def load_message_history(session_id: str, db: AsyncSession) -> list[AIChatMessage]:
     """Load the most recent messages for a session (up to _MAX_HISTORY_MESSAGES)."""
     result = await db.execute(
         select(AIChatMessage)

@@ -16,9 +16,7 @@ async def get_key(user_id: str, provider_id: str, db: AsyncSession) -> UserProvi
     return result.unique().scalar_one_or_none()
 
 
-async def get_active_key_for_customer(
-    customer_id: str, db: AsyncSession
-) -> UserProviderKey | None:
+async def get_active_key_for_customer(customer_id: str, db: AsyncSession) -> UserProviderKey | None:
     """Return the active BYOK key for any admin in the org (looked up by customer_id).
 
     This is the preferred lookup for non-admin users so they benefit from the

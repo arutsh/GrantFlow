@@ -8,6 +8,7 @@ is handed back to the client (via TurnResult.budget_id → the SSE `done`
 event) so it can be passed in on subsequent turns. The server stores no
 budget state, and the model is never asked to supply or guess a resource ID.
 """
+
 from dataclasses import dataclass
 
 from pydantic_ai import Agent
@@ -93,9 +94,7 @@ async def run_turn(
 
     if isinstance(turn, UpdateBudgetIntent):
         if context_budget_id is None:
-            return TurnResult(
-                f"{_NO_ACTIVE_BUDGET} to update.", new_messages, context_budget_id
-            )
+            return TurnResult(f"{_NO_ACTIVE_BUDGET} to update.", new_messages, context_budget_id)
         ok, msg = await update_budget(
             deps,
             context_budget_id,
@@ -110,9 +109,7 @@ async def run_turn(
 
     if isinstance(turn, GetSummaryIntent):
         if context_budget_id is None:
-            return TurnResult(
-                f"{_NO_ACTIVE_BUDGET} to summarise.", new_messages, context_budget_id
-            )
+            return TurnResult(f"{_NO_ACTIVE_BUDGET} to summarise.", new_messages, context_budget_id)
         ok, msg = await get_budget_summary(deps, context_budget_id)
         return TurnResult(
             msg, new_messages, context_budget_id, tool_name="get_budget_summary", tool_output=msg

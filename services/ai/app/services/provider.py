@@ -35,6 +35,7 @@ def register(name: str):
     def decorator(cls: type[ProviderAdapter]) -> type[ProviderAdapter]:
         _REGISTRY[name] = cls()
         return cls
+
     return decorator
 
 

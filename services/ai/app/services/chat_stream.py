@@ -19,6 +19,7 @@ actually decided to call the budget service.
 Design note: DB persistence happens inside the generator (after `event: done`)
 so it stays within the StreamingResponse scope and doesn't need a shared state hack.
 """
+
 import json
 from typing import AsyncIterator, Awaitable, Callable
 
@@ -67,9 +68,7 @@ async def build_chat_sse_stream(
     try:
         yield _sse("thinking")
 
-        turn_result = await run_turn(
-            agent, message, deps, message_history, context_budget_id, page
-        )
+        turn_result = await run_turn(agent, message, deps, message_history, context_budget_id, page)
 
         if turn_result.tool_name:
             yield _sse("tool_call", {"tool_name": turn_result.tool_name})

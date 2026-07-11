@@ -14,6 +14,7 @@ Usage:
     result = await agent.run(message, message_history=history)
     turn: TurnIntent = result.output
 """
+
 from dataclasses import dataclass
 
 import httpx
@@ -142,9 +143,7 @@ async def add_budget_line(
         "category_name": category_name,
     }
     try:
-        resp = await deps.http.post(
-            _url(deps, "/budget-lines/"), json=payload, headers=_auth(deps)
-        )
+        resp = await deps.http.post(_url(deps, "/budget-lines/"), json=payload, headers=_auth(deps))
         resp.raise_for_status()
         data = resp.json()
         line_id = data.get("id", "unknown")
