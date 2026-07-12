@@ -82,6 +82,56 @@
       "jinja": true
     },
     {
+      // Debug the test file currently open in the editor (works for any service
+      // with the tests/ layout: cwd resolves to the service root)
+      "name": "Debug Current Test File (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "cwd": "${fileDirname}/..",
+      "env": {
+        "PYTHONPATH": "${fileDirname}/..:${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Debug AI Tests (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/", "-v"],
+      "cwd": "${workspaceFolder}/services/ai",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Debug Budget Tests (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/", "-v"],
+      "cwd": "${workspaceFolder}/services/budget",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/budget:${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
+      "name": "Debug Users Tests (pytest)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/", "-v"],
+      "cwd": "${workspaceFolder}/services/users",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/users:${workspaceFolder}"
+      },
+      "justMyCode": false
+    },
+    {
       // Use this configuration to attach to a running FastAPI service in Docker
       // Ensure the service is started with debugpy enabled (see main.py)
       "name": "Attach to Users service (Docker)",
