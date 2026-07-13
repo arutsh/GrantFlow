@@ -59,4 +59,4 @@ jobs:
 
       - name: Run tests
         working-directory: ./services/budget
-        run: python -m pytest tests/test_budget_with_lines.py -v
+        run: python -m pytest tests/ -v
