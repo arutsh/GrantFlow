@@ -1,11 +1,21 @@
 import pytest
-from main import app
+
 from app.api.parse_routes import get_validated_user
 from app.services.provider import get_resolved_model
 from tests.factories.user import ValidUserFactory
 from tests.factories.provider import ResolvedModelFactory
 from fastapi.testclient import TestClient
 from contextlib import ExitStack
+
+import os
+
+os.environ.setdefault("AI_DATABASE_URL", "postgresql://test:test@localhost/test")
+os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672//")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("ENV", "test")
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+
+from main import app  # noqa: E402
 
 
 @pytest.fixture
