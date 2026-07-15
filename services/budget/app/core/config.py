@@ -8,6 +8,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # services/budget/app/core
 env_mode = os.getenv("ENV", "development")
 if env_mode == "local":
     ENV_FILE = BASE_DIR.parent / ".env.budget.private.local"
+elif env_mode == "production":
+    ENV_FILE = BASE_DIR.parent / ".env.budget.prod"
 else:
     ENV_FILE = BASE_DIR.parent / ".env.budget.private.dev"
 print(f"Base dir-envfile: {BASE_DIR}, {ENV_FILE}")

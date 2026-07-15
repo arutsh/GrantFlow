@@ -8,6 +8,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # services/users/app/core
 ENV = os.getenv("ENV", "development")
 if ENV == "local":
     ENV_FILE = BASE_DIR.parent / ".env.users.local"
+elif ENV == "production":
+    ENV_FILE = BASE_DIR.parent / ".env.users.prod"
 else:
     ENV_FILE = BASE_DIR.parent / ".env.users.dev"
 
