@@ -2,6 +2,8 @@ import { Routes, Route, Navigate, BrowserRouter, Outlet } from "react-router-dom
 import { useAuth, AuthProvider } from "./context/AuthContext";
 import { AiChatProvider } from "./context/AiChatContext";
 import Login from "./pages/Login";
+import LandingPage from "./pages/LandingPage";
+import LegalPage from "./pages/Legal";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import { JSX } from "react";
 import Register from "./pages/Register";
@@ -32,6 +34,8 @@ export default function App() {
       <AiChatProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/legal" element={<LegalPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route

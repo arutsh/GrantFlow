@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend-typescript/src/lib/
 lib64/
 parts/
 sdist/
@@ -221,3 +222,6 @@ plans/
 scripts/
 docs/Supabase
 .claude/
+.continue/
+openspec/
+frontend-typescript/.env.development

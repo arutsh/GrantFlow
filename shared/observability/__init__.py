@@ -25,7 +25,7 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
         otlp_endpoint: OTLP collector endpoint (e.g., "localhost:4317")
                       Defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var or "localhost:4317"
     """
-    if os.getenv("OTEL_SDK_DISABLED").strip().lower() in ("true", "1"):
+    if os.getenv("OTEL_SDK_DISABLED", "").strip().lower() in ("true", "1"):
         return
 
     if otlp_endpoint is None:
