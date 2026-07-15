@@ -221,3 +221,5 @@ plans/
 scripts/
 docs/Supabase
 .claude/
+.continue/
+openspec/
