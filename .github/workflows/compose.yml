@@ -21,6 +21,7 @@ jobs:
               - "docker-compose*.yml"
               - ".env.dev"
               - ".env.local"
+              - ".env.prod"
 
   validate:
     needs: changes
@@ -37,3 +38,6 @@ jobs:
 
       - name: Validate docker-compose.local.yml
         run: docker compose -f docker-compose.local.yml --env-file .env.local config --quiet
+
+      - name: Validate docker-compose.prod.yml
+        run: docker compose -f docker-compose.prod.yml --env-file .env.prod config --quiet

@@ -1,0 +1,79 @@
+{
+	# Set a real contact email so Let's Encrypt can notify you of cert issues.
+	email admin@opengrantflow.com
+}
+
+api.opengrantflow.com {
+	@allowed_apex header Origin https://opengrantflow.com
+	@allowed_www header Origin https://www.opengrantflow.com
+	@cors_preflight method OPTIONS
+
+	# ---- CORS ----
+	header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type, Authorization"
+	header Access-Control-Allow-Credentials "true"
+	# Custom response headers are invisible to browser JS unless explicitly exposed —
+	# without this, the frontend can never read X-Session-Id and every chat turn
+	# starts a brand-new session with no history.
+	header Access-Control-Expose-Headers "X-Session-Id"
+	header @allowed_apex Access-Control-Allow-Origin "https://opengrantflow.com"
+	header @allowed_www Access-Control-Allow-Origin "https://www.opengrantflow.com"
+
+	handle @cors_preflight {
+		respond 204
+	}
+
+	# ---- AI CHAT STREAM (SSE, proxied through users service) ----
+	# Most specific path first — must be matched before the general /api/v1/users/* rule below.
+	handle_path /api/v1/users/me/chat/stream* {
+		rewrite * /api/users/me/chat/stream{uri}
+		reverse_proxy users:8000 {
+			flush_interval -1
+		}
+	}
+
+	# ---- AI SETTINGS (proxied through users service) ----
+	handle_path /api/v1/users/me/ai-settings* {
+		rewrite * /api/users/me/ai-settings{uri}
+		reverse_proxy users:8000
+	}
+
+	# ---- AUTH SERVICE ----
+	handle_path /api/v1/auth/* {
+		rewrite * /api/auth{uri}
+		reverse_proxy users:8000
+	}
+
+	# ---- USER REGISTRATION ----
+	handle_path /api/v1/register* {
+		rewrite * /api/register{uri}
+		reverse_proxy users:8000
+	}
+
+	# ---- USERS SERVICE ----
+	handle_path /api/v1/users/* {
+		rewrite * /api/users{uri}
+		reverse_proxy users:8000
+	}
+
+	# ---- BUDGET SERVICE ----
+	handle /api/v1/budgets/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- BUDGET LINES SERVICE ----
+	handle /api/v1/budget-lines/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- AI SERVICE ----
+	handle /api/v1/ai/* {
+		reverse_proxy ai:8000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

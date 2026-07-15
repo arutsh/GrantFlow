@@ -1,0 +1,178 @@
+version: "3.9"
+name: grandflow-prod
+
+# ============================================================
+# PRODUCTION MODE: backend only, deployed on the OVH VPS.
+# Frontend is hosted separately on Vercel (not part of this stack).
+# The .env.prod (root) and services/*/.env.*.prod files committed in this
+# repo are templates with placeholder secret values — the deploy workflow
+# overwrites them in place on the server with real values from GitHub
+# Actions secrets immediately before `docker compose up`, and they are
+# never committed back. This keeps `docker compose config` valid both
+# locally and in CI without needing any real secret to exist on disk.
+# Run with: docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# ============================================================
+
+services:
+  grandflow-db:
+    image: postgres:15
+    container_name: grandflow-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - grandflow_prod_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grandflow
+
+  redis:
+    image: redis:7-alpine
+    container_name: grandflow-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grandflow
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: grandflow-rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - grandflow
+
+  users:
+    build:
+      context: .
+      dockerfile: services/users/Dockerfile
+    container_name: users-service
+    restart: unless-stopped
+    env_file:
+      - ./services/users/.env.users.prod
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      grandflow-db:
+        condition: service_healthy
+    networks:
+      - grandflow
+
+  budget:
+    build:
+      context: .
+      dockerfile: services/budget/Dockerfile
+    container_name: budget-service
+    restart: unless-stopped
+    env_file:
+      - ./services/budget/.env.budget.prod
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./uploads/budget:/app/uploads
+    depends_on:
+      grandflow-db:
+        condition: service_healthy
+    networks:
+      - grandflow
+
+  ai:
+    build:
+      context: .
+      dockerfile: services/ai/Dockerfile
+    container_name: ai-service
+    restart: unless-stopped
+    env_file:
+      - ./services/ai/.env.ai.prod
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      grandflow-db:
+        condition: service_healthy
+    networks:
+      - grandflow
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: grandflow-worker
+    restart: unless-stopped
+    env_file:
+      - ./services/worker/.env.worker.prod
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      grandflow-db:
+        condition: service_healthy
+    command: celery -A celery_app worker --loglevel=info -Q ai,budget,users
+    networks:
+      - grandflow
+
+  beat:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: grandflow-beat
+    restart: unless-stopped
+    env_file:
+      - ./services/worker/.env.worker.prod
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A celery_app beat --loglevel=info
+    networks:
+      - grandflow
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: grandflow-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - users
+      - budget
+      - ai
+    networks:
+      - grandflow
+
+networks:
+  grandflow:
+    driver: bridge
+
+volumes:
+  grandflow_prod_data:
+  caddy_data:
+  caddy_config:
