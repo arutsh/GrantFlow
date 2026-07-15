@@ -45,7 +45,11 @@ describe("LandingPage", () => {
     expect(screen.queryByText(/get started/i)).not.toBeInTheDocument();
   });
 
-  it("renders the contact form and accepts a submission", async () => {
+  it("renders the contact form and submits to Web3Forms", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+
     renderAt("/");
 
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
@@ -68,8 +72,47 @@ describe("LandingPage", () => {
     );
 
     expect(
-      screen.getByText(/we've received your message/i),
+      await screen.findByText(/we've received your message/i),
     ).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.web3forms.com/submit",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(body).toMatchObject({
+      name: "Jane Doe",
+      organisation: "Acme Foundation",
+      email: "jane@example.org",
+      role: "Foundation",
+      message: "We'd love to talk.",
+      request_demo: true,
+    });
+
+    fetchMock.mockRestore();
+  });
+
+  it("shows an error message when the contact form submission fails", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockRejectedValue(new Error("network error"));
+
+    renderAt("/");
+
+    await userEvent.type(screen.getByLabelText("Name"), "Jane Doe");
+    await userEvent.type(screen.getByLabelText("Organisation"), "Acme Foundation");
+    await userEvent.type(screen.getByLabelText("Email"), "jane@example.org");
+    await userEvent.selectOptions(screen.getByLabelText("Role"), "Foundation");
+    await userEvent.type(screen.getByLabelText("Message"), "We'd love to talk.");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Let's Start a Conversation" }),
+    );
+
+    expect(
+      await screen.findByText(/something went wrong sending your message/i),
+    ).toBeInTheDocument();
+
+    fetchMock.mockRestore();
   });
 
   it("redirects to /dashboard when authenticated", () => {

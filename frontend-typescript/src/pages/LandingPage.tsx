@@ -518,9 +518,44 @@ function PartnerSection() {
 
 function ContactSection() {
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(false);
 
   const inputClass =
     "w-full px-4 py-2 border border-slate-300 rounded-lg bg-white input-focus";
+
+  const accessKey = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY;
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(false);
+
+    const formData = new FormData(e.currentTarget);
+
+    try {
+      const res = await fetch("https://api.web3forms.com/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_key: accessKey,
+          subject: "New Open Grant Flow enquiry",
+          name: formData.get("name"),
+          organisation: formData.get("organisation"),
+          email: formData.get("email"),
+          role: formData.get("role"),
+          message: formData.get("message"),
+          request_demo: formData.get("request_demo") === "on",
+        }),
+      });
+      if (!res.ok) throw new Error("submission failed");
+      setSubmitted(true);
+    } catch {
+      setError(true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <section id="contact" className="max-w-2xl mx-auto px-6 py-16">
@@ -537,10 +572,7 @@ function ContactSection() {
         </div>
       ) : (
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSubmitted(true);
-          }}
+          onSubmit={handleSubmit}
           className="bg-white rounded-2xl card-shadow-lg p-8 space-y-5"
         >
           <div>
@@ -551,7 +583,13 @@ function ContactSection() {
             >
               Name
             </label>
-            <input id="name" type="text" required className={inputClass} />
+            <input
+              id="name"
+              name="name"
+              type="text"
+              required
+              className={inputClass}
+            />
           </div>
           <div>
             <label
@@ -563,6 +601,7 @@ function ContactSection() {
             </label>
             <input
               id="organisation"
+              name="organisation"
               type="text"
               required
               className={inputClass}
@@ -576,7 +615,13 @@ function ContactSection() {
             >
               Email
             </label>
-            <input id="email" type="email" required className={inputClass} />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              className={inputClass}
+            />
           </div>
           <div>
             <label
@@ -586,7 +631,13 @@ function ContactSection() {
             >
               Role
             </label>
-            <select id="role" required defaultValue="" className={inputClass}>
+            <select
+              id="role"
+              name="role"
+              required
+              defaultValue=""
+              className={inputClass}
+            >
               <option value="" disabled>
                 Select a role
               </option>
@@ -605,11 +656,18 @@ function ContactSection() {
             >
               Message
             </label>
-            <textarea id="message" required rows={4} className={inputClass} />
+            <textarea
+              id="message"
+              name="message"
+              required
+              rows={4}
+              className={inputClass}
+            />
           </div>
           <div className="flex items-center gap-2">
             <input
               id="request-demo"
+              name="request_demo"
               type="checkbox"
               className="h-4 w-4 rounded border-slate-300"
             />
@@ -621,12 +679,21 @@ function ContactSection() {
               I&apos;d like to request a demo
             </label>
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600">
+              Something went wrong sending your message. Please try again, or
+              email us directly.
+            </p>
+          )}
+
           <button
             type="submit"
-            className="w-full rounded-lg px-6 py-3 font-medium text-white transition-opacity hover:opacity-90"
+            disabled={submitting}
+            className="w-full rounded-lg px-6 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: brand.navy }}
           >
-            Let&apos;s Start a Conversation
+            {submitting ? "Sending…" : "Let's Start a Conversation"}
           </button>
         </form>
       )}

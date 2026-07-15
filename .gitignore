@@ -223,3 +223,4 @@ docs/Supabase
 .claude/
 .continue/
 openspec/
+frontend-typescript/.env.development
