@@ -14,4 +14,8 @@ echo "Database is ready. Running migrations..."
 alembic upgrade head
 
 echo "Migrations complete. Starting AI service..."
-exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+if [ "$ENV" = "production" ]; then
+  exec uvicorn main:app --host 0.0.0.0 --port 8000
+else
+  exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+fi

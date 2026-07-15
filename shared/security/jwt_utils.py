@@ -1,10 +1,21 @@
+import os
 from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Optional
 
-SECRET_KEY = "your-secret-key"  # Store securely!
+
+def _load_secret_key() -> str:
+    key = os.getenv("JWT_SECRET_KEY")
+    if key:
+        return key
+    if os.getenv("ENV") == "production":
+        raise RuntimeError("JWT_SECRET_KEY must be set when ENV=production")
+    return "dev-only-insecure-secret-key"
+
+
+SECRET_KEY = _load_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 7200
 REFRESH_TOKEN_EXPIRE_DAYS = 7
