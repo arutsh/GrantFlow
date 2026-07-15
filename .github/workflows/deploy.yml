@@ -27,6 +27,10 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # Default is 10m — the ai service's ML deps (torch, transformers, etc.)
+          # alone take ~15-20m on a cold build; subsequent deploys reuse the
+          # Docker layer cache on the server and are much faster.
+          command_timeout: 40m
           envs: POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,RABBITMQ_USER,RABBITMQ_PASS,RABBITMQ_URL,USERS_DATABASE_URL,BUDGET_DATABASE_URL,AI_DATABASE_URL,JWT_SECRET_KEY,ENCRYPTION_KEY
           script: |
             set -euo pipefail
