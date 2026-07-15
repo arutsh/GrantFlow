@@ -9,7 +9,7 @@ COPY services/users/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache pip install -r requirements.txt
 
 COPY shared ./shared
-COPY services/users/entrypoint.sh .
+COPY services/users/. .
 RUN chmod +x entrypoint.sh
 RUN chmod +x shared/healthcheck.sh
 

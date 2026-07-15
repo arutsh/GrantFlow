@@ -157,6 +157,83 @@ The codebase is designed to support cloud deployment:
 
 ---
 
+## 4. 🖥️ PRODUCTION MODE (OVH VPS)
+
+**Use case:** Real production deployment. Backend runs on a VPS; frontend is hosted separately on Vercel.
+
+**What runs:**
+- ✅ PostgreSQL, Redis, RabbitMQ (Docker)
+- ✅ Users, Budget, AI services (Docker)
+- ✅ Celery worker + beat (Docker)
+- ✅ Caddy (Docker) — reverse proxy + automatic Let's Encrypt TLS for `api.opengrantflow.com`
+- ❌ Frontend (hosted on Vercel, not part of this stack)
+
+Compose file: `docker-compose.prod.yml`. Reverse proxy config: `Caddyfile`.
+
+### One-time server bootstrap
+
+Deploys log in as a dedicated non-root `deploy` user (sudo + docker group), not root — limits blast radius if the CI deploy key is ever compromised. Run once, by hand, over SSH (as root, with the initial OVH password) as the server is first set up:
+
+```bash
+ssh root@51.68.212.86
+
+# Docker + Compose plugin (Ubuntu 26.04)
+curl -fsSL https://get.docker.com | sh
+apt-get install -y docker-compose-plugin gettext-base ufw
+
+# Firewall — only SSH/HTTP/HTTPS reach this box; everything else
+# (Postgres, Redis, RabbitMQ, raw service ports) stays internal to the
+# Docker network and is never published to the host.
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw --force enable
+
+# Dedicated deploy user — sudo for admin tasks, docker group so it can
+# run `docker compose` without sudo.
+adduser --disabled-password --gecos "" deploy
+usermod -aG sudo,docker deploy
+
+# Authorize the CI deploy key (public half only — safe to paste, it's
+# not the secret half) for the deploy user.
+mkdir -p /home/deploy/.ssh
+cat >> /home/deploy/.ssh/authorized_keys <<'PUBKEY'
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFwx+pb2+mTW+jIVitpWIZ9ZRUvnv4mqWKQDxrDmHKrd github-actions-deploy@grantflow
+PUBKEY
+chmod 700 /home/deploy/.ssh
+chmod 600 /home/deploy/.ssh/authorized_keys
+chown -R deploy:deploy /home/deploy/.ssh
+
+# Clone the repo as the deploy user — this checkout is deploy-only. The
+# GitHub Actions deploy workflow runs `git reset --hard` against it on
+# every push to main, so never hand-edit files here.
+mkdir -p /opt/grandflow
+chown deploy:deploy /opt/grandflow
+su - deploy -c "git clone https://github.com/arutsh/GrantFlow.git /opt/grandflow"
+```
+
+Verify from your own machine before relying on it: `ssh -i <path-to-private-key> deploy@51.68.212.86` should log in with no password prompt.
+
+### DNS
+
+Add an A record at your registrar (no Terraform — see the deploy ticket's notes on why): `api.opengrantflow.com` → `51.68.212.86`. Give it a few minutes to propagate before the first deploy, since Caddy requests a Let's Encrypt cert on first boot and needs the domain to already resolve.
+
+### GitHub Actions secrets required
+
+All set already (generated during Ticket 1/2 hardening): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_HOST` (`51.68.212.86`), `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair; public half goes in `deploy`'s `authorized_keys` above, generated once and never reused elsewhere).
+
+### Ongoing deploys
+
+Every push to `main` triggers `.github/workflows/deploy.yml`, which SSHes in, resets the checkout to `origin/main`, regenerates the real `.env.prod` / `services/*/.env.*.prod` files in place from the secrets above (the committed versions are `${VAR}` templates, never real values), and runs:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+Manual redeploy (e.g. to pick up a secret rotation without a new commit): re-run the workflow from the Actions tab (`workflow_dispatch`).
+
+---
+
 ## Switching Between Modes
 
 ### Dev → Local
@@ -252,6 +329,7 @@ Each mode uses environment files for configuration:
 
 - **Dev Mode:** `.env.*.dev` files
 - **Local Mode:** `.env.*.dev` files
+- **Production Mode:** `.env.prod` / `.env.*.prod` files — committed as `${VAR}` templates, real values generated in place on the server from GitHub Actions secrets at deploy time (see section 4)
 - **Cloud Mode:** To be defined per cloud provider
 
 Example:

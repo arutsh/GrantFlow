@@ -8,7 +8,7 @@ COPY services/ai/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache pip install -r requirements.txt
 
 COPY shared ./shared
-COPY services/ai/entrypoint.sh .
+COPY services/ai/. .
 RUN chmod +x entrypoint.sh
 RUN chmod +x shared/healthcheck.sh
 

@@ -225,3 +225,4 @@ docs/Supabase
 .continue/
 openspec/
 frontend-typescript/.env.development
+.env.ovh-secrets.prod
