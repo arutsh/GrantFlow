@@ -17,7 +17,6 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
           RABBITMQ_PASS: ${{ secrets.RABBITMQ_PASS }}
-          RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
           USERS_DATABASE_URL: ${{ secrets.USERS_DATABASE_URL }}
           BUDGET_DATABASE_URL: ${{ secrets.BUDGET_DATABASE_URL }}
           AI_DATABASE_URL: ${{ secrets.AI_DATABASE_URL }}
@@ -31,7 +30,7 @@ jobs:
           # alone take ~15-20m on a cold build; subsequent deploys reuse the
           # Docker layer cache on the server and are much faster.
           command_timeout: 40m
-          envs: POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,RABBITMQ_USER,RABBITMQ_PASS,RABBITMQ_URL,USERS_DATABASE_URL,BUDGET_DATABASE_URL,AI_DATABASE_URL,JWT_SECRET_KEY,ENCRYPTION_KEY
+          envs: POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,RABBITMQ_USER,RABBITMQ_PASS,USERS_DATABASE_URL,BUDGET_DATABASE_URL,AI_DATABASE_URL,JWT_SECRET_KEY,ENCRYPTION_KEY
           script: |
             set -euo pipefail
             cd /opt/grandflow
