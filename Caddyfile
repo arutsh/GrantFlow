@@ -25,8 +25,13 @@ api.opengrantflow.com {
 
 	# ---- AI CHAT STREAM (SSE, proxied through users service) ----
 	# Most specific path first — must be matched before the general /api/v1/users/* rule below.
+	# No {uri} in the rewrite target: this is a single fixed endpoint, not a
+	# path prefix, and handle_path's stripped remainder is "/" (not "") for an
+	# exact match — appending it produces a spurious trailing slash, which
+	# triggers Starlette's redirect_slashes to an internal-only path missing
+	# the external /v1 prefix (browsers can't usefully follow that).
 	handle_path /api/v1/users/me/chat/stream* {
-		rewrite * /api/users/me/chat/stream{uri}
+		rewrite * /api/users/me/chat/stream
 		reverse_proxy users:8000 {
 			flush_interval -1
 		}
@@ -34,7 +39,7 @@ api.opengrantflow.com {
 
 	# ---- AI SETTINGS (proxied through users service) ----
 	handle_path /api/v1/users/me/ai-settings* {
-		rewrite * /api/users/me/ai-settings{uri}
+		rewrite * /api/users/me/ai-settings
 		reverse_proxy users:8000
 	}
 
@@ -45,8 +50,10 @@ api.opengrantflow.com {
 	}
 
 	# ---- USER REGISTRATION ----
+	# No {uri} here either — same reasoning as the chat/stream and
+	# ai-settings rules above.
 	handle_path /api/v1/register* {
-		rewrite * /api/register{uri}
+		rewrite * /api/register
 		reverse_proxy users:8000
 	}
 
