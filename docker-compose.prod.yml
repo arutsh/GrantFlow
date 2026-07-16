@@ -2,7 +2,7 @@ version: "3.9"
 name: grandflow-prod
 
 # ============================================================
-# PRODUCTION MODE: backend only, deployed on the OVH VPS.
+# PRODUCTION MODE: backend only, deployed on Hetzner Cloud (see terraform/).
 # Frontend is hosted separately on Vercel (not part of this stack).
 # The .env.prod (root) and services/*/.env.*.prod files committed in this
 # repo are templates with placeholder secret values — the deploy workflow
@@ -22,6 +22,11 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      # Loopback-only — reachable solely from processes on this host (e.g. an
+      # SSH tunnel endpoint for admin DB access), never from the public
+      # internet, regardless of the Hetzner firewall's other rules.
+      - "127.0.0.1:5432:5432"
     volumes:
       - grandflow_prod_data:/var/lib/postgresql/data
       - ./docker/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
