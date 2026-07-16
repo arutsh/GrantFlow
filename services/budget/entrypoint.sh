@@ -21,7 +21,9 @@ echo "Migrations complete. Starting FastAPI application..."
 
 # Start the FastAPI application
 if [ "$ENV" = "production" ]; then
-  exec uvicorn main:app --host 0.0.0.0 --port 8000
+  # --proxy-headers: trust Caddy's X-Forwarded-Proto so redirects/URLs use
+  # https, not the plain-http scheme of the internal Docker connection.
+  exec uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
 else
   exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 fi
