@@ -1,0 +1,26 @@
+#cloud-config
+# Fully automates the one-time bootstrap that was previously done by hand over
+# SSH for the OVH VPS (see docs/deployment/DEPLOYMENT_MODES.md §4): create a
+# non-root deploy user, install Docker, clone the repo. No root password or
+# manual SSH session needed at all.
+
+users:
+  - name: deploy
+    groups: [sudo, docker]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+package_update: true
+packages:
+  - gettext-base
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - apt-get install -y docker-compose-plugin
+  - usermod -aG docker deploy
+  - mkdir -p /opt/grandflow
+  - chown deploy:deploy /opt/grandflow
+  - su - deploy -c "git clone ${git_repo_url} /opt/grandflow"

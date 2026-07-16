@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in, OR export as TF_VAR_hcloud_token
+# instead of writing the token to disk at all.
+
+hcloud_token = "your-hetzner-project-api-token"
+
+# Defaults in variables.tf are already correct for this project; only override
+# if your IP changes or you want a different server_type/location.
+# allowed_ssh_cidrs = ["203.0.113.5/32"]
