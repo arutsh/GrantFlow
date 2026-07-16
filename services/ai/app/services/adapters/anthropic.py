@@ -3,7 +3,10 @@ from fastapi import HTTPException
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
+from app.core.logging import get_logger
 from app.services.provider import ProviderAdapter, ResolvedModel, register
+
+logger = get_logger(__name__)
 
 
 @register("anthropic")
@@ -37,5 +40,19 @@ class AnthropicAdapter(ProviderAdapter):
             )
         except anthropic_sdk.AuthenticationError:
             raise HTTPException(status_code=422, detail="Anthropic key is invalid or inactive")
-        except Exception:
+        except anthropic_sdk.APIStatusError as e:
+            # A response from Anthropic that isn't an auth failure (e.g. 400
+            # Bad Request) means the key reached them fine — the request
+            # itself was rejected. Log the real reason instead of masking it
+            # as a generic connectivity failure.
+            logger.error(
+                "anthropic_key_validation_rejected",
+                status_code=e.status_code,
+                error_message=str(e),
+            )
+            raise HTTPException(status_code=502, detail="Could not reach Anthropic to validate key")
+        except Exception as e:
+            logger.error(
+                "anthropic_key_validation_failed", error_type=type(e).__name__, error=str(e)
+            )
             raise HTTPException(status_code=502, detail="Could not reach Anthropic to validate key")
