@@ -157,9 +157,9 @@ The codebase is designed to support cloud deployment:
 
 ---
 
-## 4. 🖥️ PRODUCTION MODE (OVH VPS)
+## 4. 🖥️ PRODUCTION MODE (Hetzner Cloud, Terraform-provisioned)
 
-**Use case:** Real production deployment. Backend runs on a VPS; frontend is hosted separately on Vercel.
+**Use case:** Real production deployment. Backend runs on a Hetzner Cloud server; frontend is hosted separately on Vercel.
 
 **What runs:**
 - ✅ PostgreSQL, Redis, RabbitMQ (Docker)
@@ -168,59 +168,40 @@ The codebase is designed to support cloud deployment:
 - ✅ Caddy (Docker) — reverse proxy + automatic Let's Encrypt TLS for `api.opengrantflow.com`
 - ❌ Frontend (hosted on Vercel, not part of this stack)
 
-Compose file: `docker-compose.prod.yml`. Reverse proxy config: `Caddyfile`.
+Compose file: `docker-compose.prod.yml`. Reverse proxy config: `Caddyfile`. Server provisioning: `terraform/`.
 
-### One-time server bootstrap
+> **History:** this originally ran on a manually-ordered OVH classic VPS, bootstrapped by hand over SSH (see git history for that flow if you ever need it). It was migrated to Hetzner Cloud because that product line is API-first — Terraform can genuinely own the server/firewall/SSH-key lifecycle, which a classic VPS storefront doesn't expose. The app-level pieces (`docker-compose.prod.yml`, `Caddyfile`, `.github/workflows/deploy.yml`) needed **zero changes** for the migration — only the provisioning layer changed.
 
-Deploys log in as a dedicated non-root `deploy` user (sudo + docker group), not root — limits blast radius if the CI deploy key is ever compromised. Run once, by hand, over SSH (as root, with the initial OVH password) as the server is first set up:
+### One-time server provisioning (Terraform)
+
+Unlike the old OVH flow, there's no manual SSH bootstrap at all — Terraform creates the server with a cloud-init script attached, which does everything (deploy user, Docker install, repo clone) on first boot.
 
 ```bash
-ssh root@51.68.212.86
-
-# Docker + Compose plugin (Ubuntu 26.04)
-curl -fsSL https://get.docker.com | sh
-apt-get install -y docker-compose-plugin gettext-base ufw
-
-# Firewall — only SSH/HTTP/HTTPS reach this box; everything else
-# (Postgres, Redis, RabbitMQ, raw service ports) stays internal to the
-# Docker network and is never published to the host.
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw --force enable
-
-# Dedicated deploy user — sudo for admin tasks, docker group so it can
-# run `docker compose` without sudo.
-adduser --disabled-password --gecos "" deploy
-usermod -aG sudo,docker deploy
-
-# Authorize the CI deploy key (public half only — safe to paste, it's
-# not the secret half) for the deploy user.
-mkdir -p /home/deploy/.ssh
-cat >> /home/deploy/.ssh/authorized_keys <<'PUBKEY'
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFwx+pb2+mTW+jIVitpWIZ9ZRUvnv4mqWKQDxrDmHKrd github-actions-deploy@grantflow
-PUBKEY
-chmod 700 /home/deploy/.ssh
-chmod 600 /home/deploy/.ssh/authorized_keys
-chown -R deploy:deploy /home/deploy/.ssh
-
-# Clone the repo as the deploy user — this checkout is deploy-only. The
-# GitHub Actions deploy workflow runs `git reset --hard` against it on
-# every push to main, so never hand-edit files here.
-mkdir -p /opt/grandflow
-chown deploy:deploy /opt/grandflow
-su - deploy -c "git clone https://github.com/arutsh/GrantFlow.git /opt/grandflow"
+cd terraform/
+cp terraform.tfvars.example terraform.tfvars   # fill in your Hetzner API token (gitignored)
+terraform init
+terraform plan     # review: should show 3 resources (ssh_key, firewall, server)
+terraform apply    # type "yes" when prompted — creates real, billable infra
 ```
 
-Verify from your own machine before relying on it: `ssh -i <path-to-private-key> deploy@51.68.212.86` should log in with no password prompt.
+Wait ~1-2 minutes after `apply` completes for cloud-init to finish (Docker install + repo clone happen in the background after the server is reported "created"), then verify:
+
+```bash
+ssh -i <path-to-deploy-private-key> deploy@$(terraform output -raw server_ipv4) "docker ps && ls /opt/grandflow"
+```
+Should log in with no password prompt, show an empty container list, and the cloned repo.
+
+**Firewall**: managed by Terraform (`hcloud_firewall` in `terraform/main.tf`), not `ufw` — 80/443 open to everyone, 22 also open to everyone (the GitHub Actions deploy workflow needs to reach it from an unpredictable runner IP; SSH key-only auth, not IP restriction, is the actual security boundary here).
+
+**Terraform state** is local (gitignored `terraform.tfstate`) — there is no built-in history/changelog for local state, only the current state plus one automatic backup file. A remote backend (e.g. Terraform Cloud) is a noted future upgrade if a real audit trail becomes worth it.
 
 ### DNS
 
-Add an A record at your registrar (no Terraform — see the deploy ticket's notes on why): `api.opengrantflow.com` → `51.68.212.86`. Give it a few minutes to propagate before the first deploy, since Caddy requests a Let's Encrypt cert on first boot and needs the domain to already resolve.
+Add an A record at your registrar: `api.opengrantflow.com` → the `server_ipv4` output from `terraform apply`. Give it a few minutes to propagate before the first deploy, since Caddy requests a Let's Encrypt cert on first boot and needs the domain to already resolve.
 
 ### GitHub Actions secrets required
 
-All set already (generated during Ticket 1/2 hardening): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_HOST` (`51.68.212.86`), `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair; public half goes in `deploy`'s `authorized_keys` above, generated once and never reused elsewhere).
+All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair — the same keypair Terraform registers as `hcloud_ssh_key`, reused rather than regenerated). `VPS_HOST` needs updating any time the server is recreated (`terraform destroy && terraform apply` would produce a new IP) — set it to the current `server_ipv4` output.
 
 ### Ongoing deploys
 
