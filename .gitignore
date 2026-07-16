@@ -226,3 +226,11 @@ docs/Supabase
 openspec/
 frontend-typescript/.env.development
 .env.ovh-secrets.prod
+
+# Terraform — state and real var files contain sensitive data/resource IDs;
+# .terraform.lock.hcl and terraform.tfvars.example ARE committed on purpose.
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/*.auto.tfvars
