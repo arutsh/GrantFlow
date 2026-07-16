@@ -5,6 +5,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Two pushes to main close together (e.g. merging two PRs back-to-back) would
+# otherwise trigger overlapping `docker compose up --build` runs on the same
+# box, racing to recreate the same containers — queue them instead of racing.
+concurrency:
+  group: deploy-to-vps
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
