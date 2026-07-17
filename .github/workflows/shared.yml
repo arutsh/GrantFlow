@@ -1,0 +1,50 @@
+name: Shared CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "shared/**"
+
+  shared-test:
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    env:
+      LOG_LEVEL: INFO
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/ai/requirements.txt
+
+      - name: Lint
+        run: |
+          pip install black flake8
+          black --check shared/ai_client shared/tests
+          flake8 --max-line-length=100 shared/ai_client shared/tests
+
+      - name: Run tests
+        run: python -m pytest shared/tests -v
