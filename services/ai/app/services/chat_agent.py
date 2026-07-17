@@ -190,6 +190,7 @@ def build_agent(resolved_model) -> "Agent[None, TurnIntent]":
         output_type=INTENT_OUTPUT_TYPES,
         system_prompt=SYSTEM_PROMPT,
         model_settings={"temperature": 0.1},
+        retries=3,
     )
     agent.instrument = True
     return cast("Agent[None, TurnIntent]", agent)

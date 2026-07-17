@@ -1,9 +1,18 @@
 import React, { useState } from "react";
-import { Menu, X, Home, FileText, BarChart3, Sparkles, Settings } from "lucide-react";
+import {
+  Menu,
+  X,
+  Home,
+  FileText,
+  BarChart3,
+  Sparkles,
+  Settings,
+} from "lucide-react";
 import Button from "../../components/ui/Button";
 import { AIChatPanel } from "@/pages/Budgets/components/AIChatPanel";
 import { useAiChat } from "@/context/AiChatContext";
 import ogfIcon from "@/assets/logos/ogf-icon.svg";
+import { Link, NavLink } from "react-router-dom";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -44,44 +53,44 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <nav className="flex-1">
           <ul className="space-y-1">
             <li>
-              <a
-                href="/dashboard"
+              <Link
+                to="/dashboard"
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <Home size={20} />
                 {isOpen && <span>Home</span>}
-              </a>
+              </Link>
             </li>
             <li>
-              <a
-                href="/budgets"
+              <Link
+                to="/budgets"
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <FileText size={20} />
                 {isOpen && <span>Budgets</span>}
-              </a>
+              </Link>
             </li>
             <li>
-              <a
-                href="/reports"
+              <Link
+                to="/reports"
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <BarChart3 size={20} />
                 {isOpen && <span>Reports</span>}
-              </a>
+              </Link>
             </li>
           </ul>
         </nav>
 
         {/* Settings link pinned above AI Mode */}
         <div className="px-3 pb-1">
-          <a
-            href="/settings"
+          <NavLink
+            to="/settings"
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
           >
             <Settings size={20} className="flex-shrink-0" />
             {isOpen && <span className="text-sm font-medium">Settings</span>}
-          </a>
+          </NavLink>
         </div>
 
         {/* AI Mode button pinned to bottom of sidebar */}

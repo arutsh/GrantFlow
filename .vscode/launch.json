@@ -77,7 +77,8 @@
       ],
       "cwd": "${workspaceFolder}/services/ai",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}",
+        "ENCRYPTION_KEY": "${env:ENCRYPTION_KEY}"
       },
       "jinja": true
     },
@@ -103,7 +104,8 @@
       "args": ["tests/", "-v"],
       "cwd": "${workspaceFolder}/services/ai",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}",
+        "ENCRYPTION_KEY": "${env:ENCRYPTION_KEY}"
       },
       "justMyCode": false
     },
