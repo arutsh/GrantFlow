@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAiChat } from "@/context/AiChatContext";
 import { BudgetViewHeader } from "./components/BudgetViewHeader";
 import { BudgetViewLinesTable } from "./components/BudgetViewLinesTable";
 import { BudgetViewTraces } from "./components/BudgetViewTraces";
@@ -36,21 +35,9 @@ export function SingleBudgetViewContainer() {
   const { id } = useParams<{ id: string }>();
   return (
     <SingleBudgetViewContextProvider id={id}>
-      <SingleBudgetViewContainerInner id={id} />
+      <SingleBudgetView id={id} />
     </SingleBudgetViewContextProvider>
   );
-}
-
-function SingleBudgetViewContainerInner({ id }: { id: string | undefined }) {
-  const { budget } = useDetailedBudget();
-  const { setContextBudget } = useAiChat();
-
-  useEffect(() => {
-    setContextBudget(budget ?? null);
-    return () => setContextBudget(null);
-  }, [budget, setContextBudget]);
-
-  return <SingleBudgetView id={id} />;
 }
 
 // ─── View ─────────────────────────────────────────────────────────────────────

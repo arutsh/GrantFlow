@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Button from "@/components/ui/Button";
 import { streamAiChat } from "@/api/budgetApi";
 import { useAiChat } from "@/context/AiChatContext";
+import { useLocation, useNavigate, matchPath } from "react-router-dom";
 
 export interface ChatMessage {
   id: string;
@@ -25,16 +26,10 @@ type StreamStatus =
   | { type: "streaming" };
 
 export function AIChatPanel() {
-  const {
-    messages,
-    setMessages,
-    contextBudget,
-    closeAi,
-    sessionId,
-    setSessionId,
-    chatBudgetId,
-    setChatBudgetId,
-  } = useAiChat();
+  const { messages, setMessages, closeAi, sessionId, setSessionId } =
+    useAiChat();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<StreamStatus>({ type: "idle" });
@@ -42,6 +37,9 @@ export function AIChatPanel() {
   const streamingIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const match = matchPath("/budgets/:budgetId", location.pathname);
+  const contextId = match?.params.budgetId ?? null;
+  const page = location.pathname.split("/")[1] || "dashboard";
   const isStreaming = status.type !== "idle";
 
   useEffect(() => {
@@ -85,30 +83,29 @@ export function AIChatPanel() {
     abortRef.current = streamAiChat(
       text,
       sessionId,
-      contextBudget?.id?.toString() ?? chatBudgetId,
+      contextId,
       {
         onThinking: () => setStatus({ type: "thinking" }),
         onText: (delta) => {
           setStatus({ type: "streaming" });
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, content: m.content + delta }
-                : m
-            )
+              m.id === assistantId ? { ...m, content: m.content + delta } : m,
+            ),
           );
         },
-        onToolCall: (toolName) =>
-          setStatus({ type: "tool", name: toolName }),
+        onToolCall: (toolName) => setStatus({ type: "tool", name: toolName }),
         onActionResult: () => setStatus({ type: "streaming" }),
         onDone: (response, budgetId) => {
-          if (budgetId) setChatBudgetId(budgetId);
+          if (budgetId) {
+            navigate(`/budgets/${budgetId}`, { replace: true });
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
                 ? { ...m, content: response, isStreaming: false }
-                : m
-            )
+                : m,
+            ),
           );
           streamingIdRef.current = null;
           setStatus({ type: "idle" });
@@ -118,8 +115,8 @@ export function AIChatPanel() {
             prev.map((m) =>
               m.id === assistantId
                 ? { ...m, content: message, isError: true, isStreaming: false }
-                : m
-            )
+                : m,
+            ),
           );
           streamingIdRef.current = null;
           setStatus({ type: "idle" });
@@ -130,19 +127,20 @@ export function AIChatPanel() {
               m.id === assistantId
                 ? {
                     ...m,
-                    content: "AI is not available. Ask your admin to configure an API key.",
+                    content:
+                      "AI is not available. Ask your admin to configure an API key.",
                     isError: true,
                     isStreaming: false,
                   }
-                : m
-            )
+                : m,
+            ),
           );
           streamingIdRef.current = null;
           setStatus({ type: "idle" });
         },
       },
       (id) => setSessionId(id),
-      "budgets",
+      page,
     );
   };
 
@@ -220,7 +218,7 @@ export function AIChatPanel() {
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
             placeholder={
-              contextBudget
+              contextId
                 ? "Refine this budget, e.g. 'add a travel line at £3k'..."
                 : "Describe your budget or ask me to create one..."
             }
