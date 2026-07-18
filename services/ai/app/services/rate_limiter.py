@@ -1,4 +1,6 @@
 import redis.asyncio as aioredis
+from fastapi import HTTPException
+
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -34,3 +36,14 @@ async def check_and_increment(customer_id: str, limit: int | None = None) -> tup
     except Exception:
         logger.warning("rate_limiter_unavailable", customer_id=customer_id)
         return True, 0
+
+
+async def enforce_rate_limit(customer_id: str, *, extra_headers: dict | None = None) -> None:
+    """Raise 429 with a Retry-After header when the customer is over their hourly limit."""
+    allowed, retry_after = await check_and_increment(customer_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Try again later.",
+            headers={"Retry-After": str(retry_after), **(extra_headers or {})},
+        )

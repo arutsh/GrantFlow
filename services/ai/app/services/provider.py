@@ -6,7 +6,7 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 
 from app.core.logging import get_logger
-from app.utils.security import get_validated_user
+from app.utils.security import get_validated_user, resolve_customer_id
 
 logger = get_logger(__name__)
 
@@ -93,8 +93,7 @@ async def get_resolved_model(
     from app.crud.user_provider_key import get_active_key_for_customer
     from app.db.session import AsyncSessionLocal
 
-    user_id = str(valid_user["user_id"])
-    customer_id = str(valid_user["customer_id"]) if valid_user.get("customer_id") else user_id
+    customer_id = resolve_customer_id(valid_user)
 
     async with AsyncSessionLocal() as db:
         user_key = await get_active_key_for_customer(customer_id, db)

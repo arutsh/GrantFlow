@@ -9,7 +9,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.ai_provider import AIModelName
 from app.services.provider import _REGISTRY
 from app.utils.encryption import encrypt
-from app.utils.security import get_validated_user
+from app.utils.security import get_validated_user, resolve_customer_id
 
 router = APIRouter(prefix="/ai/settings", tags=["AI Settings"])
 
@@ -98,7 +98,7 @@ async def save_ai_settings(
     await _validate_key_with_provider(provider.name, provider.key_prefix, body.key)
     encrypted = encrypt(body.key, settings.ENCRYPTION_KEY) if body.key else None
     user_id = str(valid_user["user_id"])
-    customer_id = str(valid_user["customer_id"]) if valid_user.get("customer_id") else user_id
+    customer_id = resolve_customer_id(valid_user)
     await upsert_key(
         user_id=user_id,
         provider_id=str(provider.id),

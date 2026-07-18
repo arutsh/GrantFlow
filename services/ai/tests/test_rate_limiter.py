@@ -116,7 +116,7 @@ class TestRateLimiterEndpoint:
         app.dependency_overrides[get_resolved_model] = lambda: None
         client = TestClient(app)
 
-        with patch("app.api.parse_routes.check_and_increment", _fake_check):
+        with patch("app.services.rate_limiter.check_and_increment", _fake_check):
             response = client.get("/api/v1/ai/parse-budget/stream?text=test")
 
         app.dependency_overrides = {}

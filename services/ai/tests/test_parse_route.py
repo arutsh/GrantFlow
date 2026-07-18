@@ -57,7 +57,7 @@ class TestParseBudgetStream:
     def test_null_provider_stream_returns_unavailable_event(self):
         app.dependency_overrides[get_resolved_model] = lambda: None
         with patch(
-            "app.api.parse_routes.check_and_increment", new=AsyncMock(return_value=(True, 0))
+            "app.services.rate_limiter.check_and_increment", new=AsyncMock(return_value=(True, 0))
         ):
             response = client.get("/api/v1/ai/parse-budget/stream?text=test")
         assert response.status_code == 200

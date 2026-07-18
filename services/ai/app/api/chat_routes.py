@@ -1,5 +1,5 @@
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -15,8 +15,8 @@ from app.services.chat_agent import ChatDeps, build_agent
 from app.services.chat_orchestrator import TurnResult
 from app.services.chat_stream import build_chat_sse_stream
 from app.services.provider import ResolvedModel, get_resolved_model
-from app.services.rate_limiter import check_and_increment
-from app.utils.security import get_validated_user
+from app.services.rate_limiter import enforce_rate_limit
+from app.utils.security import get_validated_user, resolve_customer_id
 
 router = APIRouter(prefix="/ai", tags=["AI Chat"])
 
@@ -41,7 +41,7 @@ async def stream_chat(
     resolved: ResolvedModel | None = Depends(get_resolved_model),
 ):
     user_id = str(valid_user["user_id"])
-    customer_id = str(valid_user["customer_id"]) if valid_user.get("customer_id") else user_id
+    customer_id = resolve_customer_id(valid_user)
     token = valid_user.get("token", "")
 
     if resolved is None:
@@ -56,13 +56,7 @@ async def stream_chat(
             _unavailable(), media_type="text/event-stream", headers=_SSE_HEADERS
         )
 
-    allowed, retry_after = await check_and_increment(customer_id)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Try again later.",
-            headers={"Retry-After": str(retry_after), **_SSE_HEADERS},
-        )
+    await enforce_rate_limit(customer_id, extra_headers=_SSE_HEADERS)
 
     http_client: httpx.AsyncClient = request.app.state.http_client
 

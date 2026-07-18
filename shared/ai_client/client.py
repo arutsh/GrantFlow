@@ -1,9 +1,10 @@
 import asyncio
 
 import httpx
+from pydantic import ValidationError
 
 from shared.ai_client.errors import AiClientError, AiRateLimitedError, AiUnavailableError
-from shared.ai_client.schemas import AiDecision, ChatTurn, Reply, ToolCall, ToolDef
+from shared.ai_client.schemas import AiDecision, ChatTurn, DecideRequest, Reply, ToolCall, ToolDef
 
 
 class AiClient:
@@ -34,12 +35,15 @@ class AiClient:
         domain_context: dict | None,
         user_token: str,
     ) -> AiDecision:
-        payload = {
-            "message": message,
-            "conversation_history": [turn.model_dump() for turn in history],
-            "available_tools": [tool.model_dump() for tool in tools],
-            "domain_context": domain_context,
-        }
+        try:
+            payload = DecideRequest(
+                message=message,
+                conversation_history=history,
+                available_tools=tools,
+                domain_context=domain_context,
+            ).model_dump()
+        except ValidationError as exc:
+            raise AiClientError(f"Invalid decide() request: {exc}") from exc
         headers = {"Authorization": f"Bearer {user_token}"}
 
         resp = await self._post_with_retry(payload, headers)

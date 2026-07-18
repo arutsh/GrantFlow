@@ -22,7 +22,7 @@ def _happy_route(fake_session, turn):
     session_local = MagicMock()
     session_local.return_value.__aenter__.return_value = AsyncMock()
     with (
-        patch("app.api.chat_routes.check_and_increment", AsyncMock(return_value=(True, 0))),
+        patch("app.services.rate_limiter.check_and_increment", AsyncMock(return_value=(True, 0))),
         patch("app.api.chat_routes.AsyncSessionLocal", session_local),
         patch(
             "app.api.chat_routes.get_or_create_session", AsyncMock(return_value=fake_session)
@@ -48,7 +48,7 @@ class TestStreamChat:
     def test_rate_limiter(self, make_client):
         client = make_client(resolved=True)
         with patch(
-            "app.api.chat_routes.check_and_increment", AsyncMock(return_value=(False, 3600))
+            "app.services.rate_limiter.check_and_increment", AsyncMock(return_value=(False, 3600))
         ):
             resp = client.post("/api/v1/ai/chat/stream", json={"message": "hi"})
         assert resp.status_code == 429
