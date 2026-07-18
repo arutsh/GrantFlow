@@ -32,7 +32,7 @@ _VALID_OUTPUT = {
 
 _LOAD_PROMPT = "app.services.parse_service.load_prompt"
 _AUDIT = "app.services.parse_service.write_audit_log"
-_RATE = "app.api.parse_routes.check_and_increment"
+_RATE = "app.services.rate_limiter.check_and_increment"
 _AGENT = "app.services.parse_service.Agent"
 
 

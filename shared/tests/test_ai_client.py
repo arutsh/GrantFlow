@@ -92,6 +92,15 @@ class TestErrorMapping:
         with pytest.raises(AiClientError):
             await client.decide("hi", [], [], None, "tok")
 
+    @pytest.mark.anyio
+    async def test_invalid_request_raises_ai_client_error(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise AssertionError("should not reach the network for an invalid request")
+
+        client = _client(handler)
+        with pytest.raises(AiClientError):
+            await client.decide("hi", None, [], None, "tok")  # type: ignore[arg-type]
+
 
 class TestRetryBehavior:
     @pytest.mark.anyio

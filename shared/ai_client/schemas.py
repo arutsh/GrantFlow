@@ -56,3 +56,14 @@ class Reply(BaseModel):
 # — AiClient.decide() reads that tag itself rather than relying on Pydantic to
 # guess which model matches.
 AiDecision = Union[ToolCall, Reply]
+
+
+class DecideRequest(BaseModel):
+    """Request body for POST /ai/decide — decide_routes.py uses this directly
+    as its FastAPI request model, so the two sides can never drift apart.
+    """
+
+    message: str
+    conversation_history: list[ChatTurn]
+    available_tools: list[ToolDef]
+    domain_context: dict | None = None
