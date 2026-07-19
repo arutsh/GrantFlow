@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     chat_database_url: str
+    BUDGET_SERVICE_URL: str = "http://localhost:8001/api/v1"
+    AI_SERVICE_URL: str = "http://localhost:8002/api/v1"
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")
 
