@@ -124,6 +124,27 @@ services:
     networks:
       - grandflow
 
+  # Backend: Chat Service
+  chat:
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile
+    container_name: chat-service-local
+    ports:
+      - "9003:8000"
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/chat:/app
+    env_file:
+      - ./services/chat/.env.chat.private.local
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      grandflow-db:
+        condition: service_healthy
+    networks:
+      - grandflow
+
   # Celery Worker
   worker:
     build:
@@ -192,6 +213,7 @@ services:
       - users
       - budget
       - ai
+      - chat
       - frontend
     networks:
       - grandflow

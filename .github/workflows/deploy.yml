@@ -27,6 +27,7 @@ jobs:
           USERS_DATABASE_URL: ${{ secrets.USERS_DATABASE_URL }}
           BUDGET_DATABASE_URL: ${{ secrets.BUDGET_DATABASE_URL }}
           AI_DATABASE_URL: ${{ secrets.AI_DATABASE_URL }}
+          CHAT_DATABASE_URL: ${{ secrets.CHAT_DATABASE_URL }}
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
         with:
@@ -37,7 +38,7 @@ jobs:
           # alone take ~15-20m on a cold build; subsequent deploys reuse the
           # Docker layer cache on the server and are much faster.
           command_timeout: 40m
-          envs: POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,RABBITMQ_USER,RABBITMQ_PASS,USERS_DATABASE_URL,BUDGET_DATABASE_URL,AI_DATABASE_URL,JWT_SECRET_KEY,ENCRYPTION_KEY
+          envs: POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,RABBITMQ_USER,RABBITMQ_PASS,USERS_DATABASE_URL,BUDGET_DATABASE_URL,AI_DATABASE_URL,CHAT_DATABASE_URL,JWT_SECRET_KEY,ENCRYPTION_KEY
           script: |
             set -euo pipefail
             cd /opt/grandflow
@@ -51,8 +52,8 @@ jobs:
             # with ${VAR} placeholders. Substitute real values from GitHub Actions
             # secrets in place, in this working tree, right before starting
             # containers — the real values are never committed back.
-            VARS='$POSTGRES_USER $POSTGRES_PASSWORD $POSTGRES_DB $RABBITMQ_USER $RABBITMQ_PASS $RABBITMQ_URL $USERS_DATABASE_URL $BUDGET_DATABASE_URL $AI_DATABASE_URL $JWT_SECRET_KEY $ENCRYPTION_KEY'
-            for f in .env.prod services/users/.env.users.prod services/budget/.env.budget.prod services/ai/.env.ai.prod services/worker/.env.worker.prod; do
+            VARS='$POSTGRES_USER $POSTGRES_PASSWORD $POSTGRES_DB $RABBITMQ_USER $RABBITMQ_PASS $RABBITMQ_URL $USERS_DATABASE_URL $BUDGET_DATABASE_URL $AI_DATABASE_URL $CHAT_DATABASE_URL $JWT_SECRET_KEY $ENCRYPTION_KEY'
+            for f in .env.prod services/users/.env.users.prod services/budget/.env.budget.prod services/ai/.env.ai.prod services/chat/.env.chat.prod services/worker/.env.worker.prod; do
               envsubst "$VARS" < "$f" > "$f.real"
               mv "$f.real" "$f"
             done
