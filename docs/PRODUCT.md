@@ -65,7 +65,7 @@ Budget approval, amendments, receipts, and final reports — all tracked, audita
 | **AI-assisted budget generation** | Describe your budget in plain language; GrantFlow generates the structured version instantly |
 | **Donor-compliant exports** | Auto-export to any donor template format — no manual reformatting |
 | **Reporting against approved budgets** | Submit reports, track amendments, attach receipts — all inside the platform |
-| **Multi-provider AI** | Connect Anthropic Claude, OpenAI, or run fully offline with Ollama |
+| **Multi-provider AI** | Connect Anthropic Claude, or run fully offline with Ollama |
 | **Bring Your Own Key (BYOK)** | Use your own AI provider credentials — your data stays under your control |
 | **Self-hosted option** | Run entirely on your own infrastructure via Docker — no data leaves your servers |
 | **Full audit log** | Every AI request, every budget change, every submission — logged and traceable |

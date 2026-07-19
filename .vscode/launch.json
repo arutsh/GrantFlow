@@ -9,7 +9,8 @@
       "configurations": [
         "Debug Users Service (FastAPI + Uvicorn)",
         "Debug Budget Service (FastAPI + Uvicorn)",
-        "Debug AI Service (FastAPI + Uvicorn)"
+        "Debug AI Service (FastAPI + Uvicorn)",
+        "Debug Chat Service (FastAPI + Uvicorn)"
       ],
       "stopAll": true
     },
@@ -18,7 +19,7 @@
       "configurations": [
         "Attach to Users service (Docker)",
         "Attach to Budget service (Docker)",
-        "Attach to AI service (Docker)"
+        "Attach to AI service (Docker)",
       ],
       "stopAll": true
     }
@@ -83,13 +84,36 @@
       "jinja": true
     },
     {
+      "name": "Debug Chat Service (FastAPI + Uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--reload",
+        "--port",
+        "8003"
+      ],
+      "cwd": "${workspaceFolder}/services/chat",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/chat:${workspaceFolder}",
+        "ENCRYPTION_KEY": "${env:ENCRYPTION_KEY}"
+      },
+      "jinja": true
+    },
+    {
       // Debug the test file currently open in the editor (works for any service
       // with the tests/ layout: cwd resolves to the service root)
       "name": "Debug Current Test File (pytest)",
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["${file}", "-v"],
+      "args": [
+        "${file}",
+        "-v"
+      ],
       "cwd": "${fileDirname}/..",
       "env": {
         "PYTHONPATH": "${fileDirname}/..:${workspaceFolder}"
@@ -101,7 +125,10 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["tests/", "-v"],
+      "args": [
+        "tests/",
+        "-v"
+      ],
       "cwd": "${workspaceFolder}/services/ai",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/ai:${workspaceFolder}",
@@ -114,7 +141,10 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["tests/", "-v"],
+      "args": [
+        "tests/",
+        "-v"
+      ],
       "cwd": "${workspaceFolder}/services/budget",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/budget:${workspaceFolder}"
@@ -126,7 +156,10 @@
       "type": "debugpy",
       "request": "launch",
       "module": "pytest",
-      "args": ["tests/", "-v"],
+      "args": [
+        "tests/",
+        "-v"
+      ],
       "cwd": "${workspaceFolder}/services/users",
       "env": {
         "PYTHONPATH": "${workspaceFolder}/services/users:${workspaceFolder}"
