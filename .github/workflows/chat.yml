@@ -1,0 +1,55 @@
+name: Chat Service CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "services/chat/**"
+              - "shared/**"
+
+  chat-test:
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CHAT_DATABASE_URL: ${{ secrets.CHAT_DATABASE_URL }}
+      LOG_LEVEL: INFO
+      PYTHONPATH: ${{ github.workspace }}/services/chat:${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/chat/requirements.txt
+
+      - name: Lint
+        working-directory: ./services/chat
+        run: |
+          pip install black mypy flake8
+          black --check ./app
+          mypy ./app
+          flake8 ./app
+
+      - name: Run tests
+        working-directory: ./services/chat
+        run: python -m pytest tests/ -v

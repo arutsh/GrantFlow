@@ -115,6 +115,22 @@ services:
     networks:
       - grandflow
 
+  chat:
+    build:
+      context: .
+      dockerfile: services/chat/Dockerfile
+    container_name: chat-service
+    restart: unless-stopped
+    env_file:
+      - ./services/chat/.env.chat.prod
+    environment:
+      - PYTHONPATH=/app
+    depends_on:
+      grandflow-db:
+        condition: service_healthy
+    networks:
+      - grandflow
+
   worker:
     build:
       context: .
@@ -170,6 +186,7 @@ services:
       - users
       - budget
       - ai
+      - chat
     networks:
       - grandflow
 
