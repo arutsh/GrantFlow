@@ -1,8 +1,19 @@
 import React, { useState, useRef, useEffect } from "react";
 import Button from "@/components/ui/Button";
-import { streamAiChat } from "@/api/budgetApi";
+import { streamAiChat } from "@/api/chatApi";
 import { useAiChat } from "@/context/AiChatContext";
 import { useLocation, useNavigate, matchPath } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { budgetDetailsQueryKey } from "@/pages/Budgets/queryKeys";
+
+// Tools whose execution actually changes the budget currently in view.
+// create_budget is a creating_tool, not a targeted_tool — it can run while
+// an unrelated budget is the active contextId (it isn't blocked by the
+// "no context" guard the way add_budget_line/update_budget are), so its
+// action_result must NOT invalidate whatever budget happens to be in view.
+// get_budget_summary is targeted but read-only, so invalidating on it would
+// just be a wasted refetch.
+const BUDGET_MUTATING_TOOLS = new Set(["add_budget_line", "update_budget"]);
 
 export interface ChatMessage {
   id: string;
@@ -26,10 +37,11 @@ type StreamStatus =
   | { type: "streaming" };
 
 export function AIChatPanel() {
-  const { messages, setMessages, closeAi, sessionId, setSessionId } =
+  const { messages, setMessages, closeAi, conversationId, setConversationId } =
     useAiChat();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<StreamStatus>({ type: "idle" });
@@ -82,7 +94,7 @@ export function AIChatPanel() {
 
     abortRef.current = streamAiChat(
       text,
-      sessionId,
+      conversationId,
       contextId,
       {
         onThinking: () => setStatus({ type: "thinking" }),
@@ -95,7 +107,12 @@ export function AIChatPanel() {
           );
         },
         onToolCall: (toolName) => setStatus({ type: "tool", name: toolName }),
-        onActionResult: () => setStatus({ type: "streaming" }),
+        onActionResult: (toolName) => {
+          setStatus({ type: "streaming" });
+          if (contextId && BUDGET_MUTATING_TOOLS.has(toolName)) {
+            queryClient.invalidateQueries({ queryKey: budgetDetailsQueryKey(contextId) });
+          }
+        },
         onDone: (response, budgetId) => {
           if (budgetId) {
             navigate(`/budgets/${budgetId}`, { replace: true });
@@ -139,7 +156,7 @@ export function AIChatPanel() {
           setStatus({ type: "idle" });
         },
       },
-      (id) => setSessionId(id),
+      (id) => setConversationId(id),
       page,
     );
   };

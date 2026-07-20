@@ -12,6 +12,7 @@ import {
   useDetailedBudget,
 } from "./SingleBudgetViewContext";
 import { editBudget } from "@/api/budgetApi";
+import { budgetDetailsQueryKey } from "./queryKeys";
 import {
   createBudgetLine,
   deleteBudgetLine,
@@ -83,7 +84,7 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
               onSaved={(updated) => {
                 setBudget(updated);
                 queryClient.invalidateQueries({
-                  queryKey: ["budgetDetails", id],
+                  queryKey: budgetDetailsQueryKey(id),
                 });
                 setIsEditMode(false);
               }}

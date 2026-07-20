@@ -11,6 +11,7 @@ import Button from "@/components/ui/Button";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardLayout from "../Dashboard/DashboardLayout";
 import { fetchBudgetById } from "@/api/gatewayApi";
+import { budgetDetailsQueryKey } from "./queryKeys";
 
 import { BudgetViewHeader } from "./components/BudgetViewHeader";
 
@@ -50,7 +51,7 @@ export const SingleBudgetViewContextProvider: React.FC<{
     error,
     refetch,
   } = useQuery({
-    queryKey: ["budgetDetails", id],
+    queryKey: budgetDetailsQueryKey(id),
     queryFn: () => (id ? fetchBudgetById(id) : Promise.resolve(null)),
     enabled: !!id,
   });
@@ -101,7 +102,7 @@ export const SingleBudgetViewContextProvider: React.FC<{
 
   // ✅ Wrapper setter (updates both state + query cache)
   const setBudget = (updated: Budget | null) => {
-    queryClient.setQueryData(["budgetDetails", id], updated);
+    queryClient.setQueryData(budgetDetailsQueryKey(id), updated);
   };
 
   return (

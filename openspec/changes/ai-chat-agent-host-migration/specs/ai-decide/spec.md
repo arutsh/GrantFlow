@@ -36,6 +36,24 @@ The endpoint SHALL enforce the existing per-customer rate limit and return 429 w
 - **WHEN** a customer exceeds `AI_RATE_LIMIT_PER_HOUR`
 - **THEN** the endpoint returns 429 with `Retry-After`
 
+### Requirement: Audit logging
+Every call to `decide()` SHALL write one `ai_audit_logs` entry — success or failure — capturing customer/user, provider/model, prompt version, input/output text, token usage, and duration. This mirrors the existing parse-budget flow's audit coverage, which this endpoint previously lacked entirely.
+
+#### Scenario: Successful decision logged
+- **WHEN** `decide()` returns either a `tool_call` or `reply` decision
+- **THEN** an audit log entry is written with `success=true` and the decision's output captured
+
+#### Scenario: Model failure logged
+- **WHEN** the underlying model call raises an unexpected error
+- **THEN** an audit log entry is written with `success=false` and the error message, and the original exception still propagates to the caller
+
+### Requirement: Ambiguous multi-tool-call degrades to a reply
+When the model requests more than one tool call in a single turn, the endpoint SHALL NOT execute, guess, or prioritize any of them — which call reflects genuine user intent is not reliably determinable from call order, especially with smaller/weaker BYOK models that can echo an already-satisfied tool alongside the intended one. The endpoint SHALL instead return a `reply` decision asking the user to retry, and SHALL NOT raise an error or return a 502.
+
+#### Scenario: Model returns multiple tool calls
+- **WHEN** the model's response contains more than one tool call for a single turn
+- **THEN** the endpoint returns a `reply` decision (not an error), and the ambiguity is logged as a warning for observability
+
 ## REMOVED Requirements
 
 ### Requirement: Legacy chat stream endpoint and session storage

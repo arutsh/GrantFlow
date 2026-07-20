@@ -70,6 +70,11 @@ class BudgetToolRegistry(ToolRegistry):
         payload: dict = {
             "name": params["budget_name"],
             "external_funder_name": params["external_funder_name"],
+            # Matches the old ai-driven parse-budget flow's status, so
+            # chat-created budgets get the same "needs review" UI treatment
+            # (SingleBudgetView auto-opens edit mode for ai_draft) rather than
+            # the plain-form-create default of "draft".
+            "status": "ai_draft",
         }
         if params.get("duration_months") is not None:
             payload["duration_months"] = params["duration_months"]
@@ -102,14 +107,18 @@ class BudgetToolRegistry(ToolRegistry):
             self._url("/budget-lines/"), json=payload, headers=auth_headers(token)
         )
         resp.raise_for_status()
-        data = resp.json()
-        line_id = data.get("id", "unknown")
+        # add_budget_line isn't in creating_tools, so its id is never surfaced
+        # structurally either (orchestrator only reads created_resource_id for
+        # creating_tools) and it's no longer needed in the message (see the
+        # "raw id SHALL NOT be rendered" rule create_budget already follows).
+        # Still parse the body, though — a 2xx with an unparseable body (e.g.
+        # a proxy returning an HTML error page with status 200) must still be
+        # caught here and reported as a failure, not silently treated as a
+        # successful add.
+        resp.json()
         return ToolResult(
             success=True,
-            message=(
-                f"Line '{description}' ({params['amount']}) added to budget "
-                f"(line id: {line_id})."
-            ),
+            message=f"Line '{description}' ({params['amount']}) added to budget.",
         )
 
     @relay_domain_errors("update budget")
@@ -120,7 +129,11 @@ class BudgetToolRegistry(ToolRegistry):
             self._url(f"/budgets/{budget_id}"), json=payload, headers=auth_headers(token)
         )
         resp.raise_for_status()
-        return ToolResult(success=True, message=f"Budget {budget_id} updated successfully.")
+        # Same "raw id SHALL NOT be rendered in the chat transcript" rule as
+        # create_budget/add_budget_line — a raw UUID reads as an error to a
+        # non-technical user, not confirmation, even when it's just the
+        # already-in-view context id rather than a newly created one.
+        return ToolResult(success=True, message="Budget updated successfully.")
 
     @relay_domain_errors("get budget summary")
     async def _call_get_budget_summary(self, params: dict, token: str) -> ToolResult:

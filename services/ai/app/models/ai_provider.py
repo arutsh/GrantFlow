@@ -11,6 +11,7 @@ import shared.db.type_decorators as t
 class AIModelName(str, Enum):
     claude_sonnet_4_6 = "claude-sonnet-4-6"
     llama3_2 = "llama3.2"
+    gemma4 = "gemma4:12b"
 
 
 class AIProvider(Base):

@@ -1,17 +1,23 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, type Mock } from "vitest";
 import { AIChatPanel } from "./AIChatPanel";
 import { AiChatProvider } from "@/context/AiChatContext";
-import * as budgetApi from "@/api/budgetApi";
-import type { AiChatCallbacks } from "@/api/budgetApi";
+import { AuthProvider } from "@/context/AuthContext";
+import * as chatAi from "@/api/chatApi";
+import type { AiChatCallbacks } from "@/api/chatApi";
 
-vi.mock("@/api/budgetApi", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/api/budgetApi")>();
+vi.mock("@/api/chatApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/chatApi")>();
   return {
     ...actual,
     streamAiChat: vi.fn(() => new AbortController()),
+    // Not under test here (see AiChatContext.test.tsx) — stubbed so an
+    // authenticated render never fires a real history-hydration network call.
+    fetchLatestConversation: vi.fn(() => Promise.resolve(null)),
+    fetchConversationMessages: vi.fn(() => Promise.resolve([])),
   };
 });
 
@@ -24,16 +30,25 @@ vi.mock("react-router-dom", async (importOriginal) => {
   };
 });
 
-const streamAiChatMock = budgetApi.streamAiChat as unknown as Mock;
+const streamAiChatMock = chatAi.streamAiChat as unknown as Mock;
 
 function renderPanel(initialPath: string) {
-  return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <AiChatProvider>
-        <AIChatPanel />
-      </AiChatProvider>
-    </MemoryRouter>,
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <AuthProvider>
+          <AiChatProvider>
+            <AIChatPanel />
+          </AiChatProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
+  return { ...result, invalidateSpy };
 }
 
 async function sendMessage(text: string) {
@@ -120,5 +135,47 @@ describe("AIChatPanel", () => {
     act(() => lastCallbacks().onDone("You've spent $500 so far."));
 
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the budget query on action_result when a budget is in view", async () => {
+    const budgetId = "550e8400-e29b-41d4-a716-446655440000";
+    const { invalidateSpy } = renderPanel(`/budgets/${budgetId}`);
+
+    await sendMessage("add a travel line");
+    act(() => lastCallbacks().onActionResult?.("add_budget_line", "Line added."));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["budgetDetails", budgetId] });
+  });
+
+  it("does not invalidate any query on action_result without a budget in view", async () => {
+    const { invalidateSpy } = renderPanel("/dashboard");
+
+    await sendMessage("hello");
+    act(() => lastCallbacks().onActionResult?.("create_budget", "Budget created."));
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate the viewed budget when create_budget runs for a different one", async () => {
+    // create_budget is a creating_tool, not a targeted_tool — it can execute
+    // while an unrelated budget is the active contextId. Its action_result
+    // must not invalidate whatever budget happens to be in view.
+    const viewedBudgetId = "550e8400-e29b-41d4-a716-446655440000";
+    const { invalidateSpy } = renderPanel(`/budgets/${viewedBudgetId}`);
+
+    await sendMessage("create a totally different budget");
+    act(() => lastCallbacks().onActionResult?.("create_budget", "Budget created."));
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate on a read-only get_budget_summary action_result", async () => {
+    const budgetId = "550e8400-e29b-41d4-a716-446655440000";
+    const { invalidateSpy } = renderPanel(`/budgets/${budgetId}`);
+
+    await sendMessage("summarise this budget");
+    act(() => lastCallbacks().onActionResult?.("get_budget_summary", "1 line, total 500."));
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
