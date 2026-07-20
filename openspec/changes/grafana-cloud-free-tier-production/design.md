@@ -27,7 +27,7 @@ with `otlp_endpoint` defaulting to `OTEL_EXPORTER_OTLP_ENDPOINT` env var or `loc
 ## Decisions
 
 **1. Direct-to-cloud OTLP export, no local collector in prod.**
-The existing dev stack routes through `otel-collector` → Jaeger/Prometheus. Replicating that in prod would mean 3-4 more containers on a 4GB box for a portfolio-scale app. Grafana Cloud exposes an OTLP gateway endpoint that accepts gRPC or HTTP OTLP directly with Basic Auth, so each service's existing `BatchSpanProcessor`/`PeriodicExportingMetricReader` can export straight to it. Trade-off: no local buffering across a Grafana Cloud outage beyond what the OTel SDK batches in-process — acceptable for a low-traffic prod app; a dropped batch during a rare SaaS outage is not worth a local durable queue at this scale.
+The existing dev stack routes through `otel-collector` → Jaeger/Prometheus. Replicating that in prod would mean 3-4 more containers on a 4GB box for a low-traffic, cost-constrained deployment. Grafana Cloud exposes an OTLP gateway endpoint that accepts gRPC or HTTP OTLP directly with Basic Auth, so each service's existing `BatchSpanProcessor`/`PeriodicExportingMetricReader` can export straight to it. Trade-off: no local buffering across a Grafana Cloud outage beyond what the OTel SDK batches in-process — acceptable for a low-traffic prod app; a dropped batch during a rare SaaS outage is not worth a local durable queue at this scale.
 
 **2. Extend `shared/observability/__init__.py` instead of forking per-service config.**
 All four services already share this one module and call it identically (`init_observability(service_name)` with no explicit endpoint). The fix is entirely inside `init_observability`:
