@@ -16,8 +16,8 @@ interface AiChatContextType {
   closeAi: () => void;
   messages: ChatMessage[];
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
-  sessionId: string | null;
-  setSessionId: (id: string | null) => void;
+  conversationId: string | null;
+  setConversationId: (id: string | null) => void;
 }
 
 const AiChatContext = createContext<AiChatContextType | undefined>(undefined);
@@ -25,7 +25,7 @@ const AiChatContext = createContext<AiChatContextType | undefined>(undefined);
 export function AiChatProvider({ children }: { children: React.ReactNode }) {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const toggleAi = () => setIsAiOpen((v) => !v);
   const closeAi = () => setIsAiOpen(false);
@@ -38,8 +38,8 @@ export function AiChatProvider({ children }: { children: React.ReactNode }) {
         closeAi,
         messages,
         setMessages,
-        sessionId,
-        setSessionId,
+        conversationId,
+        setConversationId,
       }}
     >
       {children}

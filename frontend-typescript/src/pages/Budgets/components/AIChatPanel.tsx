@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import Button from "@/components/ui/Button";
-import { streamAiChat } from "@/api/budgetApi";
+import { streamAiChat } from "@/api/chatApi";
 import { useAiChat } from "@/context/AiChatContext";
 import { useLocation, useNavigate, matchPath } from "react-router-dom";
 
@@ -26,7 +26,7 @@ type StreamStatus =
   | { type: "streaming" };
 
 export function AIChatPanel() {
-  const { messages, setMessages, closeAi, sessionId, setSessionId } =
+  const { messages, setMessages, closeAi, conversationId, setConversationId } =
     useAiChat();
   const location = useLocation();
   const navigate = useNavigate();
@@ -82,7 +82,7 @@ export function AIChatPanel() {
 
     abortRef.current = streamAiChat(
       text,
-      sessionId,
+      conversationId,
       contextId,
       {
         onThinking: () => setStatus({ type: "thinking" }),
@@ -139,7 +139,7 @@ export function AIChatPanel() {
           setStatus({ type: "idle" });
         },
       },
-      (id) => setSessionId(id),
+      (id) => setConversationId(id),
       page,
     );
   };

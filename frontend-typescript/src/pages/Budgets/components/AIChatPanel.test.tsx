@@ -4,11 +4,11 @@ import { MemoryRouter } from "react-router-dom";
 import { vi, type Mock } from "vitest";
 import { AIChatPanel } from "./AIChatPanel";
 import { AiChatProvider } from "@/context/AiChatContext";
-import * as budgetApi from "@/api/budgetApi";
-import type { AiChatCallbacks } from "@/api/budgetApi";
+import * as chatAi from "@/api/chatApi";
+import type { AiChatCallbacks } from "@/api/chatApi";
 
-vi.mock("@/api/budgetApi", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/api/budgetApi")>();
+vi.mock("@/api/chatApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/chatApi")>();
   return {
     ...actual,
     streamAiChat: vi.fn(() => new AbortController()),
@@ -24,7 +24,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
   };
 });
 
-const streamAiChatMock = budgetApi.streamAiChat as unknown as Mock;
+const streamAiChatMock = chatAi.streamAiChat as unknown as Mock;
 
 function renderPanel(initialPath: string) {
   return render(

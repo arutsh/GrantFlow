@@ -50,8 +50,8 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 7. Frontend cutover — ticket #93 (`Frontend/Issue-93/cutover-chat-stream`) — HIGH-RISK
 
-- [ ] 7.1 Move `streamAiChat` to `src/api/chatApi.ts`; URL → `/chat/stream`; body → `{message, conversation_id, context_id, page}`; read `X-Conversation-Id`; rename `sessionId` state to `conversationId`
-- [ ] 7.2 Update ticket-#88 Vitest tests for new URL/fields
+- [x] 7.1 Move `streamAiChat` to `src/api/chatApi.ts`; URL → `/chat/stream`; body → `{message, conversation_id, context_id, page}`; read `X-Conversation-Id`; rename `sessionId` state to `conversationId` *(`streamAiChat`/`AiChatCallbacks` moved out of `budgetApi.ts` entirely, no dead duplicate left behind; `AiChatContext.tsx`'s `sessionId`/`setSessionId` renamed to `conversationId`/`setConversationId` throughout, `AIChatPanel.tsx` call site updated to match; `done` event's `budget_id` field deliberately left unchanged per spec)*
+- [x] 7.2 Update ticket-#88 Vitest tests for new URL/fields *(`AIChatPanel.test.tsx`'s `vi.mock` path moved to `@/api/chatApi` in the same commit as the panel's import — avoided the mock-path-mismatch footgun where tests stay green without exercising the real wiring; all 5 tests still pass unchanged since they assert `streamAiChat` call args positionally, not by field name)*
 - [ ] 7.3 Manual E2E via compose: create → auto-navigate → add line (URL context) → summarise; PR merged + soak
 
 ## 8. Retire users proxy — ticket #94 (`Users/Issue-94/retire-chat-proxy`)
