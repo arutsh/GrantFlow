@@ -38,7 +38,9 @@ if os.getenv("VSCODE_DEBUGGER") == "1":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("app_startup", service="chat")
-    app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+    app.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(settings.HTTP_CLIENT_TIMEOUT_SECONDS)
+    )
     app.state.ai_client = AiClient(settings.AI_SERVICE_URL, http=app.state.http_client)
     app.state.tool_registry = BudgetToolRegistry(app.state.http_client, settings.BUDGET_SERVICE_URL)
     yield

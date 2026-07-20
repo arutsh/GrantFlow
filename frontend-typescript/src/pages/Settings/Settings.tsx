@@ -1,15 +1,24 @@
 import { useState } from "react";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
-import { getAiSettings, saveAiKey, clearAiKey, ProviderStatus } from "@/api/aiSettingsApi";
+import {
+  getAiSettings,
+  saveAiKey,
+  clearAiKey,
+  ProviderStatus,
+} from "@/api/aiSettingsApi";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 // Mirrors AIModelName enum from the backend — models the platform officially supports
 const SUPPORTED_MODELS = [
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
   { value: "llama3.2", label: "Llama 3.2 (Ollama)" },
+  { value: "gemma4:12b", label: "Gemma 4 (Ollama)" },
 ];
 
-const PROVIDER_HELP: Record<string, { description: string; link: string; linkLabel: string }> = {
+const PROVIDER_HELP: Record<
+  string,
+  { description: string; link: string; linkLabel: string }
+> = {
   anthropic: {
     description:
       "Used for AI-powered budget creation. Your key is encrypted at rest and never exposed.",
@@ -23,7 +32,7 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
   const [keyInput, setKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [selectedModel, setSelectedModel] = useState(
-    provider.model ?? SUPPORTED_MODELS[0].value
+    provider.model ?? SUPPORTED_MODELS[0].value,
   );
   const [urlInput, setUrlInput] = useState(provider.base_url ?? "");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -56,10 +65,14 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
   return (
     <section className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex items-start justify-between mb-1">
-        <h2 className="text-base font-semibold text-gray-900">{provider.display_name}</h2>
+        <h2 className="text-base font-semibold text-gray-900">
+          {provider.display_name}
+        </h2>
         <span
           className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-            provider.has_key ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+            provider.has_key
+              ? "bg-green-100 text-green-700"
+              : "bg-gray-100 text-gray-500"
           }`}
         >
           {provider.has_key ? "Configured" : "Not configured"}
@@ -83,7 +96,9 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
       <div className="flex flex-col gap-3 mb-3">
         {/* Model selector */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Model</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Model
+          </label>
           <select
             value={selectedModel}
             onChange={(e) => setSelectedModel(e.target.value)}
@@ -100,13 +115,19 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
         {/* API key input (key-based providers only) */}
         {provider.requires_key && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">API Key</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              API Key
+            </label>
             <div className="relative">
               <input
                 type={showKey ? "text" : "password"}
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder={provider.has_key ? "Enter new key to replace existing" : "sk-ant-..."}
+                placeholder={
+                  provider.has_key
+                    ? "Enter new key to replace existing"
+                    : "sk-ant-..."
+                }
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
@@ -123,7 +144,9 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
         {/* Base URL input (URL-based providers like Ollama) */}
         {!provider.requires_key && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Base URL</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Base URL
+            </label>
             <input
               type="text"
               value={urlInput}
@@ -175,7 +198,8 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
 
       {saveMutation.isError && (
         <p className="text-sm text-red-600 mt-3">
-          {(saveMutation.error as any)?.response?.data?.detail ?? "Failed to save"}
+          {(saveMutation.error as any)?.response?.data?.detail ??
+            "Failed to save"}
         </p>
       )}
     </section>

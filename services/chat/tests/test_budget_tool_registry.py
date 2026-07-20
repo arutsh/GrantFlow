@@ -22,6 +22,14 @@ def _response(
     )
 
 
+def _malformed_response(request_url: str = "http://budget/x") -> httpx.Response:
+    """A 2xx with a body that isn't valid JSON — e.g. a proxy returning an
+    HTML error page with status 200."""
+    return httpx.Response(
+        status_code=200, content=b"<html>not json</html>", request=httpx.Request("GET", request_url)
+    )
+
+
 class TestListTools:
     def test_budgets_page_returns_curated_four(self):
         registry = BudgetToolRegistry(MagicMock(), "http://budget/api/v1")
@@ -75,6 +83,7 @@ class TestCallCreateBudget:
         assert http.post.await_args.kwargs["json"] == {
             "name": "USAID Grant",
             "external_funder_name": "USAID",
+            "status": "ai_draft",
         }
         assert http.post.await_args.kwargs["headers"] == {"Authorization": "Bearer tok"}
 
@@ -121,6 +130,30 @@ class TestCallAddBudgetLine:
         assert http.post.await_args.kwargs["json"]["budget_id"] == "budget-1"
         assert http.post.await_args.kwargs["json"]["description"] == "Travel"
 
+    async def test_success_message_never_embeds_the_raw_line_id(self):
+        http = _http_with_response("post", _response(200, {"id": "line-1"}))
+        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+
+        result = await registry.call_tool(
+            "add_budget_line",
+            {"category_name": "Travel", "amount": 500, "budget_id": "budget-1"},
+            token="tok",
+        )
+
+        assert "line-1" not in result.message
+
+    async def test_malformed_2xx_body_reported_as_failure(self):
+        http = _http_with_response("post", _malformed_response())
+        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+
+        result = await registry.call_tool(
+            "add_budget_line",
+            {"category_name": "Travel", "amount": 500, "budget_id": "budget-1"},
+            token="tok",
+        )
+
+        assert result.success is False
+
 
 class TestCallUpdateBudget:
     async def test_patches_only_provided_fields(self):
@@ -133,6 +166,16 @@ class TestCallUpdateBudget:
 
         payload = http.patch.await_args.kwargs["json"]
         assert payload == {"name": "New Name"}
+
+    async def test_success_message_never_embeds_the_raw_budget_id(self):
+        http = _http_with_response("patch", _response(200, {}))
+        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+
+        result = await registry.call_tool(
+            "update_budget", {"name": "New Name", "budget_id": "budget-1"}, token="tok"
+        )
+
+        assert "budget-1" not in result.message
 
 
 class TestCallGetBudgetSummary:

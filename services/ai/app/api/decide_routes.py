@@ -28,6 +28,7 @@ async def decide_route(
     resolved: ResolvedModel | None = Depends(get_resolved_model),
 ):
     customer_id = resolve_customer_id(valid_user)
+    user_id = str(valid_user["user_id"])
 
     if resolved is None:
         raise HTTPException(status_code=503, detail={"code": "no_provider"})
@@ -41,6 +42,8 @@ async def decide_route(
             history=body.conversation_history,
             tools=body.available_tools,
             domain_context=body.domain_context,
+            customer_id=customer_id,
+            user_id=user_id,
         )
     except AgentRunError as exc:
         logger.error("decide_model_error", customer_id=customer_id, error=str(exc))

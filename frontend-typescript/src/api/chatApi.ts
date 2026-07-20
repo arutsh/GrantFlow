@@ -1,5 +1,43 @@
 import { getAuthToken } from "@/api/axiosConfig";
-import { GATEWAY_BASE_URL } from "./gatewayApi";
+import gatewayApi, { GATEWAY_BASE_URL } from "./gatewayApi";
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  message_count: number;
+  last_activity_at: string;
+  created_at: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  tool_name: string | null;
+  tool_params: Record<string, unknown> | null;
+  tool_result: Record<string, unknown> | null;
+  created_at: string;
+}
+
+// Any-device conversation retrieval (specs/chat-conversations.md) — used to
+// rehydrate the visible transcript on app load instead of losing it on
+// every page reload, since the chat service (not the browser) is the source
+// of truth for history.
+export const fetchLatestConversation = async (): Promise<ConversationSummary | null> => {
+  const { data } = await gatewayApi.get<ConversationSummary[]>("/chat/conversations", {
+    params: { limit: 1 },
+  });
+  return data[0] ?? null;
+};
+
+export const fetchConversationMessages = async (
+  conversationId: string,
+): Promise<ConversationMessage[]> => {
+  const { data } = await gatewayApi.get<ConversationMessage[]>(
+    `/chat/conversations/${conversationId}/messages`,
+  );
+  return data;
+};
 
 export type AiChatCallbacks = {
   onThinking?: () => void;
