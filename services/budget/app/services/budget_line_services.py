@@ -3,6 +3,7 @@ from app.crud.budget_crud import (
     get_budget,
     update_budget,
     list_budgets,
+    recalculate_budget_total,
 )
 from app.crud.budget_line_crud import (
     create_budget_line,
@@ -39,7 +40,7 @@ def create_budget_line_service(
         db, valid_user, category_id=budget_line.category_id, category_name=budget_line.category_name
     )
 
-    return create_budget_line(
+    created_line = create_budget_line(
         db,
         user_id=valid_user["user_id"],
         budget_id=budget_line.budget_id,
@@ -48,6 +49,8 @@ def create_budget_line_service(
         amount=budget_line.amount,
         extra_fields=budget_line.extra_fields,
     )
+    recalculate_budget_total(db, budget_line.budget_id)
+    return created_line
 
 
 def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_user: dict, db):
@@ -152,6 +155,7 @@ def update_budget_line_service(
             "Budget Line not found",
             status.HTTP_404_NOT_FOUND,
         )
+    recalculate_budget_total(db, updated_line.budget_id)
     return updated_line
 
 
@@ -162,5 +166,8 @@ def delete_budget_line_service(budget_line_id: UUID, valid_user: dict, db):
     )
 
     if valid_budget_line:
-        return delete_budget_line(session=db, budget_line=valid_budget_line)
+        budget_id = valid_budget_line.budget_id
+        result = delete_budget_line(session=db, budget_line=valid_budget_line)
+        recalculate_budget_total(db, budget_id)
+        return result
     return False
