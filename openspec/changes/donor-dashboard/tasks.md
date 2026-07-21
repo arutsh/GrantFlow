@@ -8,7 +8,7 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [x] 1.4 Add unit tests: create/update/delete of a budget line updates the parent `Budget.total_amount` correctly; migration backfill produces the correct value for a budget with pre-existing lines *(`tests/test_budget_line_services.py`: 4 tests mocking the crud layer per this service's existing convention, verifying `recalculate_budget_total` is called with the right `budget_id` on create/update/delete; 3 tests hitting a real sqlite session for the SQL aggregation itself — sum, null-amount handling, no-lines, unknown-budget)*
 - [x] 1.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly; PR merged *(verified against the local dev Postgres DB: upgrade 000002→000003 succeeded, downgrade -1 dropped the column cleanly, re-upgrade to head succeeded; full `services/budget` suite — 55 tests — passes; black+flake8 --max-line-length=100 clean. PR not yet opened — pending user approval to commit/push. `/code-review high` run on this ticket's diff — 8 findings, all CONFIRMED, all deliberately deferred (deferred list: [[project-donor-dashboard-code-review-backlog]]) — not a blocker for this dashboard version per explicit user call, most notable: `create_budget_with_lines_service`'s rollback path already bypasses `recalculate_budget_total` today, not just hypothetically.)*
 
-## 2. Expose donor/grantee role flags — ticket #134 (`Users/Issue-134/expose-customer-role-flags`)
+## 2. Expose donor/grantee role flags — ticket #135 (`Users/Issue-135/expose-customer-role-flags`)
 
 - [ ] 2.1 Add `is_ngo: bool`, `is_donor: bool` to `TokenResponse` in `shared/schemas/auth_schema.py`
 - [ ] 2.2 In `services/users/app/api/auth_routes.py`, look up the authenticating user's `CustomerModel` in `/auth/login` and `/auth/refresh` and populate the new fields (both `false`/absent when the user has no `customer_id`)
@@ -16,7 +16,7 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [ ] 2.4 Add/update backend tests: login/refresh response includes correct flags for a donor customer, an NGO customer, a customer that is both, and a user with no `customer_id`
 - [ ] 2.5 Add a frontend test confirming `AuthContext` persists and exposes the flags after login; PR merged
 
-## 3. Donor-scoped backend endpoints — ticket #135 (`Budget/Issue-135/donor-scoped-endpoints`)
+## 3. Donor-scoped backend endpoints — ticket #136 (`Budget/Issue-136/donor-scoped-endpoints`)
 
 - [ ] 3.1 Add a `funding_customer_id: UUID | None = None` filter parameter to `list_budgets` in `services/budget/app/crud/budget_crud.py`
 - [ ] 3.2 Add a `require_donor(valid_user)` helper (in `services/budget/app/services/customer_client.py`) that calls `get_customer_cached`/checks `is_donor` and raises 403 if false — reuse the existing `validate_customer_can_fund` lookup rather than duplicating the HTTP call
@@ -26,7 +26,7 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [ ] 3.6 Add routes in `services/budget/app/api/budget_routes.py`: `GET /budgets/funded/summary`, `GET /budgets/funded/grantees`, `GET /budgets/funded/`, all gated by `require_donor`; add response schemas (`FundedBudgetsSummary`, `GranteeSummary`, funded-budget list item) in `shared/schemas/`
 - [ ] 3.7 Add API tests: donor with data, donor with zero funded budgets, non-donor gets 403, budget funded by a different donor is excluded from results; PR merged
 
-## 4. Donor dashboard page — ticket #136 (`Frontend/Issue-136/donor-dashboard-page`)
+## 4. Donor dashboard page — ticket #137 (`Frontend/Issue-137/donor-dashboard-page`)
 
 - [ ] 4.1 Add `frontend-typescript/src/api/donorDashboardApi.ts` with `getFundedBudgetsSummary`, `getFundedGrantees`, `getFundedBudgets` (following the existing `gatewayApi` axios pattern in `budgetApi.ts`) and corresponding TypeScript types
 - [ ] 4.2 Create `frontend-typescript/src/pages/DonorDashboard/DonorDashboard.tsx` using TanStack Query to fetch summary/grantees/funded-budgets; stat tiles reuse the existing stat-card visual pattern from `src/pages/Dashboard/Dashboard.tsx`
