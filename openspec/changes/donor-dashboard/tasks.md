@@ -10,16 +10,15 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 2. Expose donor/grantee role flags — ticket #135 (`Users/Issue-135/expose-customer-role-flags`)
 
-- [ ] 2.1 Add `is_ngo: bool`, `is_donor: bool` to `TokenResponse` in `shared/schemas/auth_schema.py`
-- [ ] 2.2 In `services/users/app/api/auth_routes.py`, look up the authenticating user's `CustomerModel` in `/auth/login` and `/auth/refresh` and populate the new fields (both `false`/absent when the user has no `customer_id`)
-- [ ] 2.3 Update `frontend-typescript/src/context/AuthContext.tsx`: store `isNgo`/`isDonor` alongside `token`/`username` (localStorage/sessionStorage per the existing `remember` pattern), expose them via `useAuth()`
-- [ ] 2.4 Add/update backend tests: login/refresh response includes correct flags for a donor customer, an NGO customer, a customer that is both, and a user with no `customer_id`
-- [ ] 2.5 Add a frontend test confirming `AuthContext` persists and exposes the flags after login; PR merged
+- [x] 2.1 In `services/users/app/api/auth_routes.py`, look up the authenticating user's `CustomerModel` in `/auth/login` and `/auth/refresh` (both `false`/absent when the user has no `customer_id`) and add `is_ngo`/`is_donor` to the claims `dict` passed to `create_access_token(...)` at both call sites — `TokenResponse` (`shared/schemas/auth_schema.py`) is unchanged, the flags never enter the JSON body *(also applied to `/register`'s token-issuance path for consistency — same claims dict shape, same `_customer_role_claims` helper)*
+- [x] 2.2 Update `frontend-typescript/src/context/AuthContext.tsx`: decode the access token with the existing `jwt-decode` dependency to derive `isNgo`/`isDonor`, expose them via `useAuth()` *(`decodeRoleFlags` helper, memoized on `token`; falls back to `false`/`false` on missing or undecodable token)*
+- [x] 2.3 Add/update backend tests: decoded JWT payload (both `/auth/login` and `/auth/refresh`) carries correct `is_ngo`/`is_donor` for a donor customer, an NGO customer, a customer that is both, and a user with no `customer_id` *(`services/users/tests/test_auth_routes.py`: 9 tests — 4 login, 3 refresh, 2 register — mocking the crud layer per convention, decoding the real returned JWT and asserting claims)*
+- [x] 2.4 Add a frontend test confirming `AuthContext` derives and exposes the flags from the decoded token after login; PR merged *(extended the existing `AuthContext.test.tsx` — 4 new tests: unauthenticated default, donor-only, both-roles, and flags re-derived from a token already in storage on mount)*
 
 ## 3. Donor-scoped backend endpoints — ticket #136 (`Budget/Issue-136/donor-scoped-endpoints`)
 
 - [ ] 3.1 Add a `funding_customer_id: UUID | None = None` filter parameter to `list_budgets` in `services/budget/app/crud/budget_crud.py`
-- [ ] 3.2 Add a `require_donor(valid_user)` helper (in `services/budget/app/services/customer_client.py`) that calls `get_customer_cached`/checks `is_donor` and raises 403 if false — reuse the existing `validate_customer_can_fund` lookup rather than duplicating the HTTP call
+- [ ] 3.2 Add a `require_donor(valid_user)` helper (in `services/budget/app/services/customer_client.py`) that reads `is_donor` directly off `valid_user` (the decoded JWT payload from `get_validated_user`) and raises 403 if false — no `get_customer_cached`/HTTP call, since `is_donor` now travels in the token claims (see ticket #135)
 - [ ] 3.3 Add `get_funded_budgets_summary(db, funding_customer_id)` in `budget_crud.py` returning `{total_budgets, total_allocated}` via a single `COUNT`/`SUM(total_amount)` query
 - [ ] 3.4 Add `get_funded_grantees(db, funding_customer_id)` in `budget_crud.py` returning per-`owner_id` `budgets_count`/`total_allocated` via `GROUP BY owner_id`; add a service function enriching results with grantee `name`/`country` via the existing `get_customers_by_ids` batch client (same pattern as `populate_budget_with_user_details`)
 - [ ] 3.5 Add a service function for the funded-budgets list that calls `list_budgets(funding_customer_id=...)` and reuses `populate_budget_with_user_details` for the `owner` (grantee) name

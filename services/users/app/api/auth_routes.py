@@ -15,7 +15,11 @@ from app.utils.security import (
 )
 from app.crud.sessions_curd import create_session, get_session_by_id
 from app.crud.user_crud import get_user_by_email, create_user
+from app.crud.customer_crud import get_customer
 from app.utils.redis import _cache_get, _delete_key
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -26,6 +30,35 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _role_flags(customer) -> dict:
+    """is_ngo/is_donor for the JWT, false when there is no customer."""
+    if not customer:
+        return {"is_ngo": False, "is_donor": False}
+    return {"is_ngo": customer.is_ngo, "is_donor": customer.is_donor}
+
+
+def _customer_role_claims(db: Session, customer_id) -> dict:
+    """Same as _role_flags, but for callers with only a customer_id, no
+    already-loaded customer (e.g. a just-inserted user with nothing eager-
+    loaded yet). Prefer passing the loaded customer via _role_flags directly
+    when one is already in hand — UserModel.customer is lazy="joined", so
+    it usually is.
+
+    Swallows lookup failures instead of raising: callers of this reach it
+    after already durably committing a user/session, so a transient DB
+    error here should degrade the claims to false/false, not turn an
+    already-successful registration into a 500 with no token issued.
+    """
+    if not customer_id:
+        return {"is_ngo": False, "is_donor": False}
+    try:
+        customer = get_customer(db, customer_id)
+    except Exception:
+        logger.exception("Failed to look up customer %s for role claims", customer_id)
+        return {"is_ngo": False, "is_donor": False}
+    return _role_flags(customer)
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -56,6 +89,7 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
             "session_id": session.id,
             "role": user.role,
             "customer_id": user.customer_id,
+            **_customer_role_claims(db, user.customer_id),
         }
     )
 
@@ -82,6 +116,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             "session_id": session.id,
             "role": user.role,
             "customer_id": user.customer_id,
+            **_role_flags(user.customer),
         }
     )
 
@@ -116,6 +151,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
                 "session_id": s.id,
                 "role": s.user.role,
                 "customer_id": s.user.customer_id,
+                **_role_flags(s.user.customer),
             }
         )
 
