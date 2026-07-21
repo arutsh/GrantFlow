@@ -7,14 +7,17 @@ export interface JwtPayload {
   [key: string]: any; // allow extra fields
 }
 
-export function getUserIdFromToken(token: string | null): string | null {
+export function safeDecodeToken<T>(token: string | null): T | null {
   if (!token) return null;
 
   try {
-    const decoded = jwtDecode<JwtPayload>(token);
-    return decoded.user_id || null;
+    return jwtDecode<T>(token);
   } catch (error) {
     console.error("Invalid token:", error);
     return null;
   }
+}
+
+export function getUserIdFromToken(token: string | null): string | null {
+  return safeDecodeToken<JwtPayload>(token)?.user_id ?? null;
 }

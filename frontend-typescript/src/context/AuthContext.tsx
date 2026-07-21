@@ -4,18 +4,35 @@ import {
   useState,
   ReactNode,
   useEffect,
+  useMemo,
 } from "react";
+import { safeDecodeToken } from "@/utils/token";
 
 export const STATUS = {
   PENDING: "pending",
   ACTIVE: "active",
 };
 
+interface TokenClaims {
+  is_ngo?: boolean;
+  is_donor?: boolean;
+}
+
+function decodeRoleFlags(token: string | null): {
+  isNgo: boolean;
+  isDonor: boolean;
+} {
+  const claims = safeDecodeToken<TokenClaims>(token);
+  return { isNgo: !!claims?.is_ngo, isDonor: !!claims?.is_donor };
+}
+
 interface AuthContextType {
   username: string | null;
   token: string | null;
   isAuthenticated: boolean;
   isRegistering: boolean;
+  isNgo: boolean;
+  isDonor: boolean;
   login: (
     token: string,
     username: string,
@@ -40,6 +57,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const { isNgo, isDonor } = useMemo(() => decodeRoleFlags(token), [token]);
 
   useEffect(() => {
     // Check both storages
@@ -107,6 +126,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         username,
         token,
         isAuthenticated: !!token,
+        isNgo,
+        isDonor,
         login,
         logout,
         isRegistering,

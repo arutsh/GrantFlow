@@ -4,11 +4,20 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "@/App";
 
+function makeFakeJwt(payload: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: "none", typ: "JWT" }));
+  const body = btoa(JSON.stringify(payload));
+  return `${header}.${body}.signature`;
+}
+
 function TestComponent() {
-  const { isAuthenticated, login, logout, username } = useAuth();
+  const { isAuthenticated, isNgo, isDonor, login, logout, username } =
+    useAuth();
   return (
     <div>
       <div>Auth: {isAuthenticated ? "Yes" : "No"}</div>
+      <div data-testid="is-ngo">{String(isNgo)}</div>
+      <div data-testid="is-donor">{String(isDonor)}</div>
       <button
         onClick={() =>
           login("fake-token", "john", true, "active", "refresh-token")
@@ -22,6 +31,32 @@ function TestComponent() {
         }
       >
         Login
+      </button>
+      <button
+        onClick={() =>
+          login(
+            makeFakeJwt({ is_donor: true }),
+            "john",
+            true,
+            "active",
+            "refresh-token",
+          )
+        }
+      >
+        LoginDonor
+      </button>
+      <button
+        onClick={() =>
+          login(
+            makeFakeJwt({ is_ngo: true, is_donor: true }),
+            "john",
+            true,
+            "active",
+            "refresh-token",
+          )
+        }
+      >
+        LoginNgoAndDonor
       </button>
       <button onClick={logout}>Logout</button>
     </div>
@@ -92,5 +127,62 @@ describe("AuthProvider", () => {
       expect(screen.getByText(/Auth: no/i)).toBeInTheDocument();
     });
     expect(localStorage.getItem("token")).toBeNull();
+  });
+
+  it("defaults isNgo/isDonor to false when unauthenticated", () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+    expect(screen.getByTestId("is-ngo")).toHaveTextContent("false");
+    expect(screen.getByTestId("is-donor")).toHaveTextContent("false");
+  });
+
+  it("derives isDonor from the decoded token after login", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginDonor"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-donor")).toHaveTextContent("true");
+    });
+    expect(screen.getByTestId("is-ngo")).toHaveTextContent("false");
+  });
+
+  it("derives both isNgo and isDonor for a customer holding both roles", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginNgoAndDonor"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-ngo")).toHaveTextContent("true");
+    });
+    expect(screen.getByTestId("is-donor")).toHaveTextContent("true");
+  });
+
+  it("re-derives flags from a token already persisted in storage on mount", async () => {
+    localStorage.setItem("token", makeFakeJwt({ is_donor: true }));
+    localStorage.setItem("username", "john");
+
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Auth: Yes")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("is-donor")).toHaveTextContent("true");
+    expect(screen.getByTestId("is-ngo")).toHaveTextContent("false");
   });
 });

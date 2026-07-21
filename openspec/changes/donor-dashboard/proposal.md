@@ -12,7 +12,7 @@ A customer's `is_ngo` and `is_donor` flags (`CustomerModel`) are independent —
   - Grantee directory: distinct grantees the donor funds, enriched with name/country and a per-grantee budget count and allocated total.
   - Funded-budgets list: budgets where `funding_customer_id` matches the authenticated donor, enriched with grantee name (reusing the existing `populate_budget_with_user_details` enrichment pattern).
 - Add a new frontend route/page (`/donor-dashboard`) with three stat tiles (Total Budgets, Total Allocated, Total Grantees), a grantee list, and a funded-budgets table whose "View Reports" button is rendered disabled with a "Coming soon" tooltip (no reporting UI exists yet — mocked on purpose).
-- Extend the login/refresh response (`TokenResponse`) with `is_ngo`/`is_donor`, populated from the authenticating user's `CustomerModel`, and store them in `AuthContext`. The nav entry and the donor dashboard's content are shown based on `is_donor`; a customer with both `is_ngo` and `is_donor` sees both this dashboard and the existing owner-scoped one.
+- Add `is_ngo`/`is_donor` as JWT claims (populated from the authenticating user's `CustomerModel` at `/auth/login`/`/auth/refresh`), decoded client-side into `AuthContext` via the existing `jwt-decode` dependency. The nav entry and the donor dashboard's content are shown based on `is_donor`; a customer with both `is_ngo` and `is_donor` sees both this dashboard and the existing owner-scoped one. Backend gating (`require_donor`) reads the same claims directly off the decoded JWT — no extra lookup.
 
 ## Capabilities
 
@@ -25,6 +25,6 @@ A customer's `is_ngo` and `is_donor` flags (`CustomerModel`) are independent —
 ## Impact
 
 - **New code**: `services/budget/app/api` donor-dashboard routes, corresponding CRUD/service functions, new Pydantic response schemas in `shared/schemas/`; `frontend-typescript/src/pages/DonorDashboard/` page + components; new `donorDashboardApi.ts`.
-- **Modified code**: `services/budget/app/models/budget.py` (`total_amount` column), `app/crud/budget_crud.py` (`funding_customer_id` filter), `app/services/budget_line_services.py` (recalculate `total_amount` on line write), `shared/schemas/auth_schema.py` (`TokenResponse` gains `is_ngo`/`is_donor`), `services/users/app/api/auth_routes.py` (populate them on login/refresh), `frontend-typescript/src/context/AuthContext.tsx`, `App.tsx` routing, sidebar/nav component.
+- **Modified code**: `services/budget/app/models/budget.py` (`total_amount` column), `app/crud/budget_crud.py` (`funding_customer_id` filter), `app/services/budget_line_services.py` (recalculate `total_amount` on line write), `services/users/app/api/auth_routes.py` (add `is_ngo`/`is_donor` to JWT claims on login/refresh), `frontend-typescript/src/context/AuthContext.tsx` (decode claims via `jwt-decode`), `App.tsx` routing, sidebar/nav component.
 - **Database**: one new Alembic migration adding `budgets.total_amount` (nullable float, default 0), backfilled from existing `budget_lines.amount` sums for pre-existing rows.
 - **Out of scope / explicit fast-follows**: real "View Reports" behavior (depends on the separate `budget-reports` change), pagination on the new list endpoints (acceptable for expected donor-scale data volumes today).
