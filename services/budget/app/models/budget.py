@@ -40,6 +40,9 @@ class BudgetModel(Base, AuditMixin):
     donor_template_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("donor_templates.id"), nullable=True
     )
+    total_amount: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=0, server_default=text("0")
+    )
     lines: Mapped[list["BudgetLineModel"]] = relationship(
         "BudgetLineModel", back_populates="budget"
     )

@@ -233,6 +233,7 @@ class TestAiDraftBudgetStatus:
                 "app.services.budget_line_services.create_budget_line",
                 return_value=line,
             ),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,

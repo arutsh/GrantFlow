@@ -1,5 +1,6 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models.budget import BudgetModel, BudgetStatus
+from app.models.budget import BudgetModel, BudgetLineModel, BudgetStatus
 from uuid import UUID
 
 
@@ -86,3 +87,20 @@ def delete_budget(session: Session, budget: BudgetModel) -> bool:
     session.delete(budget)
     session.commit()
     return True
+
+
+def recalculate_budget_total(session: Session, budget_id: UUID) -> BudgetModel | None:
+    """Recompute total_amount from this budget's lines and persist it."""
+    budget = get_budget(session, budget_id)
+    if not budget:
+        return None
+
+    total = (
+        session.query(func.coalesce(func.sum(BudgetLineModel.amount), 0))
+        .filter(BudgetLineModel.budget_id == budget_id)
+        .scalar()
+    )
+    budget.total_amount = total
+    session.commit()
+    session.refresh(budget)
+    return budget

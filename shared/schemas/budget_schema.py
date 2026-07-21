@@ -24,6 +24,7 @@ class BudgetBase(BaseModel):
     status: BudgetStatus = BudgetStatus.draft
     duration_months: int | None = None
     external_funder_name: str | None = None
+    total_amount: float | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
     updated_at: datetime | None = None
