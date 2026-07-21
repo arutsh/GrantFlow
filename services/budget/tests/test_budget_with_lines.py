@@ -102,6 +102,7 @@ class TestCreateBudgetWithLinesEndpoint:
             patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
             patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
             patch("app.services.budget_line_services.create_budget_line", side_effect=mock_lines),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -124,6 +125,7 @@ class TestCreateBudgetWithLinesEndpoint:
             patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
             patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
             patch("app.services.budget_line_services.create_budget_line", return_value=mock_line),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -164,6 +166,7 @@ class TestCreateBudgetWithLinesEndpoint:
             patch(
                 "app.services.budget_line_services.create_budget_line", side_effect=line_side_effect
             ),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch("app.services.budget_services.delete_budget_line") as mock_delete_line,
             patch("app.services.budget_services.delete_budget") as mock_delete_budget,
         ):
@@ -208,6 +211,7 @@ class TestCreateBudgetWithLinesEndpoint:
             patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
             patch(_CATEGORY_LOOKUP, return_value=_mock_category("Travel")),
             patch("app.services.budget_line_services.create_budget_line", return_value=mock_line),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
