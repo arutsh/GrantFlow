@@ -45,9 +45,9 @@ def test_get_budget_endpoint_found():
     budget_id = str(uuid.uuid4())
 
     with patch(
-        "app.api.budget_routes.get_budget_service",
+        "app.api.budget_routes.get_viewable_budget_service",
         AsyncMock(return_value={"id": budget_id, "name": "Test Budget"}),
-    ), patch("app.api.budget_routes.get_budget_lines_service", return_value=[]):
+    ), patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]):
         response = client.get(f"/api/v1/budgets/{budget_id}")
 
     assert response.status_code == 200
@@ -60,7 +60,7 @@ def test_get_budget_endpoint_not_found():
     budget_id = str(uuid.uuid4())
 
     with patch(
-        "app.api.budget_routes.get_budget_service",
+        "app.api.budget_routes.get_viewable_budget_service",
         AsyncMock(side_effect=DomainError("Budget Not found", 400)),
     ):
         response = client.get(f"/api/v1/budgets/{budget_id}")

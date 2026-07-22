@@ -39,10 +39,17 @@ def get_budget(
     return query.filter(BudgetModel.id == budget_id).first()
 
 
-def list_budgets(session: Session, customer_id: UUID | None = None, limit: int = 100):
+def list_budgets(
+    session: Session,
+    customer_id: UUID | None = None,
+    funding_customer_id: UUID | None = None,
+    limit: int = 100,
+):
     query = session.query(BudgetModel)
     if customer_id:
         query = query.filter(BudgetModel.owner_id == customer_id)
+    if funding_customer_id:
+        query = query.filter(BudgetModel.funding_customer_id == funding_customer_id)
     return query.limit(limit).all()
 
 
@@ -87,6 +94,55 @@ def delete_budget(session: Session, budget: BudgetModel) -> bool:
     session.delete(budget)
     session.commit()
     return True
+
+
+def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> dict:
+    total_budgets = (
+        session.query(func.count(BudgetModel.id))
+        .filter(BudgetModel.funding_customer_id == funding_customer_id)
+        .scalar()
+    )
+    currency_rows = (
+        session.query(
+            BudgetModel.local_currency,
+            func.coalesce(func.sum(BudgetModel.total_amount), 0),
+        )
+        .filter(BudgetModel.funding_customer_id == funding_customer_id)
+        .group_by(BudgetModel.local_currency)
+        .all()
+    )
+    return {
+        "total_budgets": total_budgets,
+        "total_allocated_by_currency": [
+            {"currency": currency, "total_allocated": total} for currency, total in currency_rows
+        ],
+    }
+
+
+# TODO I guess return can be done with pydantic / revisit
+def get_funded_grantees(session: Session, funding_customer_id: UUID) -> list[dict]:
+    rows = (
+        session.query(
+            BudgetModel.owner_id,
+            BudgetModel.local_currency,
+            func.count(BudgetModel.id).label("budgets_count"),
+            func.coalesce(func.sum(BudgetModel.total_amount), 0).label("total_allocated"),
+        )
+        .filter(BudgetModel.funding_customer_id == funding_customer_id)
+        .group_by(BudgetModel.owner_id, BudgetModel.local_currency)
+        .all()
+    )
+    grantees: dict = {}
+    for row in rows:
+        grantee = grantees.setdefault(
+            row.owner_id,
+            {"owner_id": row.owner_id, "budgets_count": 0, "total_allocated_by_currency": []},
+        )
+        grantee["budgets_count"] += row.budgets_count
+        grantee["total_allocated_by_currency"].append(
+            {"currency": row.local_currency, "total_allocated": row.total_allocated}
+        )
+    return list(grantees.values())
 
 
 def recalculate_budget_total(session: Session, budget_id: UUID) -> BudgetModel | None:

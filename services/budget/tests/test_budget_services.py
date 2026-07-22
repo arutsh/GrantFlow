@@ -84,7 +84,7 @@ class TestPopulateBudgetGracefulDegradation:
                 new_callable=AsyncMock,
                 side_effect=Exception("customers service unavailable"),
             ),
-            patch("app.api.budget_routes.get_budget_lines_service", return_value=[]),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
         ):
             response = client.get(f"/api/v1/budgets/{budget.id}")
 
@@ -114,7 +114,7 @@ class TestPopulateBudgetGracefulDegradation:
                 new_callable=AsyncMock,
                 side_effect=ConnectionError("timeout"),
             ),
-            patch("app.api.budget_routes.get_budget_lines_service", return_value=[]),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
         ):
             response = client.get(f"/api/v1/budgets/{budget.id}")
 
@@ -142,7 +142,7 @@ class TestPopulateBudgetGracefulDegradation:
                 new_callable=AsyncMock,
                 return_value={},
             ),
-            patch("app.api.budget_routes.get_budget_lines_service", return_value=[]),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
         ):
             response = client.get(f"/api/v1/budgets/{budget.id}")
 
@@ -181,7 +181,7 @@ class TestPopulateBudgetGracefulDegradation:
                 new_callable=AsyncMock,
                 return_value=customers_map,
             ),
-            patch("app.api.budget_routes.get_budget_lines_service", return_value=[]),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
         ):
             response = client.get(f"/api/v1/budgets/{budget.id}")
 

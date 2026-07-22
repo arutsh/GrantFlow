@@ -48,6 +48,7 @@ export interface Budget {
   status: string;
   duration_months?: number;
   local_currency?: string;
+  total_amount?: number;
   owner?: CustomerOut;
   funder?: CustomerOut | { name?: string; id?: string };
   trace?: TraceOut;

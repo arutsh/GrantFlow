@@ -79,6 +79,22 @@ def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_user: dic
     )
 
 
+def get_viewable_budget_lines_service(db, valid_user, budget_id):
+    """Like get_budget_lines_service for a single budget_id, but also allows a
+    donor who funds this budget (not just its owner) to view its lines. Used
+    only by the read/detail route — line create/update/delete keep the
+    stricter owner-only checks in this file unchanged."""
+    from app.services.budget_services import _can_view_budget
+
+    budget = get_budget(db, budget_id)
+    if not budget or not _can_view_budget(budget, valid_user):
+        raise DomainError(
+            "Budget Not found",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    return list_budget_lines(db, budget_id=budget_id)
+
+
 def get_budget_lines_service(
     db,
     valid_user,

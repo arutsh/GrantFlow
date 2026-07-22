@@ -76,7 +76,7 @@ The system SHALL provide a donor dashboard page displaying the donor's total bud
 - **THEN** the page SHALL show an empty/no-data state instead of an error or blank screen
 
 ### Requirement: Donor Dashboard Visibility Driven By Customer Flags
-The system SHALL expose the authenticated customer's `is_ngo` and `is_donor` flags to the frontend (via the login/refresh response), and the donor dashboard's navigation entry SHALL be shown or hidden based on `is_donor` alone — independent of `is_ngo`, since a customer may hold both flags at once.
+The system SHALL expose the authenticated customer's `is_ngo` and `is_donor` flags to the frontend (as JWT claims on the login/refresh access token, decoded client-side — not as separate fields in the response body), and the donor dashboard's navigation entry SHALL be shown or hidden based on `is_donor` alone — independent of `is_ngo`, since a customer may hold both flags at once.
 
 #### Scenario: Donor-only customer
 - **WHEN** the authenticated customer has `is_donor = true` and `is_ngo = false`

@@ -1,6 +1,7 @@
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import { TableCommon } from "@/components/ui/Table";
 import { utcToLocal } from "@/utils/datetime";
+import { formatCurrency } from "@/utils/currency";
 import { createColumnHelper } from "@tanstack/react-table";
 import { Edit2, Trash2 } from "lucide-react";
 
@@ -45,9 +46,14 @@ export function TableView({
       header: "Funder",
       cell: (info) => info.getValue()?.name || "N/A",
     }),
-    columnHelper.accessor("amount", {
+    columnHelper.accessor("total_amount", {
       header: "Amount",
-      cell: (info) => `$${info.getValue()?.toFixed(2) || ""}`,
+      cell: (info) => {
+        const value = info.getValue();
+        return value != null
+          ? formatCurrency(value, info.row.original.local_currency)
+          : "N/A";
+      },
     }),
     columnHelper.accessor("duration_months", {
       header: "Duration (months)",

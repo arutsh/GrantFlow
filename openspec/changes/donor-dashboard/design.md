@@ -51,4 +51,4 @@ One new Alembic revision on `services/budget`, chained off the current head, add
 
 ## Open Questions
 
-- Whether `/budgets/funded/grantees` should also surface each grantee's budget `status` breakdown (e.g. how many are draft/active) — deferred; today's proposal keeps it to count + total allocated per the minimal "list of grantees" ask.
+- ~~Whether `/budgets/funded/grantees` should also surface each grantee's budget `status` breakdown (e.g. how many are draft/active)~~ — **Decided: no, not in this change.** Kept to count + total allocated per the minimal "list of grantees" ask. A per-grantee status/change breakdown is better served by a future budget audit-log feature (tracking all changes to a `Budget`, not just its current status snapshot) than by extending this endpoint; tracked as backlog, not part of `donor-dashboard`.

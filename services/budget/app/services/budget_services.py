@@ -1,4 +1,5 @@
 import asyncio
+import structlog
 from fastapi import status, HTTPException
 from app.crud.budget_crud import (
     create_budget,
@@ -6,6 +7,8 @@ from app.crud.budget_crud import (
     update_budget,
     list_budgets,
     delete_budget,
+    get_funded_budgets_summary,
+    get_funded_grantees,
 )
 from app.crud.budget_line_crud import delete_budget_line
 from app.core.exceptions import DomainError, PermissionDenied
@@ -20,6 +23,8 @@ from app.models import BudgetModel
 
 from app.services.user_client import get_customers_by_ids
 from app.services.user_cache import get_users_by_ids_cached
+
+logger = structlog.get_logger(__name__)
 
 
 async def create_budget_service(
@@ -115,6 +120,35 @@ async def get_budget_service(budget_id, valid_user, db, include_user_details: bo
     return result[0]
 
 
+def _can_view_budget(budget: BudgetModel, valid_user: dict) -> bool:
+    if valid_user["role"] == "superuser":
+        return True
+    customer_id = valid_user.get("customer_id")
+    if not customer_id:
+        return False
+    return str(budget.owner_id) == str(customer_id) or str(budget.funding_customer_id) == str(
+        customer_id
+    )
+
+
+async def get_viewable_budget_service(
+    budget_id, valid_user, db, include_user_details: bool = False
+):
+    """Like get_budget_service, but a donor who funds this budget (not just its
+    owner) can also view it. Used only by the read/detail route — update and
+    delete keep the stricter owner-only get_budget_service unchanged."""
+    budget = get_budget(db, budget_id)
+    if not budget or not _can_view_budget(budget, valid_user):
+        raise DomainError(
+            "Budget Not found",
+            status.HTTP_400_BAD_REQUEST,
+        )
+    if not include_user_details:
+        return budget
+    result = await populate_budget_with_user_details([budget], valid_user)
+    return result[0]
+
+
 async def list_budget_service(valid_user, db, include_user_details: bool = False):
     if valid_user["role"] == "superuser":
         return list_budgets(db)
@@ -126,6 +160,36 @@ async def list_budget_service(valid_user, db, include_user_details: bool = False
     budgets = list_budgets(db, customer_id=customer_id)
     if not include_user_details:
         return budgets
+    return await populate_budget_with_user_details(budgets=budgets, valid_user=valid_user)
+
+
+def get_funded_budgets_summary_service(funding_customer_id: UUID, db) -> dict:
+    return get_funded_budgets_summary(db, funding_customer_id)
+
+
+# TODO return in pydantic?
+async def get_funded_grantees_service(funding_customer_id: UUID, valid_user: dict, db) -> list:
+    grantees = get_funded_grantees(db, funding_customer_id)
+    owner_ids = [g["owner_id"] for g in grantees if g["owner_id"]]
+    try:
+        customers_map = await get_customers_by_ids(owner_ids, valid_user.get("token", ""))
+    except Exception as exc:
+        logger.warning("get_funded_grantees_service: customer lookup failed", error=str(exc))
+        customers_map = {}
+    return [
+        {
+            "id": g["owner_id"],
+            "name": (customers_map.get(g["owner_id"]) or {}).get("name"),
+            "country": (customers_map.get(g["owner_id"]) or {}).get("country"),
+            "budgets_count": g["budgets_count"],
+            "total_allocated_by_currency": g["total_allocated_by_currency"],
+        }
+        for g in grantees
+    ]
+
+
+async def get_funded_budgets_service(funding_customer_id: UUID, valid_user: dict, db) -> list:
+    budgets = list_budgets(db, funding_customer_id=funding_customer_id)
     return await populate_budget_with_user_details(budgets=budgets, valid_user=valid_user)
 
 
@@ -232,6 +296,7 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             "status": b.status,
             "duration_months": b.duration_months,
             "local_currency": b.local_currency,
+            "total_amount": b.total_amount,
             "owner": customers_map.get(b.owner_id),
             "funder": customers_map.get(b.funding_customer_id) or {"name": b.external_funder_name},
             "trace": {

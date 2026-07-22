@@ -5,12 +5,16 @@ import {
   Home,
   FileText,
   BarChart3,
+  HeartHandshake,
   Sparkles,
   Settings,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import { AIChatPanel } from "@/pages/Budgets/components/AIChatPanel";
 import { useAiChat } from "@/context/AiChatContext";
+import { useAuth } from "@/context/AuthContext";
 import ogfIcon from "@/assets/logos/ogf-icon.svg";
 import { Link, NavLink } from "react-router-dom";
 
@@ -20,7 +24,9 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isOpen, setIsOpen] = useState(true);
+  const [isGranteesExpanded, setIsGranteesExpanded] = useState(false);
   const { isAiOpen, toggleAi } = useAiChat();
+  const { isDonor } = useAuth();
 
   return (
     <div className="flex w-full h-screen bg-gray-50">
@@ -79,6 +85,57 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 {isOpen && <span>Reports</span>}
               </Link>
             </li>
+            {isDonor && <li className="my-2 border-t border-slate-600" />}
+            {isDonor && (
+              <li>
+                <button
+                  onClick={() => setIsGranteesExpanded(!isGranteesExpanded)}
+                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
+                >
+                  <HeartHandshake size={20} />
+                  {isOpen && (
+                    <>
+                      <span className="flex-1 text-left">Grantees</span>
+                      {isGranteesExpanded ? (
+                        <ChevronDown size={16} />
+                      ) : (
+                        <ChevronRight size={16} />
+                      )}
+                    </>
+                  )}
+                </button>
+                {isOpen && isGranteesExpanded && (
+                  <ul className="mt-1 space-y-1">
+                    <li>
+                      <Link
+                        to="/donor-dashboard"
+                        className="block px-4 py-2 pl-11 text-sm hover:bg-blue-600/60 rounded transition-colors"
+                      >
+                        Overview
+                      </Link>
+                    </li>
+                    <li
+                      className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
+                      title="Coming soon"
+                    >
+                      List of Grantees
+                    </li>
+                    <li
+                      className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
+                      title="Coming soon"
+                    >
+                      Budgets
+                    </li>
+                    <li
+                      className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
+                      title="Coming soon"
+                    >
+                      Reports
+                    </li>
+                  </ul>
+                )}
+              </li>
+            )}
           </ul>
         </nav>
 
