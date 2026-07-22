@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str  # 32-byte base64-encoded secret for AES-256-GCM
     OLLAMA_URL: str | None = None
     OLLAMA_MODEL: str = "llama3.2"
-    BUDGET_SERVICE_URL: str = "http://localhost:8001/api/v1"
     AI_RATE_LIMIT_PER_HOUR: int = 100
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")
