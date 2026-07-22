@@ -1,10 +1,11 @@
 """Stateless decision service backing POST /ai/decide (specs/ai-decide/spec.md).
 
-Builds a fresh PydanticAI Agent per request (same key-isolation pattern as
-chat_agent.build_agent), exposes the caller-supplied tools as an
-ExternalToolset (tools this agent never executes itself), and classifies the
-result as either a tool call or a plain-text reply. No conversation state is
-held between calls, and no domain service is ever contacted from here.
+Builds a fresh PydanticAI Agent per request (never shared across requests, so
+a customer's key/model is never mixed with another's), exposes the
+caller-supplied tools as an ExternalToolset (tools this agent never executes
+itself), and classifies the result as either a tool call or a plain-text
+reply. No conversation state is held between calls, and no domain service is
+ever contacted from here.
 """
 
 import time
