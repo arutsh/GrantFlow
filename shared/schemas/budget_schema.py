@@ -78,8 +78,40 @@ class TraceOut(BaseModel):
 class BudgetWithLines(BaseModel):
     id: UUID
     name: str
+    status: BudgetStatus | None = None
+    duration_months: int | None = None
+    local_currency: str | None = None
+    total_amount: float | None = None
     owner: CustomerOut | None = None
     funder: CustomerOut | None = None
     trace: TraceOut | None = None
     lines: list[BudgetLine] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CurrencyAmount(BaseModel):
+    currency: str | None = None
+    total_allocated: float
+
+
+class FundedBudgetsSummary(BaseModel):
+    total_budgets: int
+    total_allocated_by_currency: list[CurrencyAmount] = []
+
+
+class GranteeSummary(BaseModel):
+    id: UUID | None = None
+    name: str | None = None
+    country: str | None = None
+    budgets_count: int
+    total_allocated_by_currency: list[CurrencyAmount] = []
+
+
+class FundedBudgetListItem(BaseModel):
+    id: UUID
+    name: str
+    status: BudgetStatus
+    total_amount: float | None = None
+    local_currency: str | None = None
+    owner: CustomerOut | None = None
     model_config = ConfigDict(from_attributes=True)

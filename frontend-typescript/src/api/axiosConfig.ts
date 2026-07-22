@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
+import { notifyTokenRefreshed } from "@/utils/tokenRefreshBridge";
 
 export const getAuthToken = (): string | null => {
   return localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -69,11 +70,12 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
           const newRefresh = response.data.refresh_token;
 
           localStorage.setItem("token", newAccess);
-          localStorage.setItem("refresh_token", newRefresh);
+          localStorage.setItem("refreshToken", newRefresh);
 
           instance.defaults.headers.common["Authorization"] =
             `Bearer ${newAccess}`;
           onTokenRefreshed(newAccess);
+          notifyTokenRefreshed(newAccess);
           isRefreshing = false;
 
           // retry original request

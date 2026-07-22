@@ -7,6 +7,7 @@ import {
   useMemo,
 } from "react";
 import { safeDecodeToken } from "@/utils/token";
+import { onTokenRefreshed } from "@/utils/tokenRefreshBridge";
 
 export const STATUS = {
   PENDING: "pending",
@@ -59,6 +60,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const { isNgo, isDonor } = useMemo(() => decodeRoleFlags(token), [token]);
+
+  useEffect(() => {
+    return onTokenRefreshed((newToken) => setToken(newToken));
+  }, []);
 
   useEffect(() => {
     // Check both storages

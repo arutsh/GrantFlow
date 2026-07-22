@@ -1,5 +1,6 @@
 import requests
 from app.core.config import settings
+from fastapi import status
 from functools import lru_cache
 import uuid
 from app.core.exceptions import DomainError
@@ -36,6 +37,17 @@ def validate_customer_can_fund(customer_id: str | uuid.UUID, raise_domain_error:
     if not customer.get("is_donor"):
         raise Error(f"Customer {customer_id} is not a donor and cannot fund budgets")
     return customer
+
+
+def require_donor(valid_user: dict) -> None:
+    """Assert the authenticated user's customer has is_donor=True.
+
+    Reads the flag directly off the decoded JWT payload (get_validated_user's
+    output) rather than calling get_customer_cached — that cache is unbounded
+    with no TTL, and is_donor now travels in the token claims (ticket #135).
+    """
+    if not valid_user.get("is_donor"):
+        raise DomainError("Customer is not a donor", status.HTTP_403_FORBIDDEN)
 
 
 def validate_customer_can_own(customer_id: str | uuid.UUID, raise_domain_error: bool = False):

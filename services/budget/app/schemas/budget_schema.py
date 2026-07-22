@@ -4,3 +4,7 @@ from shared.schemas.budget_schema import Budget  # noqa: F401
 from shared.schemas.budget_schema import BudgetUpdate  # noqa: F401
 from shared.schemas.budget_schema import BudgetWithLines  # noqa: F401
 from shared.schemas.budget_schema import BudgetStatus  # noqa: F401
+from shared.schemas.budget_schema import CurrencyAmount  # noqa: F401
+from shared.schemas.budget_schema import FundedBudgetsSummary  # noqa: F401
+from shared.schemas.budget_schema import GranteeSummary  # noqa: F401
+from shared.schemas.budget_schema import FundedBudgetListItem  # noqa: F401

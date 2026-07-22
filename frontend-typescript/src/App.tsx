@@ -12,6 +12,7 @@ import BudgetsPage from "./pages/Budgets/budgets";
 import { SingleBudgetViewContainer } from "./pages/Budgets/SingleBudgetView";
 import DashboardLayout from "./pages/Dashboard/DashboardLayout";
 import SettingsPage from "./pages/Settings/Settings";
+import DonorDashboard from "./pages/DonorDashboard/DonorDashboard";
 
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, loading } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
               }
             >
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/donor-dashboard" element={<DonorDashboard />} />
               <Route path="/budgets" element={<BudgetsPage />} />
               <Route path="/budgets/:id" element={<SingleBudgetViewContainer />} />
               <Route path="/settings" element={<SettingsPage />} />

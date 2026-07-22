@@ -13,6 +13,7 @@ from uuid import uuid4
 from app.services.customer_client import (
     validate_customer_can_fund,
     validate_customer_can_own,
+    require_donor,
 )
 from app.core.exceptions import DomainError
 
@@ -89,3 +90,21 @@ class TestValidateCustomerCanOwn:
         ):
             with pytest.raises(DomainError):
                 validate_customer_can_own(CUSTOMER_ID, raise_domain_error=True)
+
+
+class TestRequireDonor:
+    """require_donor reads is_donor straight off the decoded JWT payload —
+    no get_customer_cached call, unlike validate_customer_can_fund/can_own above."""
+
+    def test_donor_passes(self):
+        require_donor({"is_donor": True})  # does not raise
+
+    def test_non_donor_raises_403(self):
+        with pytest.raises(DomainError) as exc_info:
+            require_donor({"is_donor": False})
+        assert exc_info.value.status_code == 403
+
+    def test_missing_is_donor_claim_raises_403(self):
+        with pytest.raises(DomainError) as exc_info:
+            require_donor({})
+        assert exc_info.value.status_code == 403

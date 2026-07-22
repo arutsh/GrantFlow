@@ -1,5 +1,6 @@
 import Button from "@/components/ui/Button";
 import { utcToLocal } from "@/utils/datetime";
+import { formatCurrency } from "@/utils/currency";
 import { Budget } from "../types/budget";
 import { Edit2, Trash2, DollarSign, Calendar, User } from "lucide-react";
 
@@ -12,11 +13,6 @@ export function CardsView({
   onEdit: (budget: Budget) => void;
   onDelete: (budget_id: string) => void;
 }) {
-  const getTotalAmount = (lines?: any[]) => {
-    if (!lines) return 0;
-    return lines.reduce((sum, line) => sum + (line.amount || 0), 0);
-  };
-
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case "approved":
@@ -66,8 +62,7 @@ export function CardsView({
                   Total Amount
                 </p>
                 <p className="text-lg font-bold text-slate-900">
-                  {budget.local_currency}{" "}
-                  {getTotalAmount(budget.lines)?.toLocaleString() || "0"}
+                  {formatCurrency(budget.total_amount ?? 0, budget.local_currency)}
                 </p>
               </div>
             </div>
