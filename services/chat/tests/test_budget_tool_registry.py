@@ -122,7 +122,12 @@ class TestCallAddBudgetLine:
 
         result = await registry.call_tool(
             "add_budget_line",
-            {"category_name": "Travel", "amount": 500, "budget_id": "budget-1"},
+            {
+                "category_name": "Travel",
+                "amount": 500,
+                "budget_id": "budget-1",
+                "description": "Travel",
+            },
             token="tok",
         )
 

@@ -10,6 +10,10 @@ class ChatStreamRequest(BaseModel):
     page: str | None = None
 
 
+class ParseBudgetStreamRequest(BaseModel):
+    text: str
+
+
 class ConversationOut(BaseModel):
     id: str
     title: str | None

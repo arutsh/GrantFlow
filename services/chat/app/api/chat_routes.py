@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.crud.conversation import (
     get_conversation_messages,
@@ -13,9 +14,15 @@ from app.crud.conversation import (
     to_chat_turns,
 )
 from app.db.session import AsyncSessionLocal
-from app.schemas.chat import ChatStreamRequest, ConversationOut, MessageOut
+from app.schemas.chat import (
+    ChatStreamRequest,
+    ConversationOut,
+    MessageOut,
+    ParseBudgetStreamRequest,
+)
 from app.services.chat_stream import build_chat_sse_stream
 from app.services.orchestrator import TurnResult, run_turn
+from app.services.parse_budget_stream import build_parse_budget_sse_stream
 from shared.ai_client import AiRateLimitedError, AiUnavailableError
 from shared.security.dependencies import get_validated_user
 
@@ -115,6 +122,55 @@ async def stream_chat(
         build_chat_sse_stream(turn_result, _on_complete),
         media_type="text/event-stream",
         headers=headers,
+    )
+
+
+@router.post("/parse-budget/stream")
+async def stream_parse_budget(
+    body: ParseBudgetStreamRequest,
+    request: Request,
+    valid_user=Depends(get_validated_user),
+):
+    token = valid_user.get("token", "")
+    events = request.app.state.ai_client.stream_parse_budget(body.text, token)
+
+    # Primed here, before the StreamingResponse is created, for the same reason
+    # /chat/stream resolves run_turn() eagerly: this is the point where the
+    # upstream request is actually sent, so AiRateLimitedError can still become
+    # a real HTTP 429 instead of arriving as an in-stream event.
+    try:
+        first_event = await events.__anext__()
+    except StopAsyncIteration:
+        first_event = None
+    except AiRateLimitedError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="AI provider is rate limited. Try again later.",
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+    except Exception as exc:
+        logger.exception("parse_budget_prime_error", error_type=type(exc).__name__)
+        return StreamingResponse(
+            _single_frame_stream("error", {"message": "An error occurred. Please try again."}),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
+    async def _primed_events():
+        if first_event is not None:
+            yield first_event
+        async for event in events:
+            yield event
+
+    return StreamingResponse(
+        build_parse_budget_sse_stream(
+            _primed_events(),
+            http=request.app.state.http_client,
+            budget_service_url=settings.BUDGET_SERVICE_URL,
+            token=token,
+        ),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
     )
 
 

@@ -83,15 +83,6 @@ export interface BudgetLinePreview {
   extra_fields?: Record<string, unknown> | null;
 }
 
-export interface ParseBudgetResponse {
-  budget_name: string;
-  external_funder_name: string | null;
-  duration_months: number | null;
-  lines: BudgetLinePreview[];
-  ai_available: boolean;
-  prompt_version: string;
-}
-
 export interface CreateBudgetWithLinesRequest {
   budget_name: string;
   external_funder_name: string;

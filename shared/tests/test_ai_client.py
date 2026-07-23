@@ -9,7 +9,16 @@ import pytest
 
 from shared.ai_client.client import AiClient
 from shared.ai_client.errors import AiClientError, AiRateLimitedError, AiUnavailableError
-from shared.ai_client.schemas import ChatTurn, Reply, ToolCall, ToolDef
+from shared.ai_client.schemas import (
+    ChatTurn,
+    ParseDone,
+    ParseError,
+    ParseProgress,
+    ParseUnavailable,
+    Reply,
+    ToolCall,
+    ToolDef,
+)
 
 
 def _client(handler, **kwargs) -> AiClient:
@@ -141,3 +150,78 @@ class TestRetryBehavior:
             await client.decide("hi", [], [], None, "tok")
 
         assert calls["n"] == 1
+
+
+async def _collect(gen):
+    return [event async for event in gen]
+
+
+class TestStreamParseBudget:
+    @pytest.mark.anyio
+    async def test_progress_then_done(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert "/ai/parse-budget/stream?text=a%20trip" in str(request.url)
+            assert request.headers["authorization"] == "Bearer tok"
+            body = (
+                'event: progress\ndata: {"status": "Parsing..."}\n\n'
+                'event: done\ndata: {"budget_name": "Trip", "lines": []}\n\n'
+            )
+            return httpx.Response(200, content=body.encode())
+
+        client = _client(handler)
+        events = await _collect(client.stream_parse_budget("a trip", "tok"))
+
+        assert events == [
+            ParseProgress(status="Parsing..."),
+            ParseDone(budget_name="Trip", lines=[]),
+        ]
+
+    @pytest.mark.anyio
+    async def test_unavailable(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"event: unavailable\ndata: {}\n\n")
+
+        client = _client(handler)
+        events = await _collect(client.stream_parse_budget("text", "tok"))
+
+        assert events == [ParseUnavailable()]
+
+    @pytest.mark.anyio
+    async def test_error_frame_is_not_json_parsed(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"event: error\ndata: unexpected error\n\n")
+
+        client = _client(handler)
+        events = await _collect(client.stream_parse_budget("text", "tok"))
+
+        assert events == [ParseError(message="unexpected error")]
+
+    @pytest.mark.anyio
+    async def test_429_raises_rate_limited_before_any_event(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, headers={"Retry-After": "30"})
+
+        client = _client(handler)
+        with pytest.raises(AiRateLimitedError) as exc_info:
+            await _collect(client.stream_parse_budget("text", "tok"))
+
+        assert exc_info.value.retry_after == 30
+
+    @pytest.mark.anyio
+    async def test_other_status_raises_ai_client_error(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, text="boom")
+
+        client = _client(handler)
+        with pytest.raises(AiClientError):
+            await _collect(client.stream_parse_budget("text", "tok"))
+
+    @pytest.mark.anyio
+    async def test_connect_error_yields_error_event_not_an_exception(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("boom", request=request)
+
+        client = _client(handler)
+        events = await _collect(client.stream_parse_budget("text", "tok"))
+
+        assert events == [ParseError(message="Connection to AI service failed")]
