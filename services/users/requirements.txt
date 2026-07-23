@@ -161,7 +161,7 @@ transformers==4.57.6
 triton==3.6.0
 typer==0.16.0
 types-requests==2.32.4.20250809
-typing-inspection==0.4.1
+typing-inspection==0.4.2
 typing_extensions==4.14.1
 tzdata==2025.2
 urllib3==2.5.0
