@@ -20,7 +20,7 @@ class CreateBudgetParams(BaseModel):
 class AddBudgetLineParams(BaseModel):
     category_name: str
     amount: float
-    description: str | None = None
+    description: str
 
 
 class UpdateBudgetParams(BaseModel):

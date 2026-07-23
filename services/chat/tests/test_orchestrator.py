@@ -119,6 +119,27 @@ class TestParamValidation:
         assert result.tool_name is None
         registry.call_tool.assert_not_awaited()
 
+    async def test_add_budget_line_without_description_yields_clarifying_reply(self):
+        """description is a required field precisely so a model that omits it gets
+        asked to clarify, rather than the tool silently mislabeling the line."""
+        ai_client = _ai_client(
+            ToolCall(name="add_budget_line", params={"category_name": "MISC", "amount": 500})
+        )
+        registry = _registry()
+
+        result = await run_turn(
+            message="add a line",
+            history=[],
+            context_id="ctx-1",
+            page="budgets",
+            token="tok",
+            ai_client=ai_client,
+            registry=registry,
+        )
+
+        assert "more information" in result.reply
+        registry.call_tool.assert_not_awaited()
+
 
 class TestResourceIdInjection:
     async def test_model_supplied_id_is_ignored_context_id_wins(self):
@@ -128,6 +149,7 @@ class TestResourceIdInjection:
                 params={
                     "category_name": "Travel",
                     "amount": 100,
+                    "description": "Travel line",
                     "budget_id": "model-guessed-id",
                 },
             )

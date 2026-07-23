@@ -1,55 +1,83 @@
-## 1. Storage abstraction (`shared/storage/`)
+Workflow rule: **one group = one GitHub ticket = one PR, merged before the next group starts.** Branch names are fixed per ticket. Every PR: `flake8 --max-line-length=100` clean; commits/pushes only with explicit user approval.
 
-- [ ] 1.1 Add `shared/storage/__init__.py`, `shared/storage/storage_service.py` implementing `StorageService` (`save`, `open_stream`, `delete`, `exists`) wrapping `fsspec.core.url_to_fs`
-- [ ] 1.2 Add `shared/storage/config.py` reading `STORAGE_BACKEND_URL` (default `file:///app/uploads/reports`)
-- [ ] 1.3 Promote `fsspec` from transitive to direct, pinned dependency in `services/budget/requirements.txt`
-- [ ] 1.4 Add `STORAGE_BACKEND_URL` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files
-- [ ] 1.5 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
-- [ ] 1.6 Write `services/budget/tests/test_storage_service.py` — real-disk round-trip test (`file://` + pytest `tmp_path`) for save/open_stream/delete/exists
+## 1. Budget currency fields — ticket #144 (`Budget/Issue-144/currency-fields`)
 
-## 2. Data model
+- [ ] 1.1 Add `actual_currency` (nullable `String(3)`) and `parent_budget_id` (nullable, self-referential FK to `budgets.id`) columns to `BudgetModel` in `app/models/budget.py`
+- [ ] 1.2 Write Alembic migration `000003_add_budget_currency_fields.py` (down_revision `000002`) adding both columns, with matching `downgrade()`
+- [ ] 1.3 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [ ] 1.4 Extend `shared/schemas/budget_schema.py` with `actual_currency` and `parent_budget_id` on the relevant `Budget*` schemas
+- [ ] 1.5 Add a `resolve_donor_currency(budget)` helper (in `app/services/budget_services.py` or similar) returning `budget.parent_budget.local_currency` when `parent_budget_id` is set, else `None` — computed on read, never stored
+- [ ] 1.6 Add `services/budget/tests/test_budget_currency_fields.py`: column round-trip, `resolve_donor_currency` with and without a parent budget set
+- [ ] 1.7 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
-- [ ] 2.1 Create `services/budget/app/models/report.py` with `ReportStatus` enum and `ReportModel`, `ReportLineModel`, `AttachmentModel`, mirroring `budget.py`'s `AuditMixin`/GUID style
-- [ ] 2.2 Add `reports` relationship to `BudgetModel` in `services/budget/app/models/budget.py`
-- [ ] 2.3 Register new models in `services/budget/app/models/__init__.py`
-- [ ] 2.4 Write Alembic migration `000003_add_reports_report_lines_attachments.py` (down_revision `000002`) creating `reports`, `report_lines`, `attachments`, with matching `downgrade()`
-- [ ] 2.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+## 2. Cloud-agnostic storage abstraction — ticket #145 (`Shared/Issue-145/storage-abstraction`)
 
-## 3. Schemas
+- [ ] 2.1 Add `shared/storage/__init__.py`, `shared/storage/storage_service.py` implementing `StorageService` (`save`, `open_stream`, `delete`, `exists`) wrapping `fsspec.core.url_to_fs`
+- [ ] 2.2 Add `shared/storage/config.py` reading `STORAGE_BACKEND_URL` (default `file:///app/uploads/reports`)
+- [ ] 2.3 Promote `fsspec` from transitive to direct, pinned dependency in `services/budget/requirements.txt`
+- [ ] 2.4 Add `STORAGE_BACKEND_URL` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files
+- [ ] 2.5 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
+- [ ] 2.6 Write `services/budget/tests/test_storage_service.py` — real-disk round-trip test (`file://` + pytest `tmp_path`) for save/open_stream/delete/exists
+- [ ] 2.7 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
-- [ ] 3.1 Add `shared/schemas/report_schema.py` (`ReportStatus`, `ReportBase/Create/Update`, `Report`, `ReportWithLines`)
-- [ ] 3.2 Add `shared/schemas/report_line_schema.py` (`ReportLineBase/Create/Update`, `ReportLine`)
-- [ ] 3.3 Add `shared/schemas/attachment_schema.py` (`AttachmentBase`, `Attachment`)
-- [ ] 3.4 Add thin re-export modules in `services/budget/app/schemas/` for all three, and update `services/budget/app/schemas/__init__.py`
+## 3. Report submission lifecycle — ticket #146 (`Budget/Issue-146/report-submission-lifecycle`)
 
-## 4. CRUD layer
+- [ ] 3.1 Create `services/budget/app/models/report.py` with `ReportStatus` enum and `ReportModel`, `ReportLineModel`, mirroring `budget.py`'s `AuditMixin`/GUID style
+- [ ] 3.2 Add `reports` relationship to `BudgetModel` in `services/budget/app/models/budget.py`
+- [ ] 3.3 Register the new models in `services/budget/app/models/__init__.py`
+- [ ] 3.4 Write Alembic migration `000004_add_reports_report_lines.py` (down_revision `000003`) creating `reports`, `report_lines`, with matching `downgrade()`
+- [ ] 3.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [ ] 3.6 Add `shared/schemas/report_schema.py` (`ReportStatus`, `ReportBase/Create/Update`, `Report`, `ReportWithLines`)
+- [ ] 3.7 Add `shared/schemas/report_line_schema.py` (`ReportLineBase/Create/Update`, `ReportLine`)
+- [ ] 3.8 Add thin re-export modules in `services/budget/app/schemas/` for both, and update `services/budget/app/schemas/__init__.py`
+- [ ] 3.9 Add `services/budget/app/crud/report_crud.py` (create/get/list/update/delete/transition_status)
+- [ ] 3.10 Add `services/budget/app/crud/report_line_crud.py` (create/get/list/update/delete)
+- [ ] 3.11 Add `services/budget/app/services/report_services.py`: create/get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected, enforces funder-only authorization via `budget.funding_customer_id`), reopen (rejected→draft)
+- [ ] 3.12 Add `services/budget/app/services/report_line_services.py`: create/get/list/update/delete, enforcing draft-only lock and same-budget cross-check between `budget_line_id` and the report's budget
+- [ ] 3.13 Add `services/budget/app/api/report_routes.py`: CRUD + `POST /{id}/submit` + `POST /{id}/review`
+- [ ] 3.14 Add `services/budget/app/api/report_line_routes.py`: CRUD + `GET /by-report/{report_id}`
+- [ ] 3.15 Register both routers in `services/budget/main.py`
+- [ ] 3.16 Add `services/budget/tests/factories/report.py`: `ReportFactory`, `ReportLineFactory`
+- [ ] 3.17 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), submit transition, review transition (funder-only enforcement)
+- [ ] 3.18 Add `services/budget/tests/test_report_line_routes.py`: create/update rejected on non-draft report, cross-budget `budget_line_id` rejected
+- [ ] 3.19 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
-- [ ] 4.1 Add `services/budget/app/crud/report_crud.py` (create/get/list/update/delete/transition_status)
-- [ ] 4.2 Add `services/budget/app/crud/report_line_crud.py` (create/get/list/update/delete)
-- [ ] 4.3 Add `services/budget/app/crud/attachment_crud.py` (create/get/list/delete)
+## 4. Report attachments — ticket #147 (`Budget/Issue-147/report-attachments`)
 
-## 5. Service layer
+- [ ] 4.1 Add `AttachmentModel` to `services/budget/app/models/report.py`, FK to `report_lines`
+- [ ] 4.2 Register the new model in `services/budget/app/models/__init__.py`
+- [ ] 4.3 Write Alembic migration `000005_add_attachments.py` (down_revision `000004`) creating `attachments`, with matching `downgrade()`
+- [ ] 4.4 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [ ] 4.5 Add `shared/schemas/attachment_schema.py` (`AttachmentBase`, `Attachment`)
+- [ ] 4.6 Add a thin re-export module in `services/budget/app/schemas/`, and update `services/budget/app/schemas/__init__.py`
+- [ ] 4.7 Add `services/budget/app/crud/attachment_crud.py` (create/get/list/delete)
+- [ ] 4.8 Add `services/budget/app/services/attachment_services.py`: `upload_attachment_service` (size/content-type validation, draft-only lock, calls `storage_client.save`), `download_attachment_service` (auth chain + `storage_client.open_stream`), `delete_attachment_service` (draft-only lock, blob delete then row delete)
+- [ ] 4.9 Add `services/budget/app/api/attachment_routes.py`: multipart `POST /`, `GET /by-report-line/{report_line_id}`, streaming `GET /{id}/content`, `DELETE /{id}/`
+- [ ] 4.10 Register the router in `services/budget/main.py`
+- [ ] 4.11 Add `services/budget/tests/factories/attachment.py`: `AttachmentFactory`
+- [ ] 4.12 Add `services/budget/tests/test_attachment_routes.py`: upload happy path, oversized/disallowed-type rejection, draft-only lock, download permission checks
+- [ ] 4.13 Manually exercise the full flow against the running dev stack: create budget + budget line → create draft report → add report line → upload receipt → download it back → submit → confirm line/attachment edits now rejected → attempt review as owner (rejected) → review as funder (approve or reject) → if rejected, reopen to draft and confirm edits are allowed again
+- [ ] 4.14 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
-- [ ] 5.1 Add `services/budget/app/services/report_services.py`: create/get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected, enforces funder-only authorization), reopen (rejected→draft)
-- [ ] 5.2 Add `services/budget/app/services/report_line_services.py`: create/get/list/update/delete, enforcing draft-only lock and same-budget cross-check between `budget_line_id` and the report's budget
-- [ ] 5.3 Add `services/budget/app/services/attachment_services.py`: `upload_attachment_service` (size/content-type validation, draft-only lock, calls `storage_client.save`), `download_attachment_service` (auth chain + `storage_client.open_stream`), `delete_attachment_service` (draft-only lock, blob delete then row delete)
+## 5. Currency ledger + cross-hop rollup — ticket #148 (`Budget/Issue-148/currency-ledger`)
 
-## 6. API routes
-
-- [ ] 6.1 Add `services/budget/app/api/report_routes.py`: CRUD + `POST /{id}/submit` + `POST /{id}/review`
-- [ ] 6.2 Add `services/budget/app/api/report_line_routes.py`: CRUD + `GET /by-report/{report_id}`
-- [ ] 6.3 Add `services/budget/app/api/attachment_routes.py`: multipart `POST /`, `GET /by-report-line/{report_line_id}`, streaming `GET /{id}/content`, `DELETE /{id}/`
-- [ ] 6.4 Register all three routers in `services/budget/main.py`
-
-## 7. Tests
-
-- [ ] 7.1 Add `services/budget/tests/factories/report.py`: `ReportFactory`, `ReportLineFactory`, `AttachmentFactory`
-- [ ] 7.2 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), submit transition, review transition (funder-only enforcement)
-- [ ] 7.3 Add `services/budget/tests/test_report_line_routes.py`: create/update rejected on non-draft report, cross-budget `budget_line_id` rejected
-- [ ] 7.4 Add `services/budget/tests/test_attachment_routes.py`: upload happy path, oversized/disallowed-type rejection, draft-only lock, download permission checks
-
-## 8. End-to-end verification
-
-- [ ] 8.1 Run full budget-service test suite (`pytest services/budget`) and confirm no regressions
-- [ ] 8.2 Manually exercise the flow against the running dev stack: create budget + budget line → create draft report → add report line → upload receipt → download it back → submit → confirm line/attachment edits now rejected → attempt review as owner (rejected) → review as funder (approve or reject) → if rejected, reopen to draft and confirm edits are allowed again
-- [ ] 8.3 Run `flake8 --max-line-length=100` over all new/changed files
+- [ ] 5.1 Create `services/budget/app/models/currency_ledger.py` with `FundingReceiptModel`, `CurrencyConversionModel`, and `ReportLineConversionAllocationModel` (the FIFO lot-split join: `report_line_id`, `conversion_id`, `amount_allocated`), mirroring `AuditMixin`/GUID style
+- [ ] 5.2 Add `source_report_id` (nullable FK to `reports.id`) to `ReportLineModel` in `app/models/report.py`
+- [ ] 5.3 Register the new models in `app/models/__init__.py`
+- [ ] 5.4 Write Alembic migration `000006_add_currency_ledger.py` (down_revision `000005`) adding `funding_receipts`, `currency_conversions`, `report_line_conversion_allocations`, plus the `source_report_id` column on `report_lines`, with matching `downgrade()`
+- [ ] 5.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify this migration applies and reverses cleanly
+- [ ] 5.6 Add `shared/schemas/currency_ledger_schema.py` (`FundingReceiptBase/Create`, `FundingReceipt`, `CurrencyConversionBase/Create`, `CurrencyConversion`)
+- [ ] 5.7 Extend `shared/schemas/report_line_schema.py` with optional `source_report_id`
+- [ ] 5.8 Add thin re-export modules in `services/budget/app/schemas/` for the new currency-ledger schemas, and update `services/budget/app/schemas/__init__.py`
+- [ ] 5.9 Add `services/budget/app/crud/funding_receipt_crud.py` (create/get/list)
+- [ ] 5.10 Add `services/budget/app/crud/currency_conversion_crud.py` (create/get/list, plus a query returning unconsumed conversion lots ordered oldest-first for FIFO)
+- [ ] 5.11 Add `services/budget/app/services/currency_ledger_services.py`: `record_receipt_service`, `record_conversion_service`, and `allocate_fifo_service(report_line)` — walks unconsumed conversion lots oldest-first, creates `ReportLineConversionAllocation` rows (splitting across lots when one expense straddles more than one), allows the running balance to go negative without blocking or warning
+- [ ] 5.12 Wire `report_line_services.py`'s create path (from ticket #146) to call `allocate_fifo_service` so every new expense line is automatically allocated against the ledger
+- [ ] 5.13 Add `services/budget/app/api/funding_receipt_routes.py`: CRUD scoped to the budget owner
+- [ ] 5.14 Add `services/budget/app/api/currency_conversion_routes.py`: CRUD scoped to the budget owner
+- [ ] 5.15 Register both new routers in `services/budget/main.py`
+- [ ] 5.16 Add `services/budget/tests/factories/currency_ledger.py`: `FundingReceiptFactory`, `CurrencyConversionFactory`
+- [ ] 5.17 Add `services/budget/tests/test_currency_ledger.py`: FIFO allocation against a single lot, allocation split across multiple lots, negative-balance case that trues up on the next conversion, per-currency (never blended) balance reporting
+- [ ] 5.18 Add a manual-rollup traceability test: create a `ReportLine` with `source_report_id` pointing at another budget's approved report; confirm no automatic amount or currency computation occurs
+- [ ] 5.19 Manually exercise the currency ledger: record a funding receipt → record a partial conversion → add an expense report line exceeding the converted balance (confirm negative balance is allowed, not blocked) → record a second conversion → confirm the balance trues up
+- [ ] 5.20 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged

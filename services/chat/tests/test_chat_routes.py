@@ -2,8 +2,18 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.orchestrator import TurnResult
-from shared.ai_client import AiRateLimitedError, AiUnavailableError
+from shared.ai_client import AiClient, AiRateLimitedError, AiUnavailableError, ParseProgress
 from tests.factories.conversation import ConversationFactory
+
+
+def _fake_stream_parse_budget(events=None, raise_exc=None):
+    async def _gen(self, text, user_token):
+        if raise_exc:
+            raise raise_exc
+        for event in events or []:
+            yield event
+
+    return _gen
 
 
 def _frames(text: str) -> list[tuple[str, dict]]:
@@ -169,3 +179,54 @@ class TestGetConversationMessages:
             resp = client.get("/api/v1/chat/conversations/some-id/messages")
 
         assert resp.status_code == 404
+
+
+class TestStreamParseBudget:
+    """The route's own responsibility: eagerly priming AiClient.stream_parse_budget
+    so a 429 becomes a real HTTP status instead of an in-stream event, and
+    splicing the primed first event back into the response unlost. Full
+    progress/done/error/unavailable event handling is covered directly against
+    build_parse_budget_sse_stream in test_parse_budget_stream.py.
+    """
+
+    def test_rejects_missing_body(self, make_client):
+        client = make_client()
+        resp = client.post("/api/v1/chat/parse-budget/stream", json={})
+        assert resp.status_code == 422
+
+    def test_rate_limited_returns_429(self, make_client):
+        client = make_client()
+        with patch.object(
+            AiClient,
+            "stream_parse_budget",
+            _fake_stream_parse_budget(raise_exc=AiRateLimitedError(retry_after=30)),
+        ):
+            resp = client.post("/api/v1/chat/parse-budget/stream", json={"text": "a trip"})
+
+        assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "30"
+
+    def test_unexpected_exception_during_priming_yields_error_event_not_500(self, make_client):
+        client = make_client()
+        with patch.object(
+            AiClient, "stream_parse_budget", _fake_stream_parse_budget(raise_exc=RuntimeError("x"))
+        ):
+            resp = client.post("/api/v1/chat/parse-budget/stream", json={"text": "a trip"})
+
+        assert resp.status_code == 200
+        events = _frames(resp.text)
+        assert [event for event, _ in events] == ["error"]
+
+    def test_primed_first_event_is_not_lost(self, make_client):
+        client = make_client()
+        events = [ParseProgress(status="Parsing..."), ParseProgress(status="Building preview...")]
+        with patch.object(
+            AiClient, "stream_parse_budget", _fake_stream_parse_budget(events=events)
+        ):
+            resp = client.post("/api/v1/chat/parse-budget/stream", json={"text": "a trip"})
+
+        assert resp.status_code == 200
+        frames = _frames(resp.text)
+        assert [event for event, _ in frames] == ["progress", "progress"]
+        assert frames[0][1] == {"status": "Parsing..."}
+        assert frames[1][1] == {"status": "Building preview..."}

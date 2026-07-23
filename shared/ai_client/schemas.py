@@ -2,6 +2,8 @@ from typing import Literal, Union
 
 from pydantic import BaseModel
 
+from shared.schemas.budget_with_lines_schema import BudgetLineInput
+
 # Wire contract for POST /ai/decide (specs/ai-decide/spec.md). Both sides of
 # that call import these classes directly — chat as the caller (AiClient),
 # ai as the callee (decide_routes.py) — so there is one source of truth for
@@ -67,3 +69,40 @@ class DecideRequest(BaseModel):
     conversation_history: list[ChatTurn]
     available_tools: list[ToolDef]
     domain_context: dict | None = None
+
+
+# Event union for AiClient.stream_parse_budget() (specs/chat-parse-budget.md).
+# Unlike AiDecision, these are never tagged by a JSON field — the SSE `event:`
+# name from ai's /ai/parse-budget/stream is what selects which class to build,
+# so callers get one instance per frame and switch on isinstance(...).
+
+
+class ParseProgress(BaseModel):
+    status: str
+
+
+class ParseDone(BaseModel):
+    """ai's parsed-budget payload — same shape budget's `POST /budgets/with-lines`
+    expects, minus the service-layer fields (`ai_available`, `prompt_version`)
+    that only mattered to the old direct-to-ai response and are dropped here.
+    """
+
+    budget_name: str
+    external_funder_name: str | None = None
+    duration_months: int | None = None
+    lines: list[BudgetLineInput]
+
+
+class ParseError(BaseModel):
+    """ai's own `error` frame is a raw string, not JSON (see parse_service.py) —
+    callers build this directly from the frame's data without json.loads-ing it.
+    """
+
+    message: str
+
+
+class ParseUnavailable(BaseModel):
+    """ai always sends an empty body (`data: {}`) for this event — no fields."""
+
+
+ParseEvent = Union[ParseProgress, ParseDone, ParseError, ParseUnavailable]

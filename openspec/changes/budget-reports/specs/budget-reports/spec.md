@@ -64,6 +64,17 @@ The system SHALL prevent creating, updating, or deleting report lines (and their
 - **WHEN** a user attempts to update an existing report line on a report that is not in `draft` status
 - **THEN** the system rejects the request
 
+### Requirement: Report lines may reference a source report for cross-hop traceability
+The system SHALL allow a `ReportLine` to optionally reference another `Report` via `source_report_id`, recording it as backing evidence with no automatic computation of amount or currency.
+
+#### Scenario: Link a report line to a downstream report
+- **WHEN** a report owner creates or updates a report line with `source_report_id` pointing to another report
+- **THEN** the system stores the link without altering the report line's manually entered amount or currency
+
+#### Scenario: Source report link is optional
+- **WHEN** a report line is created without a `source_report_id`
+- **THEN** the report line behaves exactly as it does today, with no required link
+
 ### Requirement: Report and report-line retrieval
 The system SHALL allow listing and retrieving reports (with their lines) and report lines, scoped to users with access to the underlying budget.
 

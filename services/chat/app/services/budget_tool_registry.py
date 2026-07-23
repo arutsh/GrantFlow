@@ -29,11 +29,25 @@ _TOOL_DEFS = [
         parameters={
             "type": "object",
             "properties": {
-                "category_name": {"type": "string"},
+                "category_name": {
+                    "type": "string",
+                    "description": (
+                        "The high-level budget category this line belongs to, e.g. "
+                        "'Staff costs', 'Travel', 'Equipment'."
+                    ),
+                },
                 "amount": {"type": "number"},
-                "description": {"type": "string"},
+                "description": {
+                    "type": "string",
+                    "description": (
+                        "What this specific line item is for, e.g. 'Project coordinator "
+                        "salary' or 'Return flights to the project site'. If the user's "
+                        "message doesn't give enough detail to write a specific "
+                        "description, use 'MISC'."
+                    ),
+                },
             },
-            "required": ["category_name", "amount"],
+            "required": ["category_name", "amount", "description"],
         },
     ),
     ToolDef(
@@ -96,7 +110,7 @@ class BudgetToolRegistry(ToolRegistry):
 
     @relay_domain_errors("add budget line")
     async def _call_add_budget_line(self, params: dict, token: str) -> ToolResult:
-        description = params.get("description") or params["category_name"]
+        description = params["description"]
         payload = {
             "budget_id": params["budget_id"],
             "description": description,

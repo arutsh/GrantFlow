@@ -1,10 +1,26 @@
 import asyncio
+import json
+from typing import AsyncIterator
+from urllib.parse import quote
 
 import httpx
 from pydantic import ValidationError
 
 from shared.ai_client.errors import AiClientError, AiRateLimitedError, AiUnavailableError
-from shared.ai_client.schemas import AiDecision, ChatTurn, DecideRequest, Reply, ToolCall, ToolDef
+from shared.ai_client.schemas import (
+    AiDecision,
+    ChatTurn,
+    DecideRequest,
+    ParseDone,
+    ParseError,
+    ParseEvent,
+    ParseProgress,
+    ParseUnavailable,
+    Reply,
+    ToolCall,
+    ToolDef,
+)
+from shared.ai_client.sse import iter_sse_frames
 
 
 class AiClient:
@@ -65,6 +81,49 @@ class AiClient:
         if decision["type"] == "tool_call":
             return ToolCall(name=decision["name"], params=decision["params"])
         return Reply(text=decision["text"])
+
+    async def stream_parse_budget(self, text: str, user_token: str) -> AsyncIterator[ParseEvent]:
+        """Stream ai's `GET /ai/parse-budget/stream` (specs/chat-parse-budget.md).
+
+        Callers should prime this with one `await gen.__anext__()` before
+        starting their own StreamingResponse — that's the point where the
+        upstream request is actually sent and its status checked, so a 429
+        still surfaces as `AiRateLimitedError` rather than arriving mid-stream
+        (the same "resolve eagerly" reasoning as decide()/run_turn()).
+
+        A connection failure degrades to a yielded `ParseError`, matching the
+        old budget-hosted proxy's behavior exactly (a graceful in-stream
+        error, not an exception) — unlike the 429/5xx cases above, which are
+        real request-level failures the caller is expected to handle.
+        """
+        headers = {"Authorization": f"Bearer {user_token}"}
+        url = f"{self.base_url}/ai/parse-budget/stream?text={quote(text)}"
+
+        try:
+            async with self.http.stream("GET", url, headers=headers) as resp:
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get("Retry-After", "0"))
+                    raise AiRateLimitedError(retry_after=retry_after)
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise AiClientError(
+                        f"ai service returned {exc.response.status_code}: "
+                        f"{exc.response.text[:200]}",
+                        status_code=exc.response.status_code,
+                    ) from exc
+
+                async for event, data in iter_sse_frames(resp.aiter_text()):
+                    if event == "progress":
+                        yield ParseProgress(**json.loads(data))
+                    elif event == "done":
+                        yield ParseDone.model_validate_json(data)
+                    elif event == "unavailable":
+                        yield ParseUnavailable()
+                    elif event == "error":
+                        yield ParseError(message=data)
+        except httpx.ConnectError:
+            yield ParseError(message="Connection to AI service failed")
 
     async def _post_with_retry(self, payload: dict, headers: dict) -> httpx.Response:
         attempt = 0
