@@ -9,12 +9,15 @@
 - Support multiple file attachments per report line via a storage layer with zero cloud-provider lock-in.
 - Enforce evidence integrity: submitted/approved reports lock their lines and attachments from further edits.
 - Enforce a real reviewer role: only the funder (`budget.funding_customer_id`) may approve/reject.
+- Track the grantee's actual local currency and this specific contract's wire-transfer currency independently, backed by an auditable conversion ledger — not a single project-wide FX rate — so reported amounts always reconcile against real bank transactions.
 
 **Non-Goals:**
 - Budget-line overspend validation (checking report-line totals against a budget line's planned `amount`) — schema supports it later without migration, but no enforcement ships in this change.
 - Presigned/direct-to-storage uploads — all uploads proxy through the FastAPI app.
 - Virus/malware scanning of uploaded files.
 - A general-purpose reviewer/role system beyond the single funder-vs-owner distinction that already exists on `Budget`.
+- Automatic multi-hop rollup or currency conversion across a funding chain (grantee → donor → donor's own upstream funder). Linking a report line to the downstream report backing it is supported (`ReportLine.source_report_id`), but deciding what amount/description represents that downstream activity in the intermediate donor's own report is a manual decision by that donor, not something the system computes.
+- A second, donor-specific ledger mechanism — not needed. See the "reused, not duplicated" decision below.
 
 ## Decisions
 
@@ -38,16 +41,46 @@ No file-validation precedent exists anywhere in the repo (`python-multipart` is 
 
 **Schema mirrors `Budget`/`BudgetLine`/`BudgetCategory` exactly**, rather than introducing a different modeling style: `ReportModel`/`ReportLineModel`/`AttachmentModel`, sync SQLAlchemy, `AuditMixin`, GUID PKs, one bundled Alembic migration (consistent with how the initial migration bundles all budget tables together, since none of the three new tables is independently useful).
 
+**Currency ledger: `FundingReceipt` → `CurrencyConversion` → FIFO consumption by `ReportLine`, not a single stored FX rate.**
+A worked real-world example (a grantee receiving EUR from a donor, converting to local currency in irregular tranches at whatever rate the bank offered that day) showed that a single project-wide exchange rate can never reconcile against real bank records — the grantee ends up reverse-engineering a "fake fixed rate" (spent-local ÷ received-donor-currency) just to make a summary sheet balance, which is exactly the discrepancy this design needs to eliminate. Instead: `FundingReceiptModel` records a donor-currency payment landing (`amount`, `received_at`); `CurrencyConversionModel` records a real bank FX event (`donor_amount` converted, `local_amount` received, `converted_at` — the rate is derived from these two, never entered directly); expenses (`ReportLine`) draw down against unconsumed conversion lots FIFO (oldest first), splitting across lots via a hidden allocation join row when one expense straddles two lots. The reported donor-currency equivalent of any expense is then always exactly reconstructible from real bank transactions.
+
+**Overspend against unconverted balance is allowed to go negative.**
+Grantees legitimately spend ahead of converting more money (e.g. weekend spending when bank conversion is only available the next business day). Blocking the expense would misrepresent real cash-flow timing. The FIFO balance can go negative and trues up automatically on the next `CurrencyConversion`.
+
+**`Budget.actual_currency` (new field) alongside the existing `Budget.local_currency`; no fixed/global bridge currency.**
+`local_currency` already correctly scopes per-`Budget` rather than per-customer (the same grantee can run different budgets in different countries/currencies). `actual_currency` is the wire-transfer currency for this specific budget/contract — freely chosen per contract, not a project-wide constant. Confirmed by a real three-budget chain example where the grantee-donor leg transferred in EUR but the donor's own upstream leg's wire currency was contract-specific and undetermined in advance ("whatever they decide") — so no code should assume EUR, or any single currency, bridges every contract.
+
+**Donor's own reporting currency is derived via optional `Budget.parent_budget_id`, never stored redundantly.**
+When an intermediate donor is itself a sub-grantee of another, upstream donor (i.e. they have their own `Budget` in the system representing that upstream contract), the "donor's currency" shown on the downstream budget is simply `parent_budget.local_currency` — confirmed by a concrete example where the upstream contract's `local_currency` (SEK) exactly equalled what the two downstream contracts would separately need to show as "donor's currency." Storing that value redundantly on every downstream budget would drift silently if the upstream contract's currency ever changed; deriving it through the link cannot drift. When no `parent_budget_id` is set — no upstream hop tracked in the system — there is simply no third currency to display, matching that this figure is never actually used for grantee-facing reporting today.
+
+**Cross-hop rollup is manual; `ReportLine.source_report_id` is a traceability link only, with zero computed logic.**
+An intermediate donor decides by hand what line, amount, and description represents a downstream grantee's approved report inside their own upstream report — the system does not auto-aggregate or auto-convert amounts across hops. `ReportLine` gains an optional `source_report_id` (nullable FK to another `Report`) so that link can be recorded as backing evidence (alongside or instead of a file attachment). Rejected building automatic cascading rollup because hop depth is unbounded in principle, and each intermediate donor may have their own accounting policy for characterizing downstream spend in their own books — a business decision by that donor, not something this system should compute on their behalf.
+
+**Multi-currency aggregation always groups by currency; never coerces to one.**
+Already-shipped precedent (PR #141, `total_allocated_by_currency` on the donor-dashboard summary endpoints) fixed exactly this bug class: summing amounts across a currency-varying set and mislabeling the result with an arbitrary currency. The same rule applies to every new aggregation this change introduces (receipts, conversions, cross-budget rollups) — always list per-currency, never silently blend.
+
+**The currency ledger is reused, not duplicated, at every hop of a funding chain.**
+`FundingReceiptModel`/`CurrencyConversionModel` are scoped to a `Budget`, not to a "grantee" role. An intermediate donor's own upstream contract (e.g. Donor1↔Donor2) is just another `Budget` with the same `local_currency`/`actual_currency` shape as any grantee-facing one — so if that donor wants the same FIFO rigor for their own conversion (their receipt currency → whatever they report upstream in), they use the *same* ledger mechanism against that budget. No second ledger type exists to design or build; it's a reuse question, not a new-capability question.
+
+**Negative FIFO balances surface transparently, as a normal figure — never blocked or flagged as an error.**
+Spend-ahead-of-conversion is expected real-world timing (e.g. weekend spending, next-business-day bank conversion), not a fault condition. The running FIFO balance is simply allowed to go negative and trues up automatically the moment the next `CurrencyConversion` is recorded — no warning UI or approval gate around it.
+
+**Funding-chain depth is deliberately irrelevant to the design — each `Budget` only knows its own immediate parent, never the chain as a whole.**
+`Budget.parent_budget_id` is a local, one-hop link (a node knows only whether it reports to someone, and — via reverse relationship — whether someone reports to it); nothing in the schema counts or caps hops. A two-hop chain (the deepest confirmed real example) and a hypothetical deeper one are handled identically, node by node, so no chain-depth decision was ever actually required.
+
 ## Risks / Trade-offs
 
 - **[Risk]** No overspend enforcement — users will likely expect it immediately after this ships, given the worked example (£1000 admin cost line, multiple receipts). → **Mitigation**: schema (`ReportLine.budget_line_id` + `.amount`) supports computing totals later without a migration; flagged as an immediate fast-follow, not silently dropped.
 - **[Risk]** No two-phase commit between the Postgres attachment row and the blob in storage — a delete or upload failure partway through can leave an orphaned blob or a dangling row. → **Mitigation**: acceptable for v1 given local-disk storage and low volume; note need for a periodic reconciliation job if this becomes an issue.
 - **[Risk]** The `uploads/` bind mount is not currently part of any backup/DR story on Hetzner, and will now hold compliance-relevant receipts. → **Mitigation**: flagged explicitly as an infra follow-up, out of scope for this change.
 - **[Trade-off]** Proxying all uploads through the FastAPI app instead of presigned direct-upload adds app-server bandwidth/memory pressure for large files. Accepted given expected file sizes (receipts/invoices, capped at 15MB) and no object-store endpoint to presign against today.
+- **[Trade-off]** `Budget.parent_budget_id` models the funding chain as a simple self-referential link rather than a dedicated `Grant`/hierarchy entity. Accepted deliberately: each node only needs to know its own immediate parent (and, via reverse relationship, its own children), never the chain as a whole — so this scales to any depth without a redesign.
 
 ## Migration Plan
 
 One new Alembic revision chained off the current head (`000002_add_ai_draft_budget_status`), adding `reports`, `report_lines`, `attachments` in a single migration (`downgrade()` drops in reverse order). No data backfill needed — purely additive tables. Rollback is a straight `alembic downgrade -1`.
+
+Currency-ledger tables (`funding_receipts`, `currency_conversions`, plus `Budget.actual_currency`/`parent_budget_id` and `ReportLine.source_report_id`) are additive to this same migration or a follow-on one — no backfill needed, no change to existing columns.
 
 ## Open Questions
 
