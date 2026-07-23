@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.ai_client = AiClient(settings.AI_SERVICE_URL, http=app.state.http_client)
     app.state.tool_registry = BudgetToolRegistry(app.state.http_client, settings.BUDGET_SERVICE_URL)
+    await app.state.tool_registry.initialize()
     yield
     await app.state.http_client.aclose()
     logger.info("app_shutdown", service="chat")

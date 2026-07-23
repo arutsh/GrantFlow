@@ -1,38 +1,70 @@
-from unittest.mock import AsyncMock, MagicMock
+"""Tests for BudgetToolRegistry post-#97 (OpenAPI -> MCP bridge dispatch).
+
+Uses the real cached spec + httpx.MockTransport, so requests actually flow
+through FastMCP's OpenAPI bridge (RequestDirector, transforms) rather than
+mocking httpx.AsyncClient directly — this is what actually proves the
+rename/hide/inject transforms behave correctly, not just that our own code
+calls the right MagicMock.
+"""
+
+import json
 
 import httpx
 import pytest
 
 from app.services.budget_tool_registry import BudgetToolRegistry
+from app.services.mcp_bridge import fetch_cached_spec
 
 pytestmark = pytest.mark.anyio
 
-
-def _http_with_response(method: str, response: httpx.Response) -> MagicMock:
-    http = MagicMock()
-    setattr(http, method, AsyncMock(return_value=response))
-    return http
+_SPEC = fetch_cached_spec()
 
 
-def _response(
-    status_code: int, json_body: dict, request_url: str = "http://budget/x"
-) -> httpx.Response:
-    return httpx.Response(
-        status_code=status_code, json=json_body, request=httpx.Request("GET", request_url)
+async def _registry(tool_handler) -> BudgetToolRegistry:
+    """initialize() fetches /openapi.json before any tool call happens —
+    route that specifically to the real cached spec, everything else to the
+    test's own handler for the actual dispatch under test.
+    """
+
+    def combined_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/openapi.json":
+            return httpx.Response(200, json=_SPEC)
+        return tool_handler(request)
+
+    http = httpx.AsyncClient(
+        base_url="http://budget:8000/api/v1", transport=httpx.MockTransport(combined_handler)
     )
+    registry = BudgetToolRegistry(http, "http://budget:8000/api/v1")
+    await registry.initialize()
+    return registry
 
 
-def _malformed_response(request_url: str = "http://budget/x") -> httpx.Response:
-    """A 2xx with a body that isn't valid JSON — e.g. a proxy returning an
-    HTML error page with status 200."""
-    return httpx.Response(
-        status_code=200, content=b"<html>not json</html>", request=httpx.Request("GET", request_url)
-    )
+def _json_handler(status_code: int, body):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json=body)
+
+    return handler
+
+
+def _capturing_json_handler(sent: list, status_code: int, body):
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(status_code, json=body)
+
+    return handler
+
+
+def _malformed_2xx_handler(sent: list):
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, content=b"<html>not json</html>")
+
+    return handler
 
 
 class TestListTools:
-    def test_budgets_page_returns_curated_four(self):
-        registry = BudgetToolRegistry(MagicMock(), "http://budget/api/v1")
+    async def test_budgets_page_returns_curated_four(self):
+        registry = await _registry(_json_handler(200, {}))
         tools = registry.list_tools("budgets")
         assert {t.name for t in tools} == {
             "create_budget",
@@ -41,14 +73,36 @@ class TestListTools:
             "get_budget_summary",
         }
 
-    def test_no_page_returns_no_tools(self):
-        registry = BudgetToolRegistry(MagicMock(), "http://budget/api/v1")
+    async def test_no_page_returns_no_tools(self):
+        registry = await _registry(_json_handler(200, {}))
         assert registry.list_tools(None) == []
 
-    def test_tool_schemas_never_contain_a_budget_id(self):
-        registry = BudgetToolRegistry(MagicMock(), "http://budget/api/v1")
+    async def test_tool_schemas_never_contain_a_budget_id(self):
+        registry = await _registry(_json_handler(200, {}))
         for tool in registry.list_tools("budgets"):
             assert "budget_id" not in tool.parameters.get("properties", {})
+
+    async def test_no_internal_fields_leak_through(self):
+        """The raw OpenAPI schema exposes owner_id/funding_customer_id/status/
+        total_amount/created_by/updated_by/created_at/updated_at on
+        create_budget and update_budget — all must be hidden from the model."""
+        registry = await _registry(_json_handler(200, {}))
+        internal_fields = {
+            "owner_id",
+            "funding_customer_id",
+            "status",
+            "total_amount",
+            "created_by",
+            "updated_by",
+            "created_at",
+            "updated_at",
+            "id",
+            "category_id",
+            "extra_fields",
+        }
+        for tool in registry.list_tools("budgets"):
+            leaked = internal_fields & tool.parameters.get("properties", {}).keys()
+            assert not leaked, f"{tool.name} leaks {leaked}"
 
 
 class TestTargetedTools:
@@ -66,10 +120,10 @@ class TestTargetedTools:
 
 class TestCallCreateBudget:
     async def test_success_returns_budget_id(self):
-        http = _http_with_response(
-            "post", _response(200, {"id": "budget-1", "name": "USAID Grant"})
+        sent: list = []
+        registry = await _registry(
+            _capturing_json_handler(sent, 200, {"id": "budget-1", "name": "USAID Grant"})
         )
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
 
         result = await registry.call_tool(
             "create_budget",
@@ -79,21 +133,20 @@ class TestCallCreateBudget:
 
         assert result.success is True
         assert result.created_resource_id == "budget-1"
-        http.post.assert_awaited_once()
-        assert http.post.await_args.kwargs["json"] == {
+        (req,) = sent
+        assert req.method == "POST"
+        assert str(req.url) == "http://budget:8000/api/v1/budgets/"
+        assert json.loads(req.content) == {
             "name": "USAID Grant",
             "external_funder_name": "USAID",
             "status": "ai_draft",
         }
-        assert http.post.await_args.kwargs["headers"] == {"Authorization": "Bearer tok"}
+        assert req.headers["authorization"] == "Bearer tok"
 
     async def test_success_message_never_embeds_the_raw_id(self):
         """specs/chat-url-context.md: "the raw id SHALL NOT be rendered in the
         chat transcript" — this message becomes the assistant's chat bubble."""
-        http = _http_with_response(
-            "post", _response(200, {"id": "budget-1", "name": "USAID Grant"})
-        )
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        registry = await _registry(_json_handler(200, {"id": "budget-1", "name": "USAID Grant"}))
 
         result = await registry.call_tool(
             "create_budget",
@@ -104,8 +157,7 @@ class TestCallCreateBudget:
         assert "budget-1" not in result.message
 
     async def test_domain_rejection_relayed_not_raised(self):
-        http = _http_with_response("post", _response(422, {"detail": "Funding source is required"}))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        registry = await _registry(_json_handler(422, {"detail": "Funding source is required"}))
 
         result = await registry.call_tool(
             "create_budget", {"budget_name": "X", "external_funder_name": "Y"}, token="tok"
@@ -117,8 +169,8 @@ class TestCallCreateBudget:
 
 class TestCallAddBudgetLine:
     async def test_injects_budget_id_from_params(self):
-        http = _http_with_response("post", _response(200, {"id": "line-1"}))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        sent: list = []
+        registry = await _registry(_capturing_json_handler(sent, 200, {"id": "line-1"}))
 
         result = await registry.call_tool(
             "add_budget_line",
@@ -132,28 +184,39 @@ class TestCallAddBudgetLine:
         )
 
         assert result.success is True
-        assert http.post.await_args.kwargs["json"]["budget_id"] == "budget-1"
-        assert http.post.await_args.kwargs["json"]["description"] == "Travel"
+        body = json.loads(sent[0].content)
+        assert body["budget_id"] == "budget-1"
+        assert body["description"] == "Travel"
+        assert str(sent[0].url) == "http://budget:8000/api/v1/budget-lines/"
 
     async def test_success_message_never_embeds_the_raw_line_id(self):
-        http = _http_with_response("post", _response(200, {"id": "line-1"}))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        registry = await _registry(_json_handler(200, {"id": "line-1"}))
 
         result = await registry.call_tool(
             "add_budget_line",
-            {"category_name": "Travel", "amount": 500, "budget_id": "budget-1"},
+            {
+                "category_name": "Travel",
+                "amount": 500,
+                "budget_id": "budget-1",
+                "description": "Travel",
+            },
             token="tok",
         )
 
         assert "line-1" not in result.message
 
     async def test_malformed_2xx_body_reported_as_failure(self):
-        http = _http_with_response("post", _malformed_response())
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        sent: list = []
+        registry = await _registry(_malformed_2xx_handler(sent))
 
         result = await registry.call_tool(
             "add_budget_line",
-            {"category_name": "Travel", "amount": 500, "budget_id": "budget-1"},
+            {
+                "category_name": "Travel",
+                "amount": 500,
+                "budget_id": "budget-1",
+                "description": "Travel",
+            },
             token="tok",
         )
 
@@ -162,19 +225,18 @@ class TestCallAddBudgetLine:
 
 class TestCallUpdateBudget:
     async def test_patches_only_provided_fields(self):
-        http = _http_with_response("patch", _response(200, {}))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        sent: list = []
+        registry = await _registry(_capturing_json_handler(sent, 200, {}))
 
         await registry.call_tool(
             "update_budget", {"name": "New Name", "budget_id": "budget-1"}, token="tok"
         )
 
-        payload = http.patch.await_args.kwargs["json"]
-        assert payload == {"name": "New Name"}
+        assert json.loads(sent[0].content) == {"name": "New Name"}
+        assert str(sent[0].url) == "http://budget:8000/api/v1/budgets/budget-1"
 
     async def test_success_message_never_embeds_the_raw_budget_id(self):
-        http = _http_with_response("patch", _response(200, {}))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        registry = await _registry(_json_handler(200, {}))
 
         result = await registry.call_tool(
             "update_budget", {"name": "New Name", "budget_id": "budget-1"}, token="tok"
@@ -189,8 +251,8 @@ class TestCallGetBudgetSummary:
             "name": "USAID Grant",
             "lines": [{"description": "Travel", "amount": 500}],
         }
-        http = _http_with_response("get", _response(200, body))
-        registry = BudgetToolRegistry(http, "http://budget/api/v1")
+        sent: list = []
+        registry = await _registry(_capturing_json_handler(sent, 200, body))
 
         result = await registry.call_tool(
             "get_budget_summary", {"budget_id": "budget-1"}, token="tok"
@@ -199,3 +261,5 @@ class TestCallGetBudgetSummary:
         assert result.success is True
         assert "USAID Grant" in result.message
         assert "1 lines" in result.message
+        assert str(sent[0].url) == "http://budget:8000/api/v1/budgets/budget-1"
+        assert sent[0].method == "GET"

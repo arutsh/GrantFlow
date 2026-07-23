@@ -1,168 +1,152 @@
-"""Curated budget toolset — hand-written REST dispatch (pre-#97 bridge).
-
-Tool schemas exposed to ai never contain a resource id — `budget_id` is
-expected to already be present in `params` by the time `call_tool` runs
-(the orchestrator injects it from the request's `context_id` for targeted
-tools before calling here).
+"""Curated budget toolset — dispatched via the in-process OpenAPI -> MCP
+bridge (mcp_bridge.py) rather than hand-written REST calls, per the
+"OpenAPI bridge equivalence" requirement in specs/chat-tool-registry.md
+(ticket #97). Message-building/error-relay behavior for each tool is
+preserved exactly from the pre-bridge hand-written dispatchers — this is an
+internal swap, not a UX change.
 """
 
-from app.services.tool_registry import ToolRegistry, ToolResult, auth_headers, relay_domain_errors
-from shared.ai_client.schemas import ToolDef
+import httpx
 
-_TOOL_DEFS = [
-    ToolDef(
-        name="create_budget",
-        description="Create a new, empty budget.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "budget_name": {"type": "string"},
-                "external_funder_name": {"type": "string"},
-                "duration_months": {"type": "integer"},
-            },
-            "required": ["budget_name", "external_funder_name"],
-        },
-    ),
-    ToolDef(
-        name="add_budget_line",
-        description="Add a line item to the budget currently in view.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "category_name": {
-                    "type": "string",
-                    "description": (
-                        "The high-level budget category this line belongs to, e.g. "
-                        "'Staff costs', 'Travel', 'Equipment'."
-                    ),
-                },
-                "amount": {"type": "number"},
-                "description": {
-                    "type": "string",
-                    "description": (
-                        "What this specific line item is for, e.g. 'Project coordinator "
-                        "salary' or 'Return flights to the project site'. If the user's "
-                        "message doesn't give enough detail to write a specific "
-                        "description, use 'MISC'."
-                    ),
-                },
-            },
-            "required": ["category_name", "amount", "description"],
-        },
-    ),
-    ToolDef(
-        name="update_budget",
-        description="Update fields on the budget currently in view.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "external_funder_name": {"type": "string"},
-                "duration_months": {"type": "integer"},
-                "local_currency": {"type": "string"},
-            },
-            "required": [],
-        },
-    ),
-    ToolDef(
-        name="get_budget_summary",
-        description="Fetch a read-only summary of the budget currently in view.",
-        parameters={"type": "object", "properties": {}, "required": []},
-    ),
-]
+from app.services import mcp_bridge
+from app.services.tool_registry import ToolRegistry, ToolResult
+from shared.ai_client.schemas import ToolDef
 
 
 class BudgetToolRegistry(ToolRegistry):
-    page_toolsets = {"budgets": _TOOL_DEFS}
     targeted_tools = {"add_budget_line", "update_budget", "get_budget_summary"}
     resource_id_param = "budget_id"
     creating_tools = {"create_budget"}
     no_active_resource_message = "There's no budget in progress in this conversation yet."
 
-    @relay_domain_errors("create budget")
-    async def _call_create_budget(self, params: dict, token: str) -> ToolResult:
-        payload: dict = {
-            "name": params["budget_name"],
-            "external_funder_name": params["external_funder_name"],
-            # Matches the old ai-driven parse-budget flow's status, so
-            # chat-created budgets get the same "needs review" UI treatment
-            # (SingleBudgetView auto-opens edit mode for ai_draft) rather than
-            # the plain-form-create default of "draft".
-            "status": "ai_draft",
+    def __init__(self, http: httpx.AsyncClient, base_url: str):
+        super().__init__(http, base_url)
+        self._service_root = mcp_bridge.service_root(base_url)
+        self._spec: dict | None = None
+
+    async def initialize(self) -> None:
+        """One-time startup call (see main.py's lifespan): fetch — or fall
+        back to the cached copy of — budget's OpenAPI spec, and cache the
+        model-facing tool schemas into page_toolsets. call_tool() never
+        touches this again; it builds its own short-lived bridge per call.
+        """
+        self._spec = await mcp_bridge.load_spec(self._service_root, self._http)
+
+        schema_client = httpx.AsyncClient(base_url=self._service_root)
+        try:
+            schema_mcp = mcp_bridge.build_schema_bridge(self._spec, schema_client)
+            tools = await schema_mcp.list_tools()
+        finally:
+            await schema_client.aclose()
+
+        self.page_toolsets = {
+            "budgets": [
+                ToolDef(name=t.name, description=t.description, parameters=t.parameters)
+                for t in tools
+            ]
         }
-        if params.get("duration_months") is not None:
-            payload["duration_months"] = params["duration_months"]
-        resp = await self._http.post(
-            self._url("/budgets/"), json=payload, headers=auth_headers(token)
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        budget_id = data.get("id")
-        # The id is surfaced structurally via ToolResult.created_resource_id (and
-        # the SSE `done.budget_id` field) — never embedded in this prose, per
-        # specs/chat-url-context.md: "the raw id SHALL NOT be rendered in the
-        # chat transcript."
-        return ToolResult(
-            success=True,
-            message=f"Budget '{payload['name']}' created successfully.",
-            created_resource_id=budget_id,
-        )
 
-    @relay_domain_errors("add budget line")
-    async def _call_add_budget_line(self, params: dict, token: str) -> ToolResult:
-        description = params["description"]
-        payload = {
-            "budget_id": params["budget_id"],
-            "description": description,
-            "amount": params["amount"],
-            "category_name": params["category_name"],
-        }
-        resp = await self._http.post(
-            self._url("/budget-lines/"), json=payload, headers=auth_headers(token)
-        )
-        resp.raise_for_status()
-        # add_budget_line isn't in creating_tools, so its id is never surfaced
-        # structurally either (orchestrator only reads created_resource_id for
-        # creating_tools) and it's no longer needed in the message (see the
-        # "raw id SHALL NOT be rendered" rule create_budget already follows).
-        # Still parse the body, though — a 2xx with an unparseable body (e.g.
-        # a proxy returning an HTML error page with status 200) must still be
-        # caught here and reported as a failure, not silently treated as a
-        # successful add.
-        resp.json()
-        return ToolResult(
-            success=True,
-            message=f"Line '{description}' ({params['amount']}) added to budget.",
-        )
+    async def call_tool(self, name: str, params: dict, *, token: str) -> ToolResult:
+        assert self._spec is not None, "BudgetToolRegistry.initialize() was not awaited"
 
-    @relay_domain_errors("update budget")
-    async def _call_update_budget(self, params: dict, token: str) -> ToolResult:
-        budget_id = params["budget_id"]
-        payload = {k: v for k, v in params.items() if k != "budget_id" and v is not None}
-        resp = await self._http.patch(
-            self._url(f"/budgets/{budget_id}"), json=payload, headers=auth_headers(token)
-        )
-        resp.raise_for_status()
-        # Same "raw id SHALL NOT be rendered in the chat transcript" rule as
-        # create_budget/add_budget_line — a raw UUID reads as an error to a
-        # non-technical user, not confirmation, even when it's just the
-        # already-in-view context id rather than a newly created one.
-        return ToolResult(success=True, message="Budget updated successfully.")
+        builder = _RESULT_BUILDERS.get(name)
+        if builder is None:
+            return ToolResult(success=False, message=f"Unknown tool: {name}")
 
-    @relay_domain_errors("get budget summary")
-    async def _call_get_budget_summary(self, params: dict, token: str) -> ToolResult:
-        budget_id = params["budget_id"]
-        resp = await self._http.get(self._url(f"/budgets/{budget_id}"), headers=auth_headers(token))
-        resp.raise_for_status()
-        data = resp.json()
-        name = data.get("name", "unknown")
-        lines = data.get("lines", [])
-        total = sum(ln.get("amount", 0) for ln in lines)
-        preview = ", ".join(
-            f"{ln.get('description', '?')} ({ln.get('amount', 0)})" for ln in lines[:5]
+        dispatch_params = dict(params)
+        budget_id = dispatch_params.pop(self.resource_id_param, None)
+
+        # Reuse self._http's transport (not just its default headers) so a
+        # test's MockTransport — or, in prod, the shared connection pool —
+        # carries over; only the per-turn bearer token actually needs to
+        # vary per call. httpx has no public "clone with different headers"
+        # API, so this reaches into the one private attribute that matters.
+        client = httpx.AsyncClient(
+            base_url=self._service_root,
+            transport=self._http._transport,
+            headers={"Authorization": f"Bearer {token}"},
         )
-        suffix = f" … and {len(lines) - 5} more" if len(lines) > 5 else ""
-        return ToolResult(
-            success=True,
-            message=f"Budget '{name}': {len(lines)} lines, total {total}. {preview}{suffix}",
-        )
+        try:
+            mcp = mcp_bridge.build_dispatch_bridge(self._spec, client, budget_id=budget_id)
+            result = await mcp.call_tool(name, dispatch_params)
+            # The OpenAPI bridge never raises on a 2xx with an unparseable
+            # body (e.g. a proxy returning an HTML error page with status
+            # 200) — it returns structured_content=None instead (see
+            # fastmcp's components.py: `except json.JSONDecodeError: return
+            # ToolResult(content=response.text)`). Must be caught explicitly
+            # or this silently reports success, the exact bug #93's code
+            # review fixed in the old hand-written dispatchers.
+            if result.structured_content is None:
+                return ToolResult(
+                    success=False,
+                    message=f"Failed to {_VERBS[name]}: received an unreadable response",
+                )
+            return builder(dispatch_params, result.structured_content)
+        except Exception as exc:
+            # FastMCP wraps every HTTP failure (4xx/5xx, timeouts, connect
+            # errors) into its own ValueError before it ever reaches here —
+            # never a raw httpx.HTTPStatusError — so one generic handler
+            # covers all of them; str(exc) already carries the useful detail.
+            return ToolResult(success=False, message=f"Failed to {_VERBS[name]}: {exc}")
+        finally:
+            await client.aclose()
+
+
+def _build_create_budget_result(params: dict, data: dict) -> ToolResult:
+    budget_id = data.get("id")
+    # The id is surfaced structurally via ToolResult.created_resource_id (and
+    # the SSE `done.budget_id` field) — never embedded in this prose, per
+    # specs/chat-url-context.md: "the raw id SHALL NOT be rendered in the
+    # chat transcript."
+    return ToolResult(
+        success=True,
+        message=f"Budget '{params['budget_name']}' created successfully.",
+        created_resource_id=budget_id,
+    )
+
+
+def _build_add_budget_line_result(params: dict, data: dict) -> ToolResult:
+    # add_budget_line isn't a creating_tool, so its id is never surfaced
+    # structurally or in the message (same "raw id SHALL NOT be rendered"
+    # rule create_budget follows). `data` is intentionally unused — a
+    # malformed/unparseable 2xx body never reaches this builder at all,
+    # call_tool() checks result.structured_content and reports failure
+    # before dispatching to any builder.
+    return ToolResult(
+        success=True,
+        message=f"Line '{params['description']}' ({params['amount']}) added to budget.",
+    )
+
+
+def _build_update_budget_result(params: dict, data: dict) -> ToolResult:
+    # Same "raw id SHALL NOT be rendered" rule — the budget_id here is the
+    # already-in-view context id, not a newly created one, but the rule
+    # applies regardless.
+    return ToolResult(success=True, message="Budget updated successfully.")
+
+
+def _build_get_budget_summary_result(params: dict, data: dict) -> ToolResult:
+    name = data.get("name", "unknown")
+    lines = data.get("lines", [])
+    total = sum(ln.get("amount", 0) for ln in lines)
+    preview = ", ".join(f"{ln.get('description', '?')} ({ln.get('amount', 0)})" for ln in lines[:5])
+    suffix = f" … and {len(lines) - 5} more" if len(lines) > 5 else ""
+    return ToolResult(
+        success=True,
+        message=f"Budget '{name}': {len(lines)} lines, total {total}. {preview}{suffix}",
+    )
+
+
+_RESULT_BUILDERS = {
+    "create_budget": _build_create_budget_result,
+    "add_budget_line": _build_add_budget_line_result,
+    "update_budget": _build_update_budget_result,
+    "get_budget_summary": _build_get_budget_summary_result,
+}
+
+_VERBS = {
+    "create_budget": "create budget",
+    "add_budget_line": "add budget line",
+    "update_budget": "update budget",
+    "get_budget_summary": "get budget summary",
+}
