@@ -2,14 +2,17 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 1. Budget currency & reporting-period fields — ticket #144 (`Budget/Issue-144/currency-fields`)
 
-- [ ] 1.1 Add `actual_currency` (nullable `String(3)`), `parent_budget_id` (nullable, self-referential FK to `budgets.id`), and `start_date` (nullable `Date`) columns to `BudgetModel` in `app/models/budget.py`
-- [ ] 1.2 Write Alembic migration `000003_add_budget_currency_fields.py` (down_revision `000002`) adding all three columns, with matching `downgrade()`
-- [ ] 1.3 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
-- [ ] 1.4 Extend `shared/schemas/budget_schema.py` with `actual_currency`, `parent_budget_id`, and `start_date` on the relevant `Budget*` schemas
-- [ ] 1.5 Add a `resolve_donor_currency(budget)` helper (in `app/services/budget_services.py` or similar) returning `budget.parent_budget.local_currency` when `parent_budget_id` is set, else `None` — computed on read, never stored
-- [ ] 1.6 Enforce `start_date` is set before a budget's status can be changed to `confirmed` (in `update_budget_service`); reject the update otherwise
-- [ ] 1.7 Add `services/budget/tests/test_budget_currency_fields.py`: column round-trip, `resolve_donor_currency` with and without a parent budget set, confirming a budget without `start_date` cannot transition to `confirmed`
-- [ ] 1.8 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [x] 1.1 Add `actual_currency` (nullable `String(3)`) and `start_date` (nullable `Date`) columns to `BudgetModel` in `app/models/budget.py`
+- [x] 1.2 Write Alembic migration `000004_add_budget_currency_fields.py` (down_revision `000003` — chain drifted, see note below) adding both columns, with matching `downgrade()`
+- [x] 1.3 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [x] 1.4 Extend `shared/schemas/budget_schema.py` with `actual_currency` and `start_date` on the relevant `Budget*` schemas
+- [x] 1.6 Enforce `start_date` is set before a budget's status can be changed to `confirmed` (in `update_budget_service`); reject the update otherwise
+- [x] 1.7 Add `services/budget/tests/test_budget_currency_fields.py`: column round-trip, confirming a budget without `start_date` cannot transition to `confirmed`
+- [x] 1.8 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+
+**Dropped from this ticket (2026-07-24):** `Budget.parent_budget_id` and `resolve_donor_currency(budget)` (originally 1.1/1.4/1.5). Audited against tickets 2–5 and found nothing in the current `budget-reports` scope ever consumes them — the donor-currency-chain display they exist for (proposal.md's "Rollup/spreadsheet-style summary reporting") is explicitly out of scope for #144–148. Re-add as their own ticket when that feature is actually scoped, per the project's no-speculative-fields convention. See design.md's "Donor's own reporting currency..." decision, now marked deferred.
+
+> Note: `000002` was already the head when this ticket's design.md was written, but `000003_add_budget_total_amount` landed first from unrelated work. This migration chains off the real head (`000003`) and is numbered `000004`. Tickets 3–5 below reference `000004`/`000005`/`000006` — re-check the actual head before writing those; they'll likely need to shift to `000005`/`000006`/`000007`.
 
 ## 2. Cloud-agnostic (S3-compatible) storage abstraction — ticket #145 (`Shared/Issue-145/storage-abstraction`)
 

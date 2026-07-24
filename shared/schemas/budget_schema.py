@@ -3,7 +3,7 @@
 from pydantic import BaseModel, ConfigDict, model_validator
 from uuid import UUID
 from shared.schemas.budget_line_schema import BudgetLine
-from datetime import datetime
+from datetime import datetime, date
 
 from enum import Enum
 
@@ -21,6 +21,8 @@ class BudgetBase(BaseModel):
     owner_id: UUID | None = None
     funding_customer_id: UUID | None = None
     local_currency: str | None = None
+    actual_currency: str | None = None
+    start_date: date | None = None
     status: BudgetStatus = BudgetStatus.draft
     duration_months: int | None = None
     external_funder_name: str | None = None
@@ -81,6 +83,8 @@ class BudgetWithLines(BaseModel):
     status: BudgetStatus | None = None
     duration_months: int | None = None
     local_currency: str | None = None
+    actual_currency: str | None = None
+    start_date: date | None = None
     total_amount: float | None = None
     owner: CustomerOut | None = None
     funder: CustomerOut | None = None

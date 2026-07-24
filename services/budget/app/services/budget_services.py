@@ -89,6 +89,14 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         ):
             raise PermissionDenied()
 
+    if budget.status == BudgetStatus.confirmed:
+        effective_start_date = budget.start_date or valid_budget.start_date
+        if not effective_start_date:
+            raise DomainError(
+                "start_date must be set before a budget can be confirmed",
+                status.HTTP_400_BAD_REQUEST,
+            )
+
     return update_budget(
         session=db,
         budget_id=budget_id,
@@ -96,6 +104,8 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         status=budget.status,
         duration_months=budget.duration_months,
         local_currency=budget.local_currency,
+        actual_currency=budget.actual_currency,
+        start_date=budget.start_date,
         owner_id=owner_id,
         funding_customer_id=budget.funding_customer_id,
         external_funder_name=budget.external_funder_name,
