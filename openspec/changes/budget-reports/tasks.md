@@ -16,15 +16,15 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 2. Cloud-agnostic (S3-compatible) storage abstraction — ticket #145 (`Shared/Issue-145/storage-abstraction`)
 
-- [ ] 2.1 Add `shared/storage/__init__.py`, `shared/storage/storage_service.py` implementing `StorageService` (`save`, `open_stream`, `delete`, `exists`) wrapping a `boto3` S3 client — the only file in the repo permitted to import `boto3`; lazily creates the configured bucket on first `save()` if it doesn't already exist
-- [ ] 2.2 Add `shared/storage/config.py` reading `STORAGE_ENDPOINT_URL`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET_NAME`
-- [ ] 2.3 Add `boto3` as a new direct, pinned dependency in `services/budget/requirements.txt`
-- [ ] 2.4 Add `STORAGE_ENDPOINT_URL`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`/`STORAGE_BUCKET_NAME` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files (dev values point at the local MinIO container; prod values point at the `open-grantflow-reports` Cloudflare R2 bucket)
-- [ ] 2.5 Add a `minio` service to `docker-compose.yml` (default dev credentials, a bind-mounted data volume) for local development
-- [ ] 2.6 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
-- [ ] 2.7 Write `services/budget/tests/test_storage_service.py` — round-trip test for save/open_stream/delete/exists against the local MinIO container
-- [ ] 2.8 Add a lint/test guard (e.g. a grep-based test) confirming `boto3` is imported only inside `shared/storage/storage_service.py`
-- [ ] 2.9 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [x] 2.1 Add `shared/storage/__init__.py`, abstract `StorageService` (`save`, `open_stream`, `delete`, `exists`) in `shared/storage/storage_service.py`, and concrete `S3StorageService(StorageService)` wrapping a `boto3` S3 client in `shared/storage/s3_storage_service.py` — the only file in the repo permitted to import `boto3` (split from the abstract interface so a future non-S3 backend can be added as a sibling subclass); lazily creates the configured bucket on first `save()` if it doesn't already exist
+- [x] 2.2 Add `shared/storage/config.py` reading `STORAGE_ENDPOINT_URL`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET_NAME`
+- [x] 2.3 Add `boto3` as a new direct, pinned dependency in `services/budget/requirements.txt`
+- [x] 2.4 Add `STORAGE_ENDPOINT_URL`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`/`STORAGE_BUCKET_NAME` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files (dev values point at the local MinIO container; prod values point at the `open-grantflow-reports` Cloudflare R2 bucket)
+- [x] 2.5 Add a `minio` service to `docker-compose.yml` (default dev credentials, a bind-mounted data volume) for local development
+- [x] 2.6 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
+- [x] 2.7 Write `services/budget/tests/test_storage_service.py` — round-trip test for save/open_stream/delete/exists against the local MinIO container (skips gracefully if MinIO isn't reachable; verified passing against a live local MinIO container)
+- [x] 2.8 Add a lint/test guard (e.g. a grep-based test) confirming `boto3` is imported only inside `shared/storage/s3_storage_service.py` — `shared/tests/test_storage_boto3_confinement.py`
+- [x] 2.9 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
 ## 3. Report submission lifecycle — ticket #146 (`Budget/Issue-146/report-submission-lifecycle`)
 
