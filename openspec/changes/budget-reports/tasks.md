@@ -1,24 +1,27 @@
 Workflow rule: **one group = one GitHub ticket = one PR, merged before the next group starts.** Branch names are fixed per ticket. Every PR: `flake8 --max-line-length=100` clean; commits/pushes only with explicit user approval.
 
-## 1. Budget currency fields — ticket #144 (`Budget/Issue-144/currency-fields`)
+## 1. Budget currency & reporting-period fields — ticket #144 (`Budget/Issue-144/currency-fields`)
 
-- [ ] 1.1 Add `actual_currency` (nullable `String(3)`) and `parent_budget_id` (nullable, self-referential FK to `budgets.id`) columns to `BudgetModel` in `app/models/budget.py`
-- [ ] 1.2 Write Alembic migration `000003_add_budget_currency_fields.py` (down_revision `000002`) adding both columns, with matching `downgrade()`
+- [ ] 1.1 Add `actual_currency` (nullable `String(3)`), `parent_budget_id` (nullable, self-referential FK to `budgets.id`), and `start_date` (nullable `Date`) columns to `BudgetModel` in `app/models/budget.py`
+- [ ] 1.2 Write Alembic migration `000003_add_budget_currency_fields.py` (down_revision `000002`) adding all three columns, with matching `downgrade()`
 - [ ] 1.3 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
-- [ ] 1.4 Extend `shared/schemas/budget_schema.py` with `actual_currency` and `parent_budget_id` on the relevant `Budget*` schemas
+- [ ] 1.4 Extend `shared/schemas/budget_schema.py` with `actual_currency`, `parent_budget_id`, and `start_date` on the relevant `Budget*` schemas
 - [ ] 1.5 Add a `resolve_donor_currency(budget)` helper (in `app/services/budget_services.py` or similar) returning `budget.parent_budget.local_currency` when `parent_budget_id` is set, else `None` — computed on read, never stored
-- [ ] 1.6 Add `services/budget/tests/test_budget_currency_fields.py`: column round-trip, `resolve_donor_currency` with and without a parent budget set
-- [ ] 1.7 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [ ] 1.6 Enforce `start_date` is set before a budget's status can be changed to `confirmed` (in `update_budget_service`); reject the update otherwise
+- [ ] 1.7 Add `services/budget/tests/test_budget_currency_fields.py`: column round-trip, `resolve_donor_currency` with and without a parent budget set, confirming a budget without `start_date` cannot transition to `confirmed`
+- [ ] 1.8 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
-## 2. Cloud-agnostic storage abstraction — ticket #145 (`Shared/Issue-145/storage-abstraction`)
+## 2. Cloud-agnostic (S3-compatible) storage abstraction — ticket #145 (`Shared/Issue-145/storage-abstraction`)
 
-- [ ] 2.1 Add `shared/storage/__init__.py`, `shared/storage/storage_service.py` implementing `StorageService` (`save`, `open_stream`, `delete`, `exists`) wrapping `fsspec.core.url_to_fs`
-- [ ] 2.2 Add `shared/storage/config.py` reading `STORAGE_BACKEND_URL` (default `file:///app/uploads/reports`)
-- [ ] 2.3 Promote `fsspec` from transitive to direct, pinned dependency in `services/budget/requirements.txt`
-- [ ] 2.4 Add `STORAGE_BACKEND_URL` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files
-- [ ] 2.5 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
-- [ ] 2.6 Write `services/budget/tests/test_storage_service.py` — real-disk round-trip test (`file://` + pytest `tmp_path`) for save/open_stream/delete/exists
-- [ ] 2.7 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [ ] 2.1 Add `shared/storage/__init__.py`, `shared/storage/storage_service.py` implementing `StorageService` (`save`, `open_stream`, `delete`, `exists`) wrapping a `boto3` S3 client — the only file in the repo permitted to import `boto3`; lazily creates the configured bucket on first `save()` if it doesn't already exist
+- [ ] 2.2 Add `shared/storage/config.py` reading `STORAGE_ENDPOINT_URL`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET_NAME`
+- [ ] 2.3 Add `boto3` as a new direct, pinned dependency in `services/budget/requirements.txt`
+- [ ] 2.4 Add `STORAGE_ENDPOINT_URL`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`/`STORAGE_BUCKET_NAME` to `services/budget/app/core/config.py` `Settings` and to all three `.env.budget.*` files (dev values point at the local MinIO container; prod values point at the `open-grantflow-reports` Cloudflare R2 bucket)
+- [ ] 2.5 Add a `minio` service to `docker-compose.yml` (default dev credentials, a bind-mounted data volume) for local development
+- [ ] 2.6 Add `services/budget/app/services/storage_client.py` — module-level `StorageService` instance for the budget service to import
+- [ ] 2.7 Write `services/budget/tests/test_storage_service.py` — round-trip test for save/open_stream/delete/exists against the local MinIO container
+- [ ] 2.8 Add a lint/test guard (e.g. a grep-based test) confirming `boto3` is imported only inside `shared/storage/storage_service.py`
+- [ ] 2.9 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
 ## 3. Report submission lifecycle — ticket #146 (`Budget/Issue-146/report-submission-lifecycle`)
 
@@ -32,13 +35,13 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [ ] 3.8 Add thin re-export modules in `services/budget/app/schemas/` for both, and update `services/budget/app/schemas/__init__.py`
 - [ ] 3.9 Add `services/budget/app/crud/report_crud.py` (create/get/list/update/delete/transition_status)
 - [ ] 3.10 Add `services/budget/app/crud/report_line_crud.py` (create/get/list/update/delete)
-- [ ] 3.11 Add `services/budget/app/services/report_services.py`: create/get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected, enforces funder-only authorization via `budget.funding_customer_id`), reopen (rejected→draft)
+- [ ] 3.11 Add `services/budget/app/services/report_services.py`: create (rejects unless `budget.status == confirmed`; defaults `period_start`/`period_end` to the budget's full span — `budget.start_date` through `budget.start_date + duration_months` — when not supplied; rejects if the resulting period overlaps any other report already existing for the same budget, regardless of that report's status), get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected; authorization is the user matching `budget.funding_customer_id` when set, else the budget owner when `funding_customer_id` is `None`), reopen (rejected→draft)
 - [ ] 3.12 Add `services/budget/app/services/report_line_services.py`: create/get/list/update/delete, enforcing draft-only lock and same-budget cross-check between `budget_line_id` and the report's budget
 - [ ] 3.13 Add `services/budget/app/api/report_routes.py`: CRUD + `POST /{id}/submit` + `POST /{id}/review`
 - [ ] 3.14 Add `services/budget/app/api/report_line_routes.py`: CRUD + `GET /by-report/{report_id}`
 - [ ] 3.15 Register both routers in `services/budget/main.py`
 - [ ] 3.16 Add `services/budget/tests/factories/report.py`: `ReportFactory`, `ReportLineFactory`
-- [ ] 3.17 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), submit transition, review transition (funder-only enforcement)
+- [ ] 3.17 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), report creation rejected against a non-`confirmed` budget, report creation defaults period to the budget's full span when omitted, report creation rejected on period overlap (including against a `rejected` report) and allowed on non-overlapping periods regardless of status, submit transition, review transition (funder-only enforcement when `funding_customer_id` is set, owner self-review when it is not)
 - [ ] 3.18 Add `services/budget/tests/test_report_line_routes.py`: create/update rejected on non-draft report, cross-budget `budget_line_id` rejected
 - [ ] 3.19 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
 
