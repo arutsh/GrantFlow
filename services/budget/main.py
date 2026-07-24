@@ -2,7 +2,13 @@
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.api import budget_routes, budget_line_routes, mapping_routes
+from app.api import (
+    budget_routes,
+    budget_line_routes,
+    mapping_routes,
+    report_routes,
+    report_line_routes,
+)
 from fastapi.openapi.utils import get_openapi
 from app.core.exceptions import DomainError, PermissionDenied
 from app.core.error_handlers import domain_error_handler
@@ -72,6 +78,8 @@ app.include_router(budget_routes.router, prefix="/api/v1")
 app.include_router(budget_routes.private_router, prefix="/api/private/v1")
 app.include_router(budget_line_routes.router, prefix="/api/v1")
 app.include_router(mapping_routes.router, prefix="/api/v1")
+app.include_router(report_routes.router, prefix="/api/v1")
+app.include_router(report_line_routes.router, prefix="/api/v1")
 
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 

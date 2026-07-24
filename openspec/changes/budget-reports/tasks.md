@@ -28,25 +28,25 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 3. Report submission lifecycle — ticket #146 (`Budget/Issue-146/report-submission-lifecycle`)
 
-- [ ] 3.1 Create `services/budget/app/models/report.py` with `ReportStatus` enum and `ReportModel`, `ReportLineModel`, mirroring `budget.py`'s `AuditMixin`/GUID style
-- [ ] 3.2 Add `reports` relationship to `BudgetModel` in `services/budget/app/models/budget.py`
-- [ ] 3.3 Register the new models in `services/budget/app/models/__init__.py`
-- [ ] 3.4 Write Alembic migration `000004_add_reports_report_lines.py` (down_revision `000003`) creating `reports`, `report_lines`, with matching `downgrade()`
-- [ ] 3.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
-- [ ] 3.6 Add `shared/schemas/report_schema.py` (`ReportStatus`, `ReportBase/Create/Update`, `Report`, `ReportWithLines`)
-- [ ] 3.7 Add `shared/schemas/report_line_schema.py` (`ReportLineBase/Create/Update`, `ReportLine`)
-- [ ] 3.8 Add thin re-export modules in `services/budget/app/schemas/` for both, and update `services/budget/app/schemas/__init__.py`
-- [ ] 3.9 Add `services/budget/app/crud/report_crud.py` (create/get/list/update/delete/transition_status)
-- [ ] 3.10 Add `services/budget/app/crud/report_line_crud.py` (create/get/list/update/delete)
-- [ ] 3.11 Add `services/budget/app/services/report_services.py`: create (rejects unless `budget.status == confirmed`; defaults `period_start`/`period_end` to the budget's full span — `budget.start_date` through `budget.start_date + duration_months` — when not supplied; rejects if the resulting period overlaps any other report already existing for the same budget, regardless of that report's status), get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected; authorization is the user matching `budget.funding_customer_id` when set, else the budget owner when `funding_customer_id` is `None`), reopen (rejected→draft)
-- [ ] 3.12 Add `services/budget/app/services/report_line_services.py`: create/get/list/update/delete, enforcing draft-only lock and same-budget cross-check between `budget_line_id` and the report's budget
-- [ ] 3.13 Add `services/budget/app/api/report_routes.py`: CRUD + `POST /{id}/submit` + `POST /{id}/review`
-- [ ] 3.14 Add `services/budget/app/api/report_line_routes.py`: CRUD + `GET /by-report/{report_id}`
-- [ ] 3.15 Register both routers in `services/budget/main.py`
-- [ ] 3.16 Add `services/budget/tests/factories/report.py`: `ReportFactory`, `ReportLineFactory`
-- [ ] 3.17 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), report creation rejected against a non-`confirmed` budget, report creation defaults period to the budget's full span when omitted, report creation rejected on period overlap (including against a `rejected` report) and allowed on non-overlapping periods regardless of status, submit transition, review transition (funder-only enforcement when `funding_customer_id` is set, owner self-review when it is not)
-- [ ] 3.18 Add `services/budget/tests/test_report_line_routes.py`: create/update rejected on non-draft report, cross-budget `budget_line_id` rejected
-- [ ] 3.19 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [x] 3.1 Create `services/budget/app/models/report.py` with `ReportStatus` enum and `ReportModel`, `ReportLineModel`, mirroring `budget.py`'s `AuditMixin`/GUID style
+- [x] 3.2 Add `reports` relationship to `BudgetModel` in `services/budget/app/models/budget.py`
+- [x] 3.3 Register the new models in `services/budget/app/models/__init__.py`
+- [x] 3.4 Write Alembic migration `000005_add_reports_report_lines.py` (down_revision `000004`) creating `reports`, `report_lines`, with matching `downgrade()`
+- [x] 3.5 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [x] 3.6 Add `shared/schemas/report_schema.py` (`ReportStatus`, `ReportBase/Create/Update`, `Report`, `ReportWithLines`, `ReportReviewRequest`)
+- [x] 3.7 Add `shared/schemas/report_line_schema.py` (`ReportLineBase/Create/Update`, `ReportLine`)
+- [x] 3.8 Add thin re-export modules in `services/budget/app/schemas/` for both, and update `services/budget/app/schemas/__init__.py`
+- [x] 3.9 Add `services/budget/app/crud/report_crud.py` (create/get/list/update/delete/transition_status/list_overlapping_reports)
+- [x] 3.10 Add `services/budget/app/crud/report_line_crud.py` (create/get/list/update/delete)
+- [x] 3.11 Add `services/budget/app/services/report_services.py`: create (rejects unless `budget.status == confirmed`; defaults `period_start`/`period_end` to the budget's full span — `budget.start_date` through `budget.start_date + duration_months` — when not supplied; rejects if the resulting period overlaps any other report already existing for the same budget, regardless of that report's status), get/list/update/delete, `submit_report_service` (draft→submitted), `review_report_service` (submitted→approved/rejected; authorization is the user matching `budget.funding_customer_id` when set, else the budget owner when `funding_customer_id` is `None`), reopen (rejected→draft)
+- [x] 3.12 Add `services/budget/app/services/report_line_services.py`: create/get/list/update/delete, enforcing draft-only lock and same-budget cross-check between `budget_line_id` and the report's budget
+- [x] 3.13 Add `services/budget/app/api/report_routes.py`: CRUD + `POST /{id}/submit` + `POST /{id}/review` + `POST /{id}/reopen` (added beyond the original list — required to expose `reopen_report_service`/the spec's "rejected → draft" transition through the API at all)
+- [x] 3.14 Add `services/budget/app/api/report_line_routes.py`: CRUD + `GET /by-report/{report_id}`
+- [x] 3.15 Register both routers in `services/budget/main.py`
+- [x] 3.16 Add `services/budget/tests/factories/report.py`: `ReportFactory`, `ReportLineFactory`
+- [x] 3.17 Add `services/budget/tests/test_report_routes.py`: CRUD, permission checks (owner/funder/neither), report creation rejected against a non-`confirmed` budget, report creation defaults period to the budget's full span when omitted, report creation rejected on period overlap (including against a `rejected` report) and allowed on non-overlapping periods regardless of status, submit transition, review transition (funder-only enforcement when `funding_customer_id` is set, owner self-review when it is not) — 33 tests, mostly real-sqlite-session service-layer tests plus a thin TestClient wiring class. Also covers two bugs a review pass caught (neither had spec.md coverage, which only tested full-omission/full-supply of the period): partial period supply silently defaulting to the full span instead of being rejected, and no `period_end >= period_start` check letting a partial update save an inverted period.
+- [x] 3.18 Add `services/budget/tests/test_report_line_routes.py`: create/update rejected on non-draft report, cross-budget `budget_line_id` rejected — 10 tests
+- [ ] 3.19 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged — tests/flake8/black(`./app`)/mypy all verified clean (125/125 tests), **but no PR has been opened or merged yet** — leaving this unchecked until that actually happens, per this file's own one-ticket-one-PR workflow rule.
 
 ## 4. Report attachments — ticket #147 (`Budget/Issue-147/report-attachments`)
 
