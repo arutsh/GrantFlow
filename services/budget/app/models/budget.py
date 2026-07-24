@@ -1,7 +1,8 @@
 # /services/budget/app/models/budget.py
 from __future__ import annotations
 import uuid
-from sqlalchemy import String, ForeignKey, Float, JSON, Integer, Enum as SQLEnum, text
+from datetime import date
+from sqlalchemy import String, ForeignKey, Float, JSON, Integer, Date, Enum as SQLEnum, text
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.utils.db import GUID
 
@@ -31,6 +32,8 @@ class BudgetModel(Base, AuditMixin):
 
     duration_months: Mapped[int | None] = mapped_column(Integer, nullable=True, default=0)
     local_currency: Mapped[str | None] = mapped_column(String(3), nullable=False, default="GBP")
+    actual_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[BudgetStatus] = mapped_column(
         SQLEnum(BudgetStatus, name="budget_status"),
         nullable=False,

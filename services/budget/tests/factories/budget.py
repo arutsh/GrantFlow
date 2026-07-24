@@ -47,3 +47,5 @@ class BudgetFactory(factory.Factory):
     status = BudgetStatus.draft
     duration_months = 12
     local_currency = "GBP"
+    actual_currency = None
+    start_date = None

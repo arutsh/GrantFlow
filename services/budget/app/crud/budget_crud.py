@@ -1,3 +1,5 @@
+from datetime import date
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetStatus
@@ -73,6 +75,8 @@ def update_budget(
     status: BudgetStatus | None = None,
     duration_months: int | None = None,
     local_currency: str | None = None,
+    actual_currency: str | None = None,
+    start_date: date | None = None,
 ) -> BudgetModel | None:
     budget = get_budget(session, budget_id)
     if not budget:
@@ -82,6 +86,8 @@ def update_budget(
     budget.status = status or budget.status
     budget.duration_months = duration_months or budget.duration_months
     budget.local_currency = local_currency or budget.local_currency
+    budget.actual_currency = actual_currency or budget.actual_currency
+    budget.start_date = start_date or budget.start_date
     budget.owner_id = owner_id or budget.owner_id
     budget.funding_customer_id = funding_customer_id or budget.funding_customer_id
     budget.external_funder_name = external_funder_name or budget.external_funder_name
