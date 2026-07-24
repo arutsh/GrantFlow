@@ -51,6 +51,7 @@ services:
       - PYTHONPATH=/app
     depends_on:
       - grandflow-db
+      - minio
 
   frontend:
       build:
@@ -72,6 +73,19 @@ services:
       - users
       - budget
       - frontend
+
+  minio:
+    image: minio/minio:latest
+    container_name: grandflow-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      - MINIO_ROOT_USER=${STORAGE_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${STORAGE_SECRET_KEY:-minioadmin}
+    volumes:
+      - grandflow_minio_data:/data
 
   redis:
     image: redis:7-alpine
@@ -120,4 +134,5 @@ services:
 
 volumes:
   grandflow_data:
+  grandflow_minio_data:
 

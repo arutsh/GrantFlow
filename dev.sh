@@ -8,6 +8,12 @@
 
 set -e
 
+# Relative paths below (compose file, env file) must resolve against the
+# repo root regardless of the caller's cwd — .devrc aliases this script by
+# absolute path, so `cd`ing to wherever the shell happens to be otherwise
+# breaks (e.g. running dev-infra-down from inside services/chat).
+cd "$(dirname "${BASH_SOURCE[0]:-$0}")"
+
 MODE="$1"
 COMPOSE_FILE="docker-compose.dev.yml"
 ENV_FILE=".env.dev"
@@ -65,6 +71,8 @@ case "$MODE" in
         echo "  Database:           localhost:5432"
         echo "  Redis:              localhost:6379"
         echo "  RabbitMQ:           localhost:5672 (AMQP), localhost:15672 (UI)"
+        echo "  MinIO (S3 API):     localhost:9000"
+        echo "  MinIO Console:      http://localhost:9001 (minioadmin:minioadmin)"
         echo "  Flower (Celery UI): http://localhost:5555"
         echo "  Nginx Proxy:        localhost:8082"
         echo "  Users Service:      localhost:8000 (run locally) - http://localhost:8000/docs"
