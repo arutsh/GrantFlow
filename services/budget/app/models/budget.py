@@ -14,6 +14,7 @@ from app.schemas.budget_schema import BudgetStatus
 
 if TYPE_CHECKING:
     from app.models.mapping import DonorTemplateModel
+    from app.models.report import ReportModel, ReportLineModel
 
 
 class BudgetModel(Base, AuditMixin):
@@ -49,6 +50,7 @@ class BudgetModel(Base, AuditMixin):
     lines: Mapped[list["BudgetLineModel"]] = relationship(
         "BudgetLineModel", back_populates="budget"
     )
+    reports: Mapped[list["ReportModel"]] = relationship("ReportModel", back_populates="budget")
 
 
 class BudgetLineModel(Base, AuditMixin):
@@ -70,6 +72,9 @@ class BudgetLineModel(Base, AuditMixin):
     budget: Mapped["BudgetModel"] = relationship("BudgetModel", back_populates="lines")
     category: Mapped["BudgetCategoryModel"] = relationship(
         "BudgetCategoryModel", back_populates="lines"
+    )
+    report_lines: Mapped[list["ReportLineModel"]] = relationship(
+        "ReportLineModel", back_populates="budget_line"
     )
 
 
