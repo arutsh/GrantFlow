@@ -14,7 +14,7 @@ from app.schemas.report_schema import ReportStatus
 from app.services.report_line_services import _get_report_line_or_404
 from app.services.report_services import (
     _get_owned_report,
-    _get_viewable_budget,
+    get_viewable_budget,
     _get_report_or_404,
 )
 from app.services.storage_client import storage_client
@@ -106,7 +106,7 @@ def upload_attachment_service(db, valid_user: dict, report_line_id: UUID, file: 
 def list_attachments_service(db, valid_user: dict, report_line_id: UUID):
     report_line = _get_report_line_or_404(db, report_line_id)
     report = _get_report_or_404(db, report_line.report_id)
-    _get_viewable_budget(db, valid_user, report.budget_id)
+    get_viewable_budget(db, valid_user, report.budget_id)
     return list_attachments(db, report_line_id=report_line_id)
 
 
@@ -114,7 +114,7 @@ def download_attachment_service(db, valid_user: dict, attachment_id: UUID):
     attachment = _get_attachment_or_404(db, attachment_id)
     report_line = _get_report_line_or_404(db, attachment.report_line_id)
     report = _get_report_or_404(db, report_line.report_id)
-    _get_viewable_budget(db, valid_user, report.budget_id)
+    get_viewable_budget(db, valid_user, report.budget_id)
     stream = storage_client.open_stream(attachment.storage_key)
     return attachment, stream
 
@@ -123,7 +123,7 @@ def get_attachment_download_url_service(db, valid_user: dict, attachment_id: UUI
     attachment = _get_attachment_or_404(db, attachment_id)
     report_line = _get_report_line_or_404(db, attachment.report_line_id)
     report = _get_report_or_404(db, report_line.report_id)
-    _get_viewable_budget(db, valid_user, report.budget_id)
+    get_viewable_budget(db, valid_user, report.budget_id)
     return storage_client.presigned_download_url(
         attachment.storage_key,
         content_type=attachment.content_type,

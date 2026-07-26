@@ -5,9 +5,14 @@ P2: populate_budget_with_user_details graceful degradation — when inter-servic
     calls (users cache or customers HTTP) raise, the endpoint still returns 200
     with partial nulls instead of propagating a 500.
 P3: create_budget_with_lines_service — asserts created budget gets status=ai_draft.
+P4: delete_budget_service — an IntegrityError from the crud layer (e.g. a
+    budget with existing funding receipts/currency conversions/reports, all
+    hard non-cascading FKs to budgets.id) is translated into a clean
+    DomainError(400) rather than surfacing as an unhandled 500.
 """
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from uuid import uuid4
@@ -277,3 +282,32 @@ class TestAiDraftBudgetStatus:
         assert response.status_code == 200
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs.get("status") != BudgetStatus.ai_draft
+
+
+class TestDeleteBudgetIntegrityGuard:
+    def test_delete_blocked_by_existing_ledger_rows_returns_domain_error(self):
+        budget = BudgetFactory.build(id=uuid4(), owner_id=CUSTOMER_ID)
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch(
+                "app.services.budget_services.delete_budget",
+                side_effect=IntegrityError("DELETE", {}, Exception("FK violation")),
+            ),
+        ):
+            response = client.delete(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 400
+        assert "cannot be deleted" in response.json()["detail"].lower()
+
+    def test_delete_succeeds_when_no_dependent_rows(self):
+        budget = BudgetFactory.build(id=uuid4(), owner_id=CUSTOMER_ID)
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch("app.services.budget_services.delete_budget", return_value=True),
+        ):
+            response = client.delete(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 200
+        assert response.json() == {"success": True}

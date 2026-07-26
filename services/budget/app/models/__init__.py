@@ -8,6 +8,11 @@ from app.models.mapping import (
 from app.models.budget_templates import UploadedTemplateModel, TemplateToBudgetMappingModel
 from app.models.user_cache import UserProfileModel
 from app.models.report import ReportModel, ReportLineModel, AttachmentModel
+from app.models.currency_ledger import (
+    FundingReceiptModel,
+    CurrencyConversionModel,
+    ReportLineConversionAllocationModel,
+)
 
 __all__ = [
     "BudgetModel",
@@ -22,4 +27,7 @@ __all__ = [
     "ReportModel",
     "ReportLineModel",
     "AttachmentModel",
+    "FundingReceiptModel",
+    "CurrencyConversionModel",
+    "ReportLineConversionAllocationModel",
 ]

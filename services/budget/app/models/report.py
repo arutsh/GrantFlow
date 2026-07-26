@@ -24,6 +24,7 @@ from app.schemas.report_schema import ReportStatus
 
 if TYPE_CHECKING:
     from app.models.budget import BudgetModel, BudgetLineModel
+    from app.models.currency_ledger import ReportLineConversionAllocationModel
 
 
 class ReportModel(Base, AuditMixin):
@@ -52,7 +53,9 @@ class ReportModel(Base, AuditMixin):
 
     budget: Mapped["BudgetModel"] = relationship("BudgetModel", back_populates="reports")
     lines: Mapped[list["ReportLineModel"]] = relationship(
-        "ReportLineModel", back_populates="report"
+        "ReportLineModel",
+        back_populates="report",
+        foreign_keys="[ReportLineModel.report_id]",
     )
 
 
@@ -70,12 +73,19 @@ class ReportLineModel(Base, AuditMixin):
     amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     extra_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
 
-    report: Mapped["ReportModel"] = relationship("ReportModel", back_populates="lines")
+    report: Mapped["ReportModel"] = relationship(
+        "ReportModel", back_populates="lines", foreign_keys="[ReportLineModel.report_id]"
+    )
     budget_line: Mapped["BudgetLineModel"] = relationship(
         "BudgetLineModel", back_populates="report_lines"
     )
     attachments: Mapped[list["AttachmentModel"]] = relationship(
         "AttachmentModel", back_populates="report_line", cascade="all, delete-orphan"
+    )
+    allocations: Mapped[list["ReportLineConversionAllocationModel"]] = relationship(
+        "ReportLineConversionAllocationModel",
+        back_populates="report_line",
+        cascade="all, delete-orphan",
     )
 
 
