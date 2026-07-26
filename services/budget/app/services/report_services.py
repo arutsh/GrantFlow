@@ -33,14 +33,14 @@ def _get_budget_or_404(db, budget_id: UUID) -> BudgetModel:
     return budget
 
 
-def _get_viewable_budget(db, valid_user: dict, budget_id: UUID) -> BudgetModel:
+def get_viewable_budget(db, valid_user: dict, budget_id: UUID) -> BudgetModel:
     budget = _get_budget_or_404(db, budget_id)
     if valid_user["role"] != "superuser" and not _can_view_budget(budget, valid_user):
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
     return budget
 
 
-def _is_owner(budget: BudgetModel, valid_user: dict) -> bool:
+def is_owner(budget: BudgetModel, valid_user: dict) -> bool:
     return valid_user["role"] == "superuser" or str(budget.owner_id) == str(
         valid_user.get("customer_id")
     )
@@ -62,14 +62,14 @@ def _validate_period(period_start, period_end) -> None:
 
 def _get_owned_report(db, valid_user: dict, report_id: UUID):
     report = _get_report_or_404(db, report_id)
-    budget = _get_viewable_budget(db, valid_user, report.budget_id)
-    if not _is_owner(budget, valid_user):
+    budget = get_viewable_budget(db, valid_user, report.budget_id)
+    if not is_owner(budget, valid_user):
         raise PermissionDenied()
     return report
 
 
 def create_report_service(db, valid_user: dict, report: ReportCreate):
-    budget = _get_viewable_budget(db, valid_user, report.budget_id)
+    budget = get_viewable_budget(db, valid_user, report.budget_id)
 
     if budget.status != BudgetStatus.confirmed:
         raise DomainError(
@@ -116,12 +116,12 @@ def create_report_service(db, valid_user: dict, report: ReportCreate):
 
 def get_report_service(db, valid_user: dict, report_id: UUID):
     report = _get_report_or_404(db, report_id)
-    _get_viewable_budget(db, valid_user, report.budget_id)
+    get_viewable_budget(db, valid_user, report.budget_id)
     return report
 
 
 def list_reports_service(db, valid_user: dict, budget_id: UUID):
-    _get_viewable_budget(db, valid_user, budget_id)
+    get_viewable_budget(db, valid_user, budget_id)
     return list_reports(db, budget_id=budget_id)
 
 
@@ -184,7 +184,7 @@ def review_report_service(
     # error that would confirm the report exists. Only a user who can already
     # see the report (but isn't the funder) reaches the review-specific check
     # below and gets PermissionDenied — that discloses nothing new to them.
-    budget = _get_viewable_budget(db, valid_user, report.budget_id)
+    budget = get_viewable_budget(db, valid_user, report.budget_id)
     if not _can_review(budget, valid_user):
         raise PermissionDenied()
 

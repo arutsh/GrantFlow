@@ -17,6 +17,11 @@ from app.core.exceptions import DomainError, PermissionDenied
 from app.models.base import Base
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
 from app.models.report import ReportModel, ReportLineModel, AttachmentModel
+from app.models.currency_ledger import (
+    FundingReceiptModel,
+    CurrencyConversionModel,
+    ReportLineConversionAllocationModel,
+)
 from app.schemas.budget_schema import BudgetStatus
 from app.schemas.report_schema import ReportStatus
 from app.schemas.report_line_schema import ReportLineCreate, ReportLineUpdate
@@ -50,6 +55,9 @@ def db():
             ReportModel.__table__,
             ReportLineModel.__table__,
             AttachmentModel.__table__,
+            FundingReceiptModel.__table__,
+            CurrencyConversionModel.__table__,
+            ReportLineConversionAllocationModel.__table__,
         ],
     )
     return sessionmaker(bind=engine)()

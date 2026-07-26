@@ -1,6 +1,7 @@
 import asyncio
 import structlog
 from fastapi import status, HTTPException
+from sqlalchemy.exc import IntegrityError
 from app.crud.budget_crud import (
     create_budget,
     get_budget,
@@ -208,7 +209,15 @@ async def delete_budget_service(budget_id: UUID, valid_user: dict, db):
     valid_budget = await get_budget_service(budget_id=budget_id, valid_user=valid_user, db=db)
 
     if valid_budget:
-        return delete_budget(session=db, budget=valid_budget)
+        try:
+            return delete_budget(session=db, budget=valid_budget)
+        except IntegrityError:
+            db.rollback()
+            raise DomainError(
+                "Budget cannot be deleted while it has existing reports, funding receipts, "
+                "or currency conversions",
+                status.HTTP_400_BAD_REQUEST,
+            )
     return False
 
 
