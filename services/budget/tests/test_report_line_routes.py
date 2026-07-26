@@ -6,6 +6,7 @@ Same real-sqlite-session convention as test_report_routes.py.
 """
 
 from datetime import date
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -15,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.exceptions import DomainError, PermissionDenied
 from app.models.base import Base
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
-from app.models.report import ReportModel, ReportLineModel
+from app.models.report import ReportModel, ReportLineModel, AttachmentModel
 from app.schemas.budget_schema import BudgetStatus
 from app.schemas.report_schema import ReportStatus
 from app.schemas.report_line_schema import ReportLineCreate, ReportLineUpdate
@@ -48,9 +49,16 @@ def db():
             BudgetCategoryModel.__table__,
             ReportModel.__table__,
             ReportLineModel.__table__,
+            AttachmentModel.__table__,
         ],
     )
     return sessionmaker(bind=engine)()
+
+
+@pytest.fixture
+def storage():
+    with patch("app.services.report_line_services.storage_client") as mock_storage:
+        yield mock_storage
 
 
 def _make_budget(db, owner_id=OWNER_ID, funding_customer_id=None):
@@ -272,3 +280,39 @@ class TestUpdateDeleteLock:
         )
 
         assert updated.amount == 99.0
+
+
+class TestDeleteCascadesAttachments:
+    """Deleting a report line with attachments must not raise (the ORM
+    relationship cascades the rows) and must clean up their storage blobs
+    rather than orphaning them."""
+
+    def test_delete_removes_attachments_and_blobs(self, db, storage):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+        line = create_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            ReportLineCreate(
+                report_id=report.id,
+                budget_line_id=budget_line.id,
+                description="Receipt",
+                amount=50.0,
+            ),
+        )
+        attachment = AttachmentModel(
+            report_line_id=line.id,
+            filename="receipt.pdf",
+            content_type="application/pdf",
+            size=10,
+            storage_key="attachments/some/key.pdf",
+        )
+        db.add(attachment)
+        db.commit()
+
+        delete_report_line_service(db, _valid_user(OWNER_ID), line.id)
+
+        storage.delete.assert_called_once_with("attachments/some/key.pdf")
+        assert db.query(AttachmentModel).filter_by(report_line_id=line.id).first() is None
+        assert db.query(ReportLineModel).filter_by(id=line.id).first() is None

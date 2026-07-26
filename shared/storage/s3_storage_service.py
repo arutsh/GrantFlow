@@ -5,7 +5,7 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 
-from shared.storage.storage_service import StorageService
+from shared.storage.storage_service import StorageService, safe_content_disposition
 
 
 class S3StorageService(StorageService):
@@ -58,3 +58,20 @@ class S3StorageService(StorageService):
             return True
         except ClientError:
             return False
+
+    def presigned_download_url(
+        self,
+        key: str,
+        *,
+        content_type: str | None = None,
+        filename: str | None = None,
+        expires_in: int = 300,
+    ) -> str:
+        params: dict = {"Bucket": self.bucket_name, "Key": key}
+        if content_type:
+            params["ResponseContentType"] = content_type
+        if filename:
+            params["ResponseContentDisposition"] = safe_content_disposition(filename)
+        return self._client.generate_presigned_url(
+            "get_object", Params=params, ExpiresIn=expires_in
+        )

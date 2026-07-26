@@ -50,20 +50,20 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 4. Report attachments — ticket #147 (`Budget/Issue-147/report-attachments`)
 
-- [ ] 4.1 Add `AttachmentModel` to `services/budget/app/models/report.py`, FK to `report_lines`
-- [ ] 4.2 Register the new model in `services/budget/app/models/__init__.py`
-- [ ] 4.3 Write Alembic migration `000005_add_attachments.py` (down_revision `000004`) creating `attachments`, with matching `downgrade()`
-- [ ] 4.4 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
-- [ ] 4.5 Add `shared/schemas/attachment_schema.py` (`AttachmentBase`, `Attachment`)
-- [ ] 4.6 Add a thin re-export module in `services/budget/app/schemas/`, and update `services/budget/app/schemas/__init__.py`
-- [ ] 4.7 Add `services/budget/app/crud/attachment_crud.py` (create/get/list/delete)
-- [ ] 4.8 Add `services/budget/app/services/attachment_services.py`: `upload_attachment_service` (size/content-type validation, draft-only lock, calls `storage_client.save`), `download_attachment_service` (auth chain + `storage_client.open_stream`), `delete_attachment_service` (draft-only lock, blob delete then row delete)
-- [ ] 4.9 Add `services/budget/app/api/attachment_routes.py`: multipart `POST /`, `GET /by-report-line/{report_line_id}`, streaming `GET /{id}/content`, `DELETE /{id}/`
-- [ ] 4.10 Register the router in `services/budget/main.py`
-- [ ] 4.11 Add `services/budget/tests/factories/attachment.py`: `AttachmentFactory`
-- [ ] 4.12 Add `services/budget/tests/test_attachment_routes.py`: upload happy path, oversized/disallowed-type rejection, draft-only lock, download permission checks
-- [ ] 4.13 Manually exercise the full flow against the running dev stack: create budget + budget line → create draft report → add report line → upload receipt → download it back → submit → confirm line/attachment edits now rejected → attempt review as owner (rejected) → review as funder (approve or reject) → if rejected, reopen to draft and confirm edits are allowed again
-- [ ] 4.14 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+- [x] 4.1 Add `AttachmentModel` to `services/budget/app/models/report.py`, FK to `report_lines`
+- [x] 4.2 Register the new model in `services/budget/app/models/__init__.py`
+- [x] 4.3 Write Alembic migration `000006_add_attachments.py` (down_revision `000005` — chain drifted as tasks.md itself predicted; `000005` was already claimed by ticket #146) creating `attachments`, with matching `downgrade()`
+- [x] 4.4 Run `alembic upgrade head` / `alembic downgrade -1` locally to verify the migration applies and reverses cleanly
+- [x] 4.5 Add `shared/schemas/attachment_schema.py` (`AttachmentBase`, `Attachment`)
+- [x] 4.6 Add a thin re-export module in `services/budget/app/schemas/`, and update `services/budget/app/schemas/__init__.py`
+- [x] 4.7 Add `services/budget/app/crud/attachment_crud.py` (create/get/list/delete)
+- [x] 4.8 Add `services/budget/app/services/attachment_services.py`: `upload_attachment_service` (size/content-type validation, draft-only lock, calls `storage_client.save`), `download_attachment_service` (auth chain + `storage_client.open_stream`), `delete_attachment_service` (draft-only lock, blob delete then row delete)
+- [x] 4.9 Add `services/budget/app/api/attachment_routes.py`: multipart `POST /`, `GET /by-report-line/{report_line_id}`, streaming `GET /{id}/content`, `DELETE /{id}/`
+- [x] 4.10 Register the router in `services/budget/main.py`
+- [x] 4.11 Add `services/budget/tests/factories/attachment.py`: `AttachmentFactory`
+- [x] 4.12 Add `services/budget/tests/test_attachment_routes.py`: upload happy path, oversized/disallowed-type rejection, draft-only lock, download permission checks — 13 tests, real-sqlite-session convention with `storage_client` mocked at the `attachment_services` module boundary (not a live MinIO dependency), plus a thin TestClient wiring class for the multipart route
+- [x] 4.13 Manually exercise the full flow against the running dev stack: create budget + budget line → create draft report → add report line → upload receipt → download it back → submit → confirm line/attachment edits now rejected → attempt review as owner (rejected) → review as funder (approve or reject) → if rejected, reopen to draft and confirm edits are allowed again — verified 2026-07-26 against the user's locally running budget+users services and real MinIO via curl; every step behaved as specced, including byte-for-byte round-trip on download and both attachments coexisting after reopen
+- [ ] 4.14 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged — 138/138 tests, flake8/black/mypy all clean on branch as of 2026-07-26; not yet a PR
 
 ## 5. Currency ledger + cross-hop rollup — ticket #148 (`Budget/Issue-148/currency-ledger`)
 
@@ -87,3 +87,16 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [ ] 5.18 Add a manual-rollup traceability test: create a `ReportLine` with `source_report_id` pointing at another budget's approved report; confirm no automatic amount or currency computation occurs
 - [ ] 5.19 Manually exercise the currency ledger: record a funding receipt → record a partial conversion → add an expense report line exceeding the converted balance (confirm negative balance is allowed, not blocked) → record a second conversion → confirm the balance trues up
 - [ ] 5.20 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged
+
+## 6. Presigned attachment downloads — ticket #157 (`Budget/Issue-157/presigned-attachment-downloads`)
+
+Amends ticket #147's "streaming download route, not a public/signed URL" decision — see design.md's amended note. Depends on #147 being merged first.
+
+- [x] 6.1 Add abstract `presigned_download_url(key, *, content_type, filename, expires_in)` to `StorageService` in `shared/storage/storage_service.py`
+- [x] 6.2 Implement it in `shared/storage/s3_storage_service.py` via `boto3`'s `generate_presigned_url("get_object", ...)`, setting `ResponseContentType`/`ResponseContentDisposition` so the redirect target still forces the correct filename/content type without the app touching bytes; default `expires_in=300` (5 minutes)
+- [x] 6.3 Add `get_attachment_download_url_service` to `services/budget/app/services/attachment_services.py`: identical ownership-chain check as `download_attachment_service` (attachment → report_line → report → budget → owner/funder), then calls `storage_client.presigned_download_url(...)` — a stranger must get the same "not found" before any URL is ever generated
+- [x] 6.4 Add `GET /attachments/{id}/download-url` to `services/budget/app/api/attachment_routes.py`, returning a `RedirectResponse` (307) to the presigned URL — keeps `<a href="...">`-style download UX working unchanged on the frontend; existing `GET /{id}/content` stays as-is, not replaced
+- [x] 6.5 Add `services/budget/tests/test_attachment_routes.py` coverage: presigned URL generated only for owner/funder (stranger rejected before generation), redirect route delegates and sets `Location`, expiry defaults to 300s
+- [x] 6.6 Configure CORS on the storage bucket for direct browser GETs from the frontend origin — MinIO (local dev) and Cloudflare R2 (prod, `open-grantflow-reports` bucket); documented as a manual `mc cors set` / R2-dashboard step for the user to apply (bucket-level runtime config, not something docker-compose.yml or app code can set)
+- [x] 6.7 Manually verify against the running dev stack: request `/attachments/{id}/download-url`, confirm a 307 to a working presigned MinIO URL — verified 2026-07-26 via curl: signed URL fetched directly from MinIO returned the exact original bytes with correct `Content-Type`/`Content-Disposition`, and a stranger was rejected before any URL was generated. Actual browser CORS behavior still needs the user's own frontend + the CORS step above.
+- [x] 6.8 Run `pytest services/budget` and `flake8 --max-line-length=100`; PR merged — 141/141 tests, flake8/black/mypy all clean on branch as of 2026-07-26; not yet a PR
