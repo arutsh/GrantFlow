@@ -2,19 +2,16 @@ schema: spec-driven
 
 # Project context (optional)
 # This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Repo: GrantFlow (nonprofit grant budgeting/reporting platform).
+  Services: services/budget, services/users, services/ai, services/chat (FastAPI); frontend-typescript (React + TypeScript, React Query); nginx gateway proxying /api/v1/<prefix>/ to each service.
+  GitHub tickets are created with scripts/new-issue.sh; branch naming is <ServiceName>/Issue-<number>/<short-desc> (ServiceName in Platform, Frontend, Shared, Budget, Users, AI, Chat).
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  tasks:
+    - "Workflow rule: one task group = one GitHub ticket = one PR, merged before the next group starts. State this rule verbatim as the first line of tasks.md, above the first '## 1.' heading."
+    - Structure task groups as independently mergeable vertical slices (not horizontal implementation layers), ordered by dependency, so each group's PR is real, reviewable, shippable work on its own.
+    - Every group's final task must be "Run <the project's tests/lint for the affected area> clean; PR merged" — do not bundle a separate cross-cutting "wrap-up" group at the end; fold final integration/manual-verification tasks into the last functional group instead.
+    - Note in each group's heading which earlier group(s) it depends on (e.g. "## 3. <name> — ticket depends on 1, 2"), so the merge order is unambiguous.

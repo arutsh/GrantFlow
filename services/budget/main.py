@@ -8,6 +8,7 @@ from app.api import (
     mapping_routes,
     report_routes,
     report_line_routes,
+    attachment_routes,
 )
 from fastapi.openapi.utils import get_openapi
 from app.core.exceptions import DomainError, PermissionDenied
@@ -80,6 +81,7 @@ app.include_router(budget_line_routes.router, prefix="/api/v1")
 app.include_router(mapping_routes.router, prefix="/api/v1")
 app.include_router(report_routes.router, prefix="/api/v1")
 app.include_router(report_line_routes.router, prefix="/api/v1")
+app.include_router(attachment_routes.router, prefix="/api/v1")
 
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 

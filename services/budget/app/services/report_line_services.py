@@ -1,6 +1,7 @@
 from fastapi import status
 from uuid import UUID
 
+from app.crud.attachment_crud import list_attachments
 from app.crud.budget_line_crud import get_budget_line
 from app.crud.report_line_crud import (
     create_report_line,
@@ -17,6 +18,7 @@ from app.services.report_services import (
     _get_viewable_budget,
     _get_report_or_404,
 )
+from app.services.storage_client import storage_client
 
 
 def _get_report_line_or_404(db, report_line_id: UUID):
@@ -90,4 +92,9 @@ def delete_report_line_service(db, valid_user: dict, report_line_id: UUID):
         raise DomainError(
             "Report lines can only be deleted on a draft report", status.HTTP_400_BAD_REQUEST
         )
+    # Attachment rows cascade via the ORM relationship (cascade="all,
+    # delete-orphan"), but their storage blobs don't — delete those first
+    # so nothing gets orphaned in the bucket.
+    for attachment in list_attachments(db, report_line_id=report_line.id):
+        storage_client.delete(attachment.storage_key)
     return delete_report_line(db, report_line)

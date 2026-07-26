@@ -2,7 +2,17 @@
 from __future__ import annotations
 import uuid
 from datetime import date, datetime
-from sqlalchemy import String, ForeignKey, Float, JSON, Date, DateTime, Enum as SQLEnum, text
+from sqlalchemy import (
+    String,
+    ForeignKey,
+    Float,
+    Integer,
+    JSON,
+    Date,
+    DateTime,
+    Enum as SQLEnum,
+    text,
+)
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.utils.db import GUID
 
@@ -63,4 +73,26 @@ class ReportLineModel(Base, AuditMixin):
     report: Mapped["ReportModel"] = relationship("ReportModel", back_populates="lines")
     budget_line: Mapped["BudgetLineModel"] = relationship(
         "BudgetLineModel", back_populates="report_lines"
+    )
+    attachments: Mapped[list["AttachmentModel"]] = relationship(
+        "AttachmentModel", back_populates="report_line", cascade="all, delete-orphan"
+    )
+
+
+class AttachmentModel(Base, AuditMixin):
+    __tablename__ = "attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), primary_key=True, index=True, default=lambda: uuid.uuid4()
+    )
+    report_line_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("report_lines.id"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String, nullable=False)
+
+    report_line: Mapped["ReportLineModel"] = relationship(
+        "ReportLineModel", back_populates="attachments"
     )
