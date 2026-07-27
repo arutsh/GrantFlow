@@ -4,15 +4,15 @@ Exception to strict ordering: **group 7 (currency ledger, #165) is externally bl
 
 ## 1. Foundation — gateway wiring, shared types, API layer — ticket #159 (`Frontend/Issue-159/budget-report-foundation`)
 
-- [ ] 1.1 Add `location /api/v1/reports/`, `/api/v1/report-lines/`, `/api/v1/attachments/` blocks to `nginx/nginx-dev.conf`, mirroring the existing `/budgets/`/`/budget-lines/` blocks (simple `proxy_pass` to the `budget` upstream)
-- [ ] 1.2 Add the same three `location` blocks to `nginx/nginx.conf`, mirroring its `rewrite ... break` + variable-`proxy_pass` pattern used for `/budgets/`/`/budget-lines/`
-- [ ] 1.3 Manually verify (once the backend branch with #146/#147 is merged) that `GET /api/v1/reports/by-budget/{id}` and `GET /api/v1/attachments/by-report-line/{id}` reach the budget service through the dev nginx container
-- [ ] 1.4 Extend `frontend-typescript/src/pages/Budgets/types/budget.ts`: add `start_date`/`actual_currency` to `Budget`/`BudgetUpdate`/`BudgetPatched`; add `Report`, `ReportLine`, `Attachment`, `ReportStatus` types matching `shared/schemas/report_schema.py`/`report_line_schema.py`/`attachment_schema.py`
-- [ ] 1.5 Create `frontend-typescript/src/api/reportApi.ts`: `createReport`, `listReportsByBudget`, `getReport`, `updateReport`, `deleteReport`, `submitReport`, `reviewReport`, `reopenReport`
-- [ ] 1.6 Add report-line calls to `reportApi.ts`: `createReportLine`, `listReportLinesByReport`, `updateReportLine`, `deleteReportLine`
-- [ ] 1.7 Add attachment calls to `reportApi.ts`: `uploadAttachment` (multipart `FormData`), `listAttachmentsByReportLine`, `downloadAttachment` (blob response, trigger browser download), `deleteAttachment`
-- [ ] 1.8 Add a small `src/utils/roleAccess.ts` (or extend an existing utils file) with a `getCurrentCustomerId()` helper decoding `customer_id` from the JWT (same `safeDecodeToken` used by `AuthContext`), and `canReviewReport(budget, currentCustomerId)` / `isBudgetOwner(budget, currentCustomerId)` helpers per design.md's UI-only role-gating decision
-- [ ] 1.9 Run `npm run lint` / type-check clean; this ticket ships no new UI (types + unused API client + nginx routes only) — verify nothing existing regresses; PR merged
+- [x] 1.1 Add `location /api/v1/reports/`, `/api/v1/report-lines/`, `/api/v1/attachments/` blocks to `nginx/nginx-dev.conf`, mirroring the existing `/budgets/`/`/budget-lines/` blocks (simple `proxy_pass` to the `budget` upstream)
+- [x] 1.2 Add the same three `location` blocks to `nginx/nginx.conf`, mirroring its `rewrite ... break` + variable-`proxy_pass` pattern used for `/budgets/`/`/budget-lines/`
+- [x] 1.3 Manually verify (once the backend branch with #146/#147 is merged) that `GET /api/v1/reports/by-budget/{id}` and `GET /api/v1/attachments/by-report-line/{id}` reach the budget service through the dev nginx container — confirmed via `curl` through `localhost:8082`: `reports/by-budget`, `report-lines/by-report`, `attachments/by-report-line`, and `attachments/{id}/download-url` all return `401` (reaches the budget service, auth-gated), same as the existing `/budgets/` route
+- [x] 1.4 Extend `frontend-typescript/src/pages/Budgets/types/budget.ts`: add `start_date`/`actual_currency` to `Budget`/`BudgetUpdate`/`BudgetPatched`; add `Report`, `ReportLine`, `Attachment`, `ReportStatus` types matching `shared/schemas/report_schema.py`/`report_line_schema.py`/`attachment_schema.py`
+- [x] 1.5 Create `frontend-typescript/src/api/reportApi.ts`: `createReport`, `listReportsByBudget`, `getReport`, `updateReport`, `deleteReport`, `submitReport`, `reviewReport`, `reopenReport`
+- [x] 1.6 Add report-line calls to `reportApi.ts`: `createReportLine`, `listReportLinesByReport`, `updateReportLine`, `deleteReportLine`
+- [x] 1.7 Add attachment calls to `reportApi.ts`: `uploadAttachment` (multipart `FormData`), `listAttachmentsByReportLine`, `downloadAttachment` (blob response, trigger browser download), `deleteAttachment`
+- [x] 1.8 Add a small `src/utils/roleAccess.ts` (or extend an existing utils file) with a `getCurrentCustomerId()` helper decoding `customer_id` from the JWT (same `safeDecodeToken` used by `AuthContext`), and `canReviewReport(budget, currentCustomerId)` / `isBudgetOwner(budget, currentCustomerId)` helpers per design.md's UI-only role-gating decision
+- [ ] 1.9 Run `npm run lint` / type-check clean; this ticket ships no new UI (types + unused API client + nginx routes only) — verify nothing existing regresses; PR merged — `npm run lint` (89 pre-existing errors, none in the 3 new/changed files), `npx tsc --noEmit` clean, `npx vitest run` 31/31 passing; not yet committed or a PR
 
 ## 2. Budget confirmation — ticket #160 (`Frontend/Issue-160/budget-confirmation-ui`) — depends on 1
 
