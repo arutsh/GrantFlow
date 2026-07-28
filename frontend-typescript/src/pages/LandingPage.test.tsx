@@ -37,6 +37,20 @@ describe("LandingPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the product demo embed", () => {
+    renderAt("/");
+
+    const demoFrame = screen.getByTitle(
+      "OpenGrantFlow - Grant Management Without Spreadsheets",
+    );
+    expect(demoFrame.tagName).toBe("IFRAME");
+    expect(demoFrame).toHaveAttribute(
+      "src",
+      expect.stringContaining("https://demo.arcade.software/video/bJX6Bh5bfgTZU5E2pUSK"),
+    );
+    expect(demoFrame).toHaveAttribute("loading", "lazy");
+  });
+
   it("does not offer login/sign-up/get-started anywhere on the page", () => {
     renderAt("/");
 
