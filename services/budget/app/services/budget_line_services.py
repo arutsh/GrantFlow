@@ -1,7 +1,6 @@
 from fastapi import status
 from app.crud.budget_crud import (
     get_budget,
-    update_budget,
     list_budgets,
     recalculate_budget_total,
 )
@@ -14,10 +13,17 @@ from app.crud.budget_line_crud import (
 )
 from app.core.exceptions import DomainError, PermissionDenied
 from app.services.budget_category_services import get_or_create_category_service
-from app.services.customer_client import validate_customer_can_fund, validate_customer_can_own
-from app.schemas.budget_schema import BudgetCreate
+from app.services.budget_services import is_budget_locked
 from uuid import UUID
 from app.schemas import BudgetLineCreate, BudgetLineUpdate
+
+
+def _assert_budget_editable(budget) -> None:
+    if is_budget_locked(budget):
+        raise DomainError(
+            "Budget lines cannot be changed once the budget is confirmed",
+            status.HTTP_400_BAD_REQUEST,
+        )
 
 
 def create_budget_line_service(
@@ -36,6 +42,7 @@ def create_budget_line_service(
             "Budget Not found",
             status.HTTP_400_BAD_REQUEST,
         )
+    _assert_budget_editable(budget)
     category = get_or_create_category_service(
         db, valid_user, category_id=budget_line.category_id, category_name=budget_line.category_name
     )
@@ -51,32 +58,6 @@ def create_budget_line_service(
     )
     recalculate_budget_total(db, budget_line.budget_id)
     return created_line
-
-
-def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_user: dict, db):
-
-    if budget.funding_customer_id:
-        validate_customer_can_fund(budget.funding_customer_id, raise_domain_error=True)
-
-    owner_id = valid_user["customer_id"]
-
-    if valid_user["role"] == "superuser" and budget.owner_id:
-        validate_customer_can_own(budget.owner_id, raise_domain_error=True)
-        owner_id = budget.owner_id
-
-    elif valid_user["role"] != "superuser" and (
-        not budget.owner_id or valid_user["customer_id"] != budget.owner_id
-    ):
-        raise PermissionDenied()
-
-    return update_budget(
-        session=db,
-        budget_id=budget_id,
-        name=budget.name,
-        owner_id=owner_id,
-        funding_customer_id=budget.funding_customer_id,
-        external_funder_name=budget.external_funder_name,
-    )
 
 
 def get_viewable_budget_lines_service(db, valid_user, budget_id):
@@ -163,6 +144,8 @@ def update_budget_line_service(
             "Budget Line not found",
             status.HTTP_404_NOT_FOUND,
         )
+    budget = get_budget(db, budget_line.budget_id)
+    _assert_budget_editable(budget)
     updated_line = update_budget_line(
         db, existing_line=budget_line, new_budget_line=new_budget_line
     )
@@ -183,6 +166,8 @@ def delete_budget_line_service(budget_line_id: UUID, valid_user: dict, db):
 
     if valid_budget_line:
         budget_id = valid_budget_line.budget_id
+        budget = get_budget(db, budget_id)
+        _assert_budget_editable(budget)
         result = delete_budget_line(session=db, budget_line=valid_budget_line)
         recalculate_budget_total(db, budget_id)
         return result

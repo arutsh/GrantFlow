@@ -1,3 +1,27 @@
 @import "tailwindcss";
 
 @theme {  --color-mint-500: oklch(0.72 0.11 178);}
+
+/* Type-scale tokens from the budget-report-frontend mockup
+   (openspec/changes/budget-report-frontend, ticket #160). Adopted going
+   forward on new/touched components — not retrofitted across the whole app
+   in one pass, so existing pages are unaffected until they're next touched. */
+
+/* Uppercase micro-label used for stat/field captions (e.g. "TOTAL AMOUNT",
+   "START DATE"). Replaces the ad hoc `text-[11px] font-semibold uppercase
+   tracking-wider text-slate-400` string repeated across BudgetViewHeader,
+   BudgetViewSummary, BudgetViewTraces, and Table's header cells. */
+@utility text-micro-label {
+  @apply text-[11px] font-semibold uppercase tracking-wider text-slate-400;
+}
+
+/* Emphasized stat/value figure (e.g. a summary card's headline number).
+   Slightly larger and darker than body text so key figures read at a glance. */
+@utility text-stat-value {
+  @apply text-lg font-semibold text-slate-800;
+}
+
+/* Card/section heading (e.g. "Budget Summary", "Budget Lines"). */
+@utility text-section-title {
+  @apply text-sm font-semibold uppercase tracking-wide text-slate-500;
+}

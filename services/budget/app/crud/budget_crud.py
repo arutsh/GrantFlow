@@ -82,15 +82,24 @@ def update_budget(
     if not budget:
         return None
 
-    budget.name = name or budget.name
-    budget.status = status or budget.status
-    budget.duration_months = duration_months or budget.duration_months
-    budget.local_currency = local_currency or budget.local_currency
-    budget.actual_currency = actual_currency or budget.actual_currency
-    budget.start_date = start_date or budget.start_date
-    budget.owner_id = owner_id or budget.owner_id
-    budget.funding_customer_id = funding_customer_id or budget.funding_customer_id
-    budget.external_funder_name = external_funder_name or budget.external_funder_name
+    if name is not None:
+        budget.name = name
+    if status is not None:
+        budget.status = status
+    if duration_months is not None:
+        budget.duration_months = duration_months
+    if local_currency is not None:
+        budget.local_currency = local_currency
+    if actual_currency is not None:
+        budget.actual_currency = actual_currency
+    if start_date is not None:
+        budget.start_date = start_date
+    if owner_id is not None:
+        budget.owner_id = owner_id
+    if funding_customer_id is not None:
+        budget.funding_customer_id = funding_customer_id
+    if external_funder_name is not None:
+        budget.external_funder_name = external_funder_name
     session.commit()
     session.refresh(budget)
     return budget

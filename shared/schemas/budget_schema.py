@@ -45,6 +45,12 @@ class BudgetCreate(BudgetBase):
 
 class BudgetUpdate(BudgetBase):
     id: UUID | None = None
+    # Override BudgetBase's status default: on a PATCH, omitting `status`
+    # must mean "leave it unchanged", not silently coerce to `draft` (the
+    # value crud.update_budget's `status or budget.status` fallback assumes
+    # for "unset"). BudgetBase's default only makes sense for BudgetCreate,
+    # where a brand-new budget really does start as a draft.
+    status: BudgetStatus | None = None
 
 
 class Budget(BudgetBase):
@@ -85,6 +91,12 @@ class BudgetWithLines(BaseModel):
     local_currency: str | None = None
     actual_currency: str | None = None
     start_date: date | None = None
+    # There is no `end_date` column — it's start_date + duration_months,
+    # computed once here (see populate_budget_with_user_details) so the
+    # frontend has one source of truth instead of reimplementing the
+    # formula (must match report_services.create_report_service's default
+    # period_end: budget.start_date + relativedelta(months=duration_months)).
+    end_date: date | None = None
     total_amount: float | None = None
     owner: CustomerOut | None = None
     funder: CustomerOut | None = None

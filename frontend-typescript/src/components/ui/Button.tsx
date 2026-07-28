@@ -35,7 +35,7 @@ export default function Button({
   disabled = false,
 }: ButtonProps) {
   const baseStyles =
-    "rounded-lg transition-all font-medium focus:outline-none focus:ring-2";
+    "rounded-lg transition-all font-medium focus:outline-none focus:ring-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none";
 
   const variants: Record<string, string> = {
     primary:
@@ -80,31 +80,35 @@ interface ConfirmDeleteButtonProps {
   onConfirm: () => void;
   className?: string;
   children?: React.ReactNode;
+  variant?: "danger" | "icon-danger";
+  title?: string;
 }
 export function ConfirmDeleteButton({
   onConfirm,
   className = "",
   children,
+  variant = "danger",
+  title,
 }: ConfirmDeleteButtonProps) {
   const [confirming, setConfirming] = useState(false);
 
   if (confirming) {
     return (
-      <div className="flex space-x-2">
+      <div className="flex items-center space-x-2">
         <Button
           variant="danger"
           onClick={() => {
             onConfirm();
             setConfirming(false);
           }}
-          className={className}
+          className="text-xs py-1 px-2"
         >
           Yes
         </Button>
         <Button
           variant="secondary"
           onClick={() => setConfirming(false)}
-          className={className}
+          className="text-xs py-1 px-2"
         >
           No
         </Button>
@@ -114,9 +118,10 @@ export function ConfirmDeleteButton({
 
   return (
     <Button
-      variant="danger"
+      variant={variant}
       onClick={() => setConfirming(true)}
       className={className}
+      title={title}
     >
       {children || "Delete"}
     </Button>
