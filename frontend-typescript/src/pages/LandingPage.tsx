@@ -233,6 +233,29 @@ function Hero() {
   );
 }
 
+function DemoSection() {
+  return (
+    <section id="demo" className="max-w-4xl mx-auto px-6 py-16">
+      <div className="text-center mb-10">
+        <Kicker>See It In Action</Kicker>
+        <h2 className="text-3xl font-bold" style={{ color: brand.slate }}>
+          Watch a 30 seconds product tour
+        </h2>
+      </div>
+      <div className="relative w-full aspect-video rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+        <iframe
+          src="https://demo.arcade.software/video/bJX6Bh5bfgTZU5E2pUSK?embed&embed_mobile=tab&embed_desktop=inline&show_copy_link=true"
+          title="OpenGrantFlow - Grant Management Without Spreadsheets"
+          loading="lazy"
+          allow="clipboard-write; autoplay"
+          allowFullScreen
+          className="absolute inset-0 h-full w-full"
+        />
+      </div>
+    </section>
+  );
+}
+
 function AudienceSection() {
   return (
     <section className="px-6 py-16" style={{ backgroundColor: "#EEF2F6" }}>
@@ -757,6 +780,7 @@ export default function LandingPage() {
     <div className="min-h-screen" style={{ backgroundColor: brand.offWhite }}>
       <Nav />
       <Hero />
+      <DemoSection />
       <AudienceSection />
       <ProblemSection />
       <SolutionSection />
