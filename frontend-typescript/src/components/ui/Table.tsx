@@ -10,18 +10,25 @@ import {
   getExpandedRowModel,
 } from "@tanstack/react-table";
 import { useState } from "react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import Button from "./Button";
 
-export function Table({ children }: { children: any }) {
+export function Table({
+  children,
+  className,
+}: {
+  children: any;
+  className?: string;
+}) {
   return (
-    <table className="min-w-full divide-y divide-gray-200 bg-white shadow rounded">
+    <table className={className ?? "min-w-full divide-y divide-slate-200 bg-white shadow rounded"}>
       {children}
     </table>
   );
 }
 
 export function TableHead({ children }: { children: any }) {
-  return <thead className="bg-gray-50 font-medium">{children}</thead>;
+  return <thead className="bg-slate-50">{children}</thead>;
 }
 export function TableRow({ key, children }: { key: any; children: any }) {
   return <tr key={key}>{children}</tr>;
@@ -39,7 +46,7 @@ export function TableHeaderCell({
   return (
     <td
       key={key}
-      className="px-4 py-2 text-left text-sm font-medium  text-gray-700"
+      className="px-4 py-2.5 text-left text-micro-label"
       onClick={onClick}
     >
       {children}
@@ -48,24 +55,29 @@ export function TableHeaderCell({
 }
 export function TableCell({ children }: { children: any }) {
   return (
-    <td className="px-4 py-2 text-left text-sm font-normal  text-gray-700">
+    <td className="px-4 py-2.5 text-left text-sm font-normal text-slate-700">
       {children}
     </td>
   );
 }
 
 export function TableBody({ children }: { children: any }) {
-  return <tbody className="divide-y divide-gray-200">{children}</tbody>;
+  return <tbody className="divide-y divide-slate-100">{children}</tbody>;
 }
 
 export function TableCommon({
   data,
   columns,
   onRowClick,
+  bare = false,
 }: {
   data: any[];
   columns: any[];
   onRowClick?: (row: any) => void;
+  // When the table is already embedded in its own card (border/shadow/rounded
+  // container), pass `bare` to drop Table's own card chrome and avoid a
+  // double-boxed look.
+  bare?: boolean;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -81,7 +93,7 @@ export function TableCommon({
   });
 
   return (
-    <Table>
+    <Table className={bare ? "min-w-full divide-y divide-slate-100" : undefined}>
       <TableHead>
         {table.getHeaderGroups().map((headerGroup) => (
           <TableRow key={headerGroup.id}>
@@ -118,7 +130,7 @@ export function TableCommon({
           </TableRow>
         ))}
       </TableHead>
-      <tbody className="divide-y divide-gray-200">
+      <tbody className="divide-y divide-slate-100">
         {table.getRowModel().rows.map((row) => (
           <tr
             key={row.id}
@@ -137,22 +149,26 @@ export function TableCommon({
                 return (
                   <td
                     key={cell.id}
-                    className="px-4 py-2 text-left text-sm font-normal text-gray-700"
+                    className="px-4 py-2.5 text-left text-sm font-normal text-slate-700"
                   >
                     <Button
                       variant="expander"
                       onClick={row.getToggleExpandedHandler()}
-                      className="mr-2"
+                      className="mr-2 align-middle"
                     >
-                      {row.getIsExpanded() ? "▼" : "▶"}
+                      {row.getIsExpanded() ? (
+                        <ChevronDown size={15} className="text-slate-400" />
+                      ) : (
+                        <ChevronRight size={15} className="text-slate-400" />
+                      )}
                     </Button>
-                    <strong className="mr-2">
+                    <strong className="mr-2 text-slate-800">
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext(),
                       )}
                     </strong>
-                    <span className="text-gray-400">
+                    <span className="text-slate-400">
                       ({row.subRows.length})
                     </span>
                   </td>
@@ -164,7 +180,7 @@ export function TableCommon({
                 return (
                   <td
                     key={cell.id}
-                    className="px-4 py-2 text-left text-sm font-normal text-gray-700"
+                    className="px-4 py-2.5 text-left text-sm font-normal text-slate-700"
                   >
                     {flexRender(
                       cell.column.columnDef.aggregatedCell ??
@@ -177,14 +193,14 @@ export function TableCommon({
 
               // Placeholder cell for grouped layout (keep cell empty)
               if (isPlaceholder) {
-                return <td key={cell.id} className="px-4 py-2" />;
+                return <td key={cell.id} className="px-4 py-2.5" />;
               }
 
               // Normal cell
               return (
                 <td
                   key={cell.id}
-                  className="px-4 py-2 text-left text-sm font-normal text-gray-700"
+                  className="px-4 py-2.5 text-left text-sm font-normal text-slate-700"
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>

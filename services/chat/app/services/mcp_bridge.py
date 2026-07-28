@@ -126,6 +126,13 @@ def _transform_config(*, budget_id: str | None) -> ToolTransform:
                     "updated_by": ArgTransformConfig(hide=True),
                     "updated_at": ArgTransformConfig(hide=True),
                     "created_at": ArgTransformConfig(hide=True),
+                    # actual_currency/start_date were added to BudgetCreate by
+                    # the currency-ledger/budget-reports work, after this tool
+                    # was curated — hidden rather than silently exposed
+                    # unreviewed. start_date in particular is meant to be set
+                    # only via the confirm action, never at creation.
+                    "actual_currency": ArgTransformConfig(hide=True),
+                    "start_date": ArgTransformConfig(hide=True),
                 },
             ),
             UPDATE_BUDGET: ToolTransformConfig(
@@ -142,6 +149,11 @@ def _transform_config(*, budget_id: str | None) -> ToolTransform:
                     "updated_at": ArgTransformConfig(hide=True),
                     "created_at": ArgTransformConfig(hide=True),
                     "id": ArgTransformConfig(hide=True),
+                    # See create_budget's note — start_date is confirm-only,
+                    # and actual_currency isn't yet a reviewed chat-editable
+                    # field.
+                    "actual_currency": ArgTransformConfig(hide=True),
+                    "start_date": ArgTransformConfig(hide=True),
                 },
             ),
             GET_BUDGET_SUMMARY: ToolTransformConfig(

@@ -1,5 +1,6 @@
 import asyncio
 import structlog
+from dateutil.relativedelta import relativedelta
 from fastapi import status, HTTPException
 from sqlalchemy.exc import IntegrityError
 from app.crud.budget_crud import (
@@ -16,6 +17,7 @@ from app.core.exceptions import DomainError, PermissionDenied
 
 from app.services.customer_client import validate_customer_can_fund, validate_customer_can_own
 from app.schemas.budget_schema import BudgetCreate, BudgetStatus
+from app.schemas.report_schema import ReportStatus
 from app.schemas.with_lines_schema import CreateBudgetWithLinesRequest
 from uuid import UUID
 
@@ -70,23 +72,119 @@ async def create_budget_service(
     return result[0]
 
 
+def is_budget_locked(budget) -> bool:
+    """A confirmed budget's metadata and lines are frozen to keep reported
+    figures accurate. Single source of truth for that rule — also used by
+    budget_line_services._assert_budget_editable, so the two never drift."""
+    return budget is not None and budget.status == BudgetStatus.confirmed
+
+
+def _is_metadata_edit(budget: BudgetCreate) -> bool:
+    """True if the payload touches anything beyond a bare status/start_date
+    transition (confirm or revert-to-draft) — i.e. name/duration/currency/
+    funder/owner fields."""
+    return any(
+        value is not None
+        for value in (
+            budget.name,
+            budget.duration_months,
+            budget.local_currency,
+            budget.actual_currency,
+            budget.external_funder_name,
+            budget.funding_customer_id,
+            budget.owner_id,
+        )
+    )
+
+
+def _resolve_updatable_budget(
+    budget_id: UUID, valid_user: dict, is_confirm_attempt: bool, db
+) -> tuple[BudgetModel, bool]:
+    """Authorization for PATCH /budgets/{id}. Returns (budget, is_funder_confirm).
+
+    The owner (or a superuser) may always act on their own budget. The one
+    exception — a matching funder confirming a draft/ai_draft budget (see
+    design.md's "Confirm access extends to the matching funder" decision) —
+    is resolved here as an explicit authorization branch rather than by
+    catching the owner-lookup's not-found error, so both paths are plain
+    reads with no exception-driven control flow between them.
+    """
+    budget = get_budget(db, budget_id)
+    if not budget:
+        raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
+
+    if valid_user["role"] == "superuser" or str(budget.owner_id) == str(
+        valid_user.get("customer_id")
+    ):
+        return budget, False
+
+    if (
+        is_confirm_attempt
+        and budget.funding_customer_id
+        and str(budget.funding_customer_id) == str(valid_user.get("customer_id"))
+        and budget.status in (BudgetStatus.draft, BudgetStatus.ai_draft)
+    ):
+        return budget, True
+
+    raise DomainError(
+        "Budget Not found",
+        status.HTTP_400_BAD_REQUEST,
+    )
+
+
 async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_user: dict, db):
 
     if budget.funding_customer_id:
         validate_customer_can_fund(budget.funding_customer_id, raise_domain_error=True)
 
-    valid_budget = await get_budget_service(budget_id=budget_id, valid_user=valid_user, db=db)
+    # Broader than "a bare confirm with no other fields" — this also covers a
+    # confirm bundled with a metadata edit, so both the archived/already-
+    # confirmed guard below and the funder-metadata guard after the lookup
+    # see the attempt regardless of what else is in the payload.
+    is_confirm_attempt = budget.status == BudgetStatus.confirmed
 
-    owner_id = valid_user["customer_id"]
+    valid_budget, is_funder_confirm = _resolve_updatable_budget(
+        budget_id, valid_user, is_confirm_attempt, db
+    )
 
+    if is_funder_confirm and _is_metadata_edit(budget):
+        raise DomainError(
+            "A funder can only confirm a budget, not edit its metadata",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    if is_confirm_attempt and valid_budget.status not in (
+        BudgetStatus.draft,
+        BudgetStatus.ai_draft,
+    ):
+        raise DomainError(
+            "Only a draft or ai_draft budget can be confirmed",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    is_reverting = (
+        valid_budget.status == BudgetStatus.confirmed
+        and budget.status == BudgetStatus.draft
+        and not _is_metadata_edit(budget)
+    )
+
+    if is_budget_locked(valid_budget) and (
+        _is_metadata_edit(budget) or budget.start_date is not None
+    ):
+        raise DomainError(
+            "Budget cannot be edited once it is confirmed",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    owner_id = None
     if valid_user["role"] == "superuser" and budget.owner_id:
         validate_customer_can_own(budget.owner_id, raise_domain_error=True)
         owner_id = budget.owner_id
 
-    elif valid_user["role"] != "superuser":
+    elif valid_user["role"] != "superuser" and not is_funder_confirm:
         # checks if customer has right to update the budget
-        if (budget.owner_id and valid_budget.owner_id != budget.owner_id) or (
-            valid_user["customer_id"] != valid_budget.owner_id
+        if (budget.owner_id and str(valid_budget.owner_id) != str(budget.owner_id)) or (
+            str(valid_user["customer_id"]) != str(valid_budget.owner_id)
         ):
             raise PermissionDenied()
 
@@ -97,6 +195,22 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
                 "start_date must be set before a budget can be confirmed",
                 status.HTTP_400_BAD_REQUEST,
             )
+
+    if is_reverting:
+        non_draft_reports = [r for r in valid_budget.reports if r.status != ReportStatus.draft]
+        if non_draft_reports:
+            raise DomainError(
+                "Cannot revert to draft while the budget has a submitted, approved, "
+                "or rejected report",
+                status.HTTP_400_BAD_REQUEST,
+            )
+        # session.delete only — not crud.delete_report, which commits per
+        # call. Batching these into the single commit below (alongside the
+        # status change) turns the revert into one round trip instead of N,
+        # and makes it atomic: if anything below still fails, nothing here
+        # is persisted either.
+        for report in list(valid_budget.reports):
+            db.delete(report)
 
     return update_budget(
         session=db,
@@ -287,6 +401,15 @@ async def create_budget_with_lines_service(
         ) from e
 
 
+def _compute_end_date(budget: BudgetModel):
+    """Mirrors report_services.create_report_service's default period_end —
+    the single source of truth for this formula, so the frontend displays
+    end_date from here rather than reimplementing the math."""
+    if not budget.start_date:
+        return None
+    return budget.start_date + relativedelta(months=budget.duration_months or 0)
+
+
 async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_user: dict):
     # Collect unique user and customer IDs
     user_ids = {b.created_by for b in budgets if b.created_by}
@@ -315,9 +438,21 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             "status": b.status,
             "duration_months": b.duration_months,
             "local_currency": b.local_currency,
+            "actual_currency": b.actual_currency,
+            "start_date": b.start_date,
+            "end_date": _compute_end_date(b),
             "total_amount": b.total_amount,
             "owner": customers_map.get(b.owner_id),
-            "funder": customers_map.get(b.funding_customer_id) or {"name": b.external_funder_name},
+            # Preserve `id` from the budget's own funding_customer_id even
+            # when the customer-name lookup is empty/failed, so a real
+            # funder relationship still round-trips to the frontend's
+            # isBudgetFunder check regardless of that lookup's health.
+            "funder": customers_map.get(b.funding_customer_id)
+            or (
+                {"id": b.funding_customer_id, "name": b.external_funder_name}
+                if b.funding_customer_id
+                else {"name": b.external_funder_name}
+            ),
             "trace": {
                 "created": {
                     "user": users_map.get(b.created_by),

@@ -3,3 +3,6 @@
 // and the chat-driven-mutation invalidation (AIChatPanel). Keeping this in one
 // place means the three call sites can't silently drift out of sync.
 export const budgetDetailsQueryKey = (id: string | undefined) => ["budgetDetails", id] as const;
+
+export const reportsByBudgetQueryKey = (budgetId: string | undefined) =>
+  ["reports", "byBudget", budgetId] as const;

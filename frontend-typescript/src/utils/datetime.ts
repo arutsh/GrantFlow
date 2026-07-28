@@ -13,3 +13,17 @@ export function utcToLocal(utcDate: string | null | undefined, format: string = 
   if (!m.isValid()) return "N/A";
   return m.local().format(format);
 }
+
+/**
+ * Format a date-only string (e.g. Budget.start_date, "YYYY-MM-DD") for display.
+ * Returns null (not a placeholder string) when unset, so callers decide the
+ * omitted-value copy themselves.
+ */
+export function formatDateOnly(
+  dateStr: string | null | undefined,
+  format: string = "DD MMM YYYY",
+): string | null {
+  if (!dateStr) return null;
+  const m = moment(dateStr);
+  return m.isValid() ? m.format(format) : null;
+}

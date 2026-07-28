@@ -128,6 +128,100 @@ class TestPopulateBudgetGracefulDegradation:
         assert data["owner"] is None
         assert data["funder"]["name"] == "Smith Foundation"
 
+    def test_funder_id_preserved_when_customers_service_raises(self):
+        funder_id = uuid4()
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            funding_customer_id=funder_id,
+            external_funder_name=None,
+            created_by=USER_ID,
+            updated_by=USER_ID,
+        )
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch(
+                "app.services.budget_services.get_users_by_ids_cached",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.services.budget_services.get_customers_by_ids",
+                new_callable=AsyncMock,
+                side_effect=ConnectionError("timeout"),
+            ),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
+        ):
+            response = client.get(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        # The customer-name lookup failed, but the budget's own
+        # funding_customer_id must still surface as funder.id — otherwise a
+        # real funder's Confirm button gets hidden by a frontend check that's
+        # stricter than the backend's actual funder-confirm rule.
+        assert data["funder"]["id"] == str(funder_id)
+
+    def test_end_date_is_computed_from_start_date_and_duration(self):
+        from datetime import date
+
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            created_by=USER_ID,
+            updated_by=USER_ID,
+            start_date=date(2026, 1, 15),
+            duration_months=6,
+        )
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch(
+                "app.services.budget_services.get_users_by_ids_cached",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.services.budget_services.get_customers_by_ids",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
+        ):
+            response = client.get(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 200
+        # start_date + duration_months, mirroring report_services's own
+        # period_end default (relativedelta(months=duration_months)) — the
+        # frontend no longer computes this itself.
+        assert response.json()["end_date"] == "2026-07-15"
+
+    def test_end_date_is_null_without_a_start_date(self):
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            created_by=USER_ID,
+            updated_by=USER_ID,
+            start_date=None,
+        )
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch(
+                "app.services.budget_services.get_users_by_ids_cached",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.services.budget_services.get_customers_by_ids",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
+        ):
+            response = client.get(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 200
+        assert response.json()["end_date"] is None
+
     def test_trace_users_are_null_when_users_service_raises(self):
         budget = BudgetFactory.build(
             owner_id=CUSTOMER_ID,

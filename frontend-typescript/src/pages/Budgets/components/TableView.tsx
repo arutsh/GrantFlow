@@ -20,6 +20,10 @@ export function TableView({
     switch (status?.toLowerCase()) {
       case "approved":
         return "bg-green-100 text-green-800";
+      case "confirmed":
+        // Same green used for the "Confirmed" status badge on the
+        // single-budget view (BudgetViewHeader's STATUS_STYLES).
+        return "bg-green-100 text-green-700";
       case "draft":
         return "bg-yellow-100 text-yellow-800";
       case "rejected":

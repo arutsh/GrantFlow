@@ -23,6 +23,18 @@ export function isBudgetOwner(
   return budget.owner.id === currentCustomerId;
 }
 
+// Confirm access extends to the matching funder (design.md's "Confirm access
+// extends to the matching funder" decision) — a deliberate v1 simplification,
+// not the eventual end state. Scoped narrowly to the confirm action only;
+// every other budget mutation stays owner-only, both here and on the backend.
+export function isBudgetFunder(
+  budget: Budget,
+  currentCustomerId: string | null
+): boolean {
+  if (!currentCustomerId || !budget.funder?.id) return false;
+  return budget.funder.id === currentCustomerId;
+}
+
 // Mirrors _can_review: a funder (funding_customer_id) reviews if one is set
 // in-system, otherwise the budget owner reviews as a fallback.
 export function canReviewReport(

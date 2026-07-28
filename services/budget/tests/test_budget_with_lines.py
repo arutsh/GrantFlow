@@ -51,6 +51,7 @@ def _mock_budget(budget_id=None):
     m.updated_at = None
     m.status = "draft"
     m.local_currency = "GBP"
+    m.reports = []
     return m
 
 

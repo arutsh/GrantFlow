@@ -56,6 +56,7 @@ class ReportModel(Base, AuditMixin):
         "ReportLineModel",
         back_populates="report",
         foreign_keys="[ReportLineModel.report_id]",
+        cascade="all, delete-orphan",
     )
 
 

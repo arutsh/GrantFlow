@@ -64,6 +64,7 @@ class TestTotalAmountRecalculation:
                 "app.services.budget_line_services.get_budget_line_by_id_service",
                 return_value=existing_line,
             ),
+            patch("app.services.budget_line_services.get_budget", return_value=budget),
             patch(
                 "app.services.budget_line_services.update_budget_line",
                 return_value=updated_line,
@@ -78,12 +79,14 @@ class TestTotalAmountRecalculation:
     def test_delete_budget_line_recalculates_total(self):
         budget_id = uuid4()
         existing_line = BudgetLineFactory.build(budget_id=budget_id)
+        budget = BudgetFactory.build(id=budget_id, owner_id=CUSTOMER_ID)
 
         with (
             patch(
                 "app.services.budget_line_services.get_budget_line_by_id_service",
                 return_value=existing_line,
             ),
+            patch("app.services.budget_line_services.get_budget", return_value=budget),
             patch("app.services.budget_line_services.delete_budget_line", return_value=True),
             patch("app.services.budget_line_services.recalculate_budget_total") as mock_recalc,
         ):

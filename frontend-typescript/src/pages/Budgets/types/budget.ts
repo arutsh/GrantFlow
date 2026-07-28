@@ -50,6 +50,7 @@ export interface Budget {
   local_currency?: string;
   actual_currency?: string;
   start_date?: string | null; // ISO date string
+  end_date?: string | null; // ISO date string — computed backend-side from start_date + duration_months
   total_amount?: number;
   owner?: CustomerOut;
   funder?: CustomerOut | { name?: string; id?: string };

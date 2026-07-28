@@ -17,13 +17,10 @@ from uuid import uuid4
 
 import pytest
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from app.core.exceptions import DomainError, PermissionDenied
-from app.models.base import Base
-from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
-from app.models.report import ReportModel, ReportLineModel
+from app.models.budget import BudgetModel
+from app.models.report import ReportModel
 from app.schemas.budget_schema import BudgetStatus
 from app.schemas.report_schema import ReportStatus, ReportCreate, ReportUpdate
 from app.services.report_services import (
@@ -45,22 +42,6 @@ STRANGER_ID = str(uuid4())
 
 def _valid_user(customer_id):
     return make_valid_user(customer_id=customer_id)
-
-
-@pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            BudgetModel.__table__,
-            BudgetLineModel.__table__,
-            BudgetCategoryModel.__table__,
-            ReportModel.__table__,
-            ReportLineModel.__table__,
-        ],
-    )
-    return sessionmaker(bind=engine)()
 
 
 def _make_budget(

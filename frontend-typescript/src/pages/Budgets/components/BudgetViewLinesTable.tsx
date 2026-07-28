@@ -6,6 +6,8 @@ import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import { deleteBudgetLine } from "@/api/gatewayApi";
 import { useMutation } from "@tanstack/react-query";
 import { useDetailedBudget } from "../SingleBudgetViewContext";
+import { formatCurrency } from "@/utils/currency";
+import { Edit2, Trash2 } from "lucide-react";
 const columnHelper = createColumnHelper<any>();
 
 export function BudgetViewLinesTable({
@@ -14,12 +16,14 @@ export function BudgetViewLinesTable({
   // onDelete,
   onNew,
   onClose,
+  readOnly = false,
 }: {
   lines: BudgetLine[] | undefined;
   onEdit: (BudgetLine: any) => void;
   // onDelete: (budget_id: string) => void;
   onNew: () => void;
   onClose: () => void;
+  readOnly?: boolean;
 }) {
   const {
     budget,
@@ -66,70 +70,93 @@ export function BudgetViewLinesTable({
     mutation.mutate(budget_line_id);
   };
   const columns = useMemo<ColumnDef<BudgetLine>[]>(
-    () => [
-      {
-        header: "Category",
-        accessorFn: (row) => row.category?.name ?? "—",
-        id: "category",
-        enableSorting: true,
-        enableGrouping: true,
-      },
-      {
-        header: "Description",
-        accessorKey: "description",
-        enableSorting: true,
-      },
-      {
-        header: "Amount (£)",
-        accessorKey: "amount",
-
-        cell: (info) => (
-          <span className="font-semibold">
-            {info.getValue<number>().toLocaleString()}
-          </span>
-        ),
-        aggregationFn: "sum",
-        aggregatedCell: (info) => {
-          const value = info.getValue() as number;
-          return (
-            <span className="font-semibold">
-              Subtotal: {value.toLocaleString()}
-            </span>
-          );
+    () => {
+      const cols: ColumnDef<BudgetLine>[] = [
+        {
+          header: "Category",
+          accessorFn: (row) => row.category?.name ?? "—",
+          id: "category",
+          enableSorting: true,
+          enableGrouping: true,
         },
-      },
-      // Dynamically add columns for extra_fields
-      ...extraFieldKeys.map((key: string) => ({
-        header: key,
-        accessorFn: (row: BudgetLine) => row.extra_fields?.[key] ?? "—",
-        id: key, // important for unique identification
-      })),
-      columnHelper.display({
-        id: "actions",
-        enableSorting: false,
-        cell: (info) => (
-          <div className="flex space-x-2">
-            <Button onClick={() => onEdit(info.row.original)}>Edit</Button>
+        {
+          header: "Description",
+          accessorKey: "description",
+          enableSorting: true,
+        },
+        {
+          header: "Amount",
+          accessorKey: "amount",
 
-            <ConfirmDeleteButton
-              onConfirm={() => onDelete(info.row.original.id)}
-            />
-          </div>
-        ),
-      }),
-    ],
-    [extraFieldKeys],
+          cell: (info) => (
+            <span className="font-semibold text-slate-800">
+              {formatCurrency(info.getValue<number>(), budget?.local_currency)}
+            </span>
+          ),
+          aggregationFn: "sum",
+          aggregatedCell: (info) => {
+            const value = info.getValue() as number;
+            return (
+              <span className="font-semibold text-slate-800">
+                Subtotal: {formatCurrency(value, budget?.local_currency)}
+              </span>
+            );
+          },
+        },
+        // Dynamically add columns for extra_fields
+        ...extraFieldKeys.map((key: string) => ({
+          header: key,
+          accessorFn: (row: BudgetLine) => row.extra_fields?.[key] ?? "—",
+          id: key, // important for unique identification
+        })),
+      ];
+
+      if (!readOnly) {
+        cols.push(
+          columnHelper.display({
+            id: "actions",
+            enableSorting: false,
+            cell: (info) => (
+              <div className="flex items-center space-x-1">
+                <Button
+                  variant="icon"
+                  onClick={() => onEdit(info.row.original)}
+                  title="Edit line"
+                >
+                  <Edit2 size={16} />
+                </Button>
+
+                <ConfirmDeleteButton
+                  variant="icon-danger"
+                  title="Delete line"
+                  onConfirm={() => onDelete(info.row.original.id)}
+                >
+                  <Trash2 size={16} />
+                </ConfirmDeleteButton>
+              </div>
+            ),
+          }),
+        );
+      }
+
+      return cols;
+    },
+    [extraFieldKeys, readOnly, budget?.local_currency],
   );
 
   return (
-    <>
-      <h2 className="w-full text-lg py-5 font-semibold text-slate-700 mb-4">
-        Budget Lines
-      </h2>
-      <div className="flex justify-end mb-4 w-full">
-        <Button onClick={onNew}>New Budget Line</Button>
+    <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-section-title">
+          Budget Lines
+        </h2>
+        {!readOnly && (
+          <Button variant="secondary" onClick={onNew} className="text-sm">
+            New Budget Line
+          </Button>
+        )}
       </div>
-      <TableCommon data={lines || []} columns={columns} />
-    </>
+      <TableCommon data={lines || []} columns={columns} bare />
+    </div>
   );
 }

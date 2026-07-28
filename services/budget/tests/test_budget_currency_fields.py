@@ -92,7 +92,7 @@ class TestConfirmRequiresStartDate:
                 return_value=None,
             ),
             patch(
-                "app.services.budget_services.get_budget_service",
+                "app.services.budget_services.get_budget",
                 return_value=existing,
             ),
         ):
@@ -118,7 +118,7 @@ class TestConfirmRequiresStartDate:
                 return_value=None,
             ),
             patch(
-                "app.services.budget_services.get_budget_service",
+                "app.services.budget_services.get_budget",
                 return_value=existing,
             ),
             patch(
@@ -146,7 +146,7 @@ class TestConfirmRequiresStartDate:
                 return_value=None,
             ),
             patch(
-                "app.services.budget_services.get_budget_service",
+                "app.services.budget_services.get_budget",
                 return_value=existing,
             ),
             patch(
@@ -169,7 +169,7 @@ class TestConfirmRequiresStartDate:
             local_currency=payload.local_currency,
             actual_currency=payload.actual_currency,
             start_date=payload.start_date,
-            owner_id=CUSTOMER_ID,
+            owner_id=None,
             funding_customer_id=payload.funding_customer_id,
             external_funder_name=payload.external_funder_name,
         )
@@ -186,7 +186,7 @@ class TestConfirmRequiresStartDate:
                 return_value=None,
             ),
             patch(
-                "app.services.budget_services.get_budget_service",
+                "app.services.budget_services.get_budget",
                 return_value=existing,
             ),
             patch(
