@@ -11,6 +11,8 @@ interface InputProps {
   showLabel?: boolean;
   disabled?: boolean;
   errorMsg?: string | null;
+  min?: string | number;
+  max?: string | number;
 }
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -26,6 +28,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
       showLabel = true,
       disabled = false,
       errorMsg = null,
+      min,
+      max,
     },
     ref
   ) => {
@@ -49,6 +53,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           required={required}
           placeholder={placeholder}
           disabled={disabled}
+          min={min}
+          max={max}
           className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-brand-blue focus:border-brand-blue sm:text-sm ${
             errorMsg ? "border-red-500" : "border-gray-300"
           }`}

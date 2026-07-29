@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 from uuid import UUID
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 
@@ -9,6 +9,9 @@ class ReportLineBase(BaseModel):
     budget_line_id: UUID | None = None
     description: str | None = None
     amount: float | None = None
+    # The real-world date the expense happened, not when the row was
+    # written (see AuditMixin's created_at for that).
+    expense_date: date | None = None
     extra_fields: dict[str, Any] | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
@@ -21,12 +24,14 @@ class ReportLineCreate(ReportLineBase):
     budget_line_id: UUID
     description: str
     amount: float
+    expense_date: date
 
 
 class ReportLineUpdate(BaseModel):
     report_id: UUID
     description: str | None = None
     amount: float | None = None
+    expense_date: date | None = None
     extra_fields: dict[str, Any] | None = None
 
 

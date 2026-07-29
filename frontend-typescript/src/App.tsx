@@ -10,6 +10,7 @@ import Register from "./pages/Register";
 import Onboarding from "./pages/OnBoarding";
 import BudgetsPage from "./pages/Budgets/budgets";
 import { SingleBudgetViewContainer } from "./pages/Budgets/SingleBudgetView";
+import ReportDetailView from "./pages/Budgets/ReportDetailView";
 import DashboardLayout from "./pages/Dashboard/DashboardLayout";
 import SettingsPage from "./pages/Settings/Settings";
 import DonorDashboard from "./pages/DonorDashboard/DonorDashboard";
@@ -58,6 +59,10 @@ export default function App() {
               <Route path="/donor-dashboard" element={<DonorDashboard />} />
               <Route path="/budgets" element={<BudgetsPage />} />
               <Route path="/budgets/:id" element={<SingleBudgetViewContainer />} />
+              <Route
+                path="/budgets/:id/reports/:reportId"
+                element={<ReportDetailView />}
+              />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

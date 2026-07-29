@@ -1,3 +1,4 @@
+from datetime import date
 from sqlalchemy.orm import Session
 from app.models.report import ReportLineModel
 from uuid import UUID
@@ -10,6 +11,7 @@ def create_report_line(
     budget_line_id: UUID,
     description: str,
     amount: float,
+    expense_date: date,
     extra_fields: dict | None = None,
 ) -> ReportLineModel:
     report_line = ReportLineModel(
@@ -17,6 +19,7 @@ def create_report_line(
         budget_line_id=budget_line_id,
         description=description,
         amount=amount,
+        expense_date=expense_date,
         extra_fields=extra_fields,
         created_by=user_id,
         updated_by=user_id,
@@ -43,12 +46,15 @@ def update_report_line(
     report_line: ReportLineModel,
     description: str | None = None,
     amount: float | None = None,
+    expense_date: date | None = None,
     extra_fields: dict | None = None,
 ) -> ReportLineModel:
     if description is not None:
         report_line.description = description
     if amount is not None:
         report_line.amount = amount
+    if expense_date is not None:
+        report_line.expense_date = expense_date
     if extra_fields is not None:
         report_line.extra_fields = {**(report_line.extra_fields or {}), **extra_fields}
     session.commit()

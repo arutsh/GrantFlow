@@ -224,7 +224,11 @@ class TestRevertToDraft:
 
         report = _make_report(db, budget.id, status=ReportStatus.draft)
         report_line = ReportLineModel(
-            report_id=report.id, budget_line_id=budget_line.id, description="Spent", amount=50
+            report_id=report.id,
+            budget_line_id=budget_line.id,
+            description="Spent",
+            amount=50,
+            expense_date=date(2026, 6, 15),
         )
         db.add(report_line)
         db.commit()

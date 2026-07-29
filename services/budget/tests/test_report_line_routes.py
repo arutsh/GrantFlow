@@ -117,6 +117,7 @@ class TestCreateReportLine:
             budget_line_id=budget_line.id,
             description="Receipt #1",
             amount=250.0,
+            expense_date=date(2026, 6, 15),
         )
 
         result = create_report_line_service(db, _valid_user(OWNER_ID), payload)
@@ -134,6 +135,7 @@ class TestCreateReportLine:
             budget_line_id=other_budget_line.id,
             description="Wrong budget",
             amount=100.0,
+            expense_date=date(2026, 6, 15),
         )
 
         with pytest.raises(DomainError):
@@ -148,6 +150,7 @@ class TestCreateReportLine:
             budget_line_id=budget_line.id,
             description="Too late",
             amount=100.0,
+            expense_date=date(2026, 6, 15),
         )
 
         with pytest.raises(DomainError):
@@ -162,6 +165,7 @@ class TestCreateReportLine:
             budget_line_id=budget_line.id,
             description="Not funder's job",
             amount=100.0,
+            expense_date=date(2026, 6, 15),
         )
 
         with pytest.raises(PermissionDenied):
@@ -177,11 +181,127 @@ class TestCreateReportLine:
                 budget_line_id=budget_line.id,
                 description=f"Receipt #{i}",
                 amount=100.0,
+                expense_date=date(2026, 6, 15),
             )
             create_report_line_service(db, _valid_user(OWNER_ID), payload)
 
         lines = list_report_lines_service(db, _valid_user(OWNER_ID), report.id)
         assert len(lines) == 2
+
+
+class TestExpenseDateValidation:
+    """expense_date must fall within the report's own period — the real-world
+    date an expense happened, not when the row was written (created_at)."""
+
+    def test_rejected_before_report_period_start(self, db):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+        payload = ReportLineCreate(
+            report_id=report.id,
+            budget_line_id=budget_line.id,
+            description="Too early",
+            amount=100.0,
+            expense_date=date(2025, 12, 31),
+        )
+
+        with pytest.raises(DomainError):
+            create_report_line_service(db, _valid_user(OWNER_ID), payload)
+
+    def test_rejected_after_report_period_end(self, db):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+        payload = ReportLineCreate(
+            report_id=report.id,
+            budget_line_id=budget_line.id,
+            description="Too late",
+            amount=100.0,
+            expense_date=date(2027, 1, 1),
+        )
+
+        with pytest.raises(DomainError):
+            create_report_line_service(db, _valid_user(OWNER_ID), payload)
+
+    def test_accepted_on_period_boundaries(self, db):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+
+        start_line = create_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            ReportLineCreate(
+                report_id=report.id,
+                budget_line_id=budget_line.id,
+                description="On period start",
+                amount=10.0,
+                expense_date=report.period_start,
+            ),
+        )
+        end_line = create_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            ReportLineCreate(
+                report_id=report.id,
+                budget_line_id=budget_line.id,
+                description="On period end",
+                amount=10.0,
+                expense_date=report.period_end,
+            ),
+        )
+
+        assert start_line.expense_date == report.period_start
+        assert end_line.expense_date == report.period_end
+
+    def test_update_rejected_when_expense_date_moved_outside_period(self, db):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+        line = create_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            ReportLineCreate(
+                report_id=report.id,
+                budget_line_id=budget_line.id,
+                description="Receipt",
+                amount=50.0,
+                expense_date=date(2026, 6, 15),
+            ),
+        )
+
+        with pytest.raises(DomainError):
+            update_report_line_service(
+                db,
+                _valid_user(OWNER_ID),
+                line.id,
+                ReportLineUpdate(report_id=report.id, expense_date=date(2027, 1, 1)),
+            )
+
+    def test_update_allowed_within_period(self, db):
+        budget = _make_budget(db)
+        budget_line = _make_budget_line(db, budget.id)
+        report = _make_report(db, budget.id)
+        line = create_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            ReportLineCreate(
+                report_id=report.id,
+                budget_line_id=budget_line.id,
+                description="Receipt",
+                amount=50.0,
+                expense_date=date(2026, 6, 15),
+            ),
+        )
+
+        updated = update_report_line_service(
+            db,
+            _valid_user(OWNER_ID),
+            line.id,
+            ReportLineUpdate(report_id=report.id, expense_date=date(2026, 7, 1)),
+        )
+
+        assert updated.expense_date == date(2026, 7, 1)
 
 
 class TestReportLineAccess:
@@ -197,6 +317,7 @@ class TestReportLineAccess:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
 
@@ -215,6 +336,7 @@ class TestReportLineAccess:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
 
@@ -235,6 +357,7 @@ class TestUpdateDeleteLock:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
         report.status = ReportStatus.submitted
@@ -260,6 +383,7 @@ class TestUpdateDeleteLock:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
         report.status = ReportStatus.approved
@@ -280,6 +404,7 @@ class TestUpdateDeleteLock:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
 
@@ -307,6 +432,7 @@ class TestDeleteCascadesAttachments:
                 budget_line_id=budget_line.id,
                 description="Receipt",
                 amount=50.0,
+                expense_date=date(2026, 6, 15),
             ),
         )
         attachment = AttachmentModel(

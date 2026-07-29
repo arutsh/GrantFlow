@@ -29,6 +29,15 @@ def _get_report_line_or_404(db, report_line_id: UUID):
     return report_line
 
 
+def _validate_expense_date(expense_date, report):
+    if expense_date < report.period_start or expense_date > report.period_end:
+        raise DomainError(
+            "expense_date must fall within the report's period "
+            f"({report.period_start} to {report.period_end})",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+
 def create_report_line_service(db, valid_user: dict, report_line: ReportLineCreate):
     report = _get_owned_report(db, valid_user, report_line.report_id)
     if report.status != ReportStatus.draft:
@@ -43,6 +52,8 @@ def create_report_line_service(db, valid_user: dict, report_line: ReportLineCrea
             status.HTTP_400_BAD_REQUEST,
         )
 
+    _validate_expense_date(report_line.expense_date, report)
+
     with budget_ledger_lock(db, report.budget_id):
         created = create_report_line(
             session=db,
@@ -51,6 +62,7 @@ def create_report_line_service(db, valid_user: dict, report_line: ReportLineCrea
             budget_line_id=report_line.budget_line_id,
             description=report_line.description,
             amount=report_line.amount,
+            expense_date=report_line.expense_date,
             extra_fields=report_line.extra_fields,
         )
         try:
@@ -87,6 +99,9 @@ def update_report_line_service(
             "Report lines can only be edited on a draft report", status.HTTP_400_BAD_REQUEST
         )
 
+    if report_line_update.expense_date is not None:
+        _validate_expense_date(report_line_update.expense_date, report)
+
     previous_amount = report_line.amount
     with budget_ledger_lock(db, report.budget_id):
         updated = update_report_line(
@@ -94,6 +109,7 @@ def update_report_line_service(
             report_line=report_line,
             description=report_line_update.description,
             amount=report_line_update.amount,
+            expense_date=report_line_update.expense_date,
             extra_fields=report_line_update.extra_fields,
         )
         if report_line_update.amount is not None:
