@@ -122,7 +122,11 @@ def _make_report(db, budget_id, status=ReportStatus.draft):
 
 def _make_report_line(db, report_id, budget_line_id):
     line = ReportLineModel(
-        report_id=report_id, budget_line_id=budget_line_id, description="Receipt", amount=50.0
+        report_id=report_id,
+        budget_line_id=budget_line_id,
+        description="Receipt",
+        amount=50.0,
+        expense_date=date(2026, 6, 15),
     )
     db.add(line)
     db.commit()

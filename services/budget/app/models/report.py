@@ -72,6 +72,10 @@ class ReportLineModel(Base, AuditMixin):
     )
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The real-world date the expense happened — distinct from AuditMixin's
+    # created_at (when the row was written). A receipt entered today for a
+    # purchase 10 days ago must record the 10-days-ago date here.
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
     extra_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
 
     report: Mapped["ReportModel"] = relationship(

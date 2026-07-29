@@ -34,15 +34,27 @@ The frontend SHALL provide a report detail view, reachable at a dedicated route,
 - **THEN** the frontend navigates to that report's detail route and loads its lines
 
 ### Requirement: Report line CRUD while draft
-The frontend SHALL let the report owner add, edit, and delete report lines (each tied to one budget line) while the parent report's status is `draft`, and SHALL disable these actions once the report leaves `draft`.
+The frontend SHALL let the report owner add, edit, and delete report lines (each tied to one budget line, with a description, amount, and expense date) while the parent report's status is `draft`, and SHALL disable these actions once the report leaves `draft`.
+
+> **Amended 2026-07-29:** added `expense_date` — the real-world date the expense happened, distinct from `created_at` — as a required field on the add-line form and an editable field on each row, following the same addition on the backend (`budget-reports` spec's "Report lines reference a specific budget line" requirement, amended the same day). The date input's `min`/`max` are clamped to the report's own `period_start`/`period_end` as a client-side UX nicety; the backend remains the authoritative validation, same pattern as the existing upload-size/content-type duplication documented in design.md.
+
+> **Amended 2026-07-29:** added `extra_fields` (arbitrary key/value structured metadata), matching `BudgetLine`'s existing extra-fields UX (`AddBudgetLine.tsx`/`BudgetViewLinesTable.tsx`) rather than inventing a new pattern. Keys already used by any of the report's other lines are shown as dynamic table columns and are prefilled/locked (not renameable, only their value is editable) on the add-line form, so a report's lines stay comparable in one table; brand-new keys can still be added freely. Editing `extra_fields` on an *existing* line (via `ReportLineRow`'s inline edit) is out of scope for this amendment — only display and add-time entry, matching what was actually requested.
 
 #### Scenario: Add a report line
-- **WHEN** the report is `draft` and the owner submits a new line (budget line, description, amount)
+- **WHEN** the report is `draft` and the owner submits a new line (budget line, description, amount, expense date, optional extra fields)
 - **THEN** the frontend sends `POST /report-lines/` and appends the created line to the displayed list
 
 #### Scenario: Edit/delete disabled outside draft
 - **WHEN** the report's status is `submitted`, `approved`, or `rejected`
 - **THEN** the frontend disables add/edit/delete controls for that report's lines
+
+#### Scenario: Extra fields are visible as dynamic columns
+- **WHEN** one or more of a report's lines have `extra_fields` set
+- **THEN** the report lines table shows one column per distinct key in use, alongside the fixed budget-line/description/expense-date/amount columns
+
+#### Scenario: Existing extra field keys are prefilled and locked on the add-line form
+- **WHEN** the owner opens the "New Line" form for a report that already has lines using one or more `extra_fields` keys
+- **THEN** those keys appear prefilled with an empty value and their key input is locked, while a new, unlocked key/value row can still be added
 
 ### Requirement: Report submission
 The frontend SHALL let the report owner submit a `draft` report via `POST /reports/{id}/submit`, transitioning it to `submitted` and locking its lines from further edits.

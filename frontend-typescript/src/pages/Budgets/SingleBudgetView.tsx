@@ -6,6 +6,7 @@ import { BudgetViewLinesTable } from "./components/BudgetViewLinesTable";
 import { BudgetViewTraces } from "./components/BudgetViewTraces";
 import { BudgetViewSummary } from "./components/BudgetViewSummary";
 import { AddBudgetLineModal } from "./components/AddBudgetLine";
+import { ReportsList } from "./components/ReportsList";
 import { Budget, BudgetLine } from "./types/budget";
 import {
   SingleBudgetViewContextProvider,
@@ -85,6 +86,7 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
                 setIsEditLineOpen(undefined);
               }}
             />
+            <ReportsList budget={budget} />
             <BudgetViewTraces budget={budget} />
           </div>
         </div>

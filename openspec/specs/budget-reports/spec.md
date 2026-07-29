@@ -31,10 +31,12 @@ The system SHALL allow a user with access to a `Budget` to create a `Report` aga
 - **THEN** the system creates the new report successfully
 
 ### Requirement: Report lines reference a specific budget line
-The system SHALL allow report lines to be added to a `draft` report, each referencing exactly one `BudgetLine` belonging to the same `Budget` as the report, with a description, amount, and optional structured metadata.
+The system SHALL allow report lines to be added to a `draft` report, each referencing exactly one `BudgetLine` belonging to the same `Budget` as the report, with a description, amount, expense date, and optional structured metadata. The expense date SHALL fall within the parent report's `period_start`/`period_end`.
+
+> **Amended 2026-07-29:** the original requirement had no field for when the expense actually happened — only `AuditMixin`'s `created_at` (when the row was written), which is the wrong date for a receipt entered days or weeks after the real expense. Added `expense_date` (required on create, editable on update) plus the period-bound validation below. Backfilled via migration `000008` (existing rows' `expense_date` set to their `created_at` date, then locked `NOT NULL`) — verified against real Postgres to affect only 2 pre-existing dev-only rows, since the report-line creation UI had not shipped to any user at the time of this change.
 
 #### Scenario: Add a report line against a budget line
-- **WHEN** the report owner adds a report line specifying a `budget_line_id` that belongs to the report's budget, with a description and amount
+- **WHEN** the report owner adds a report line specifying a `budget_line_id` that belongs to the report's budget, with a description, amount, and expense date
 - **THEN** the system creates a `ReportLine` linked to that report and budget line
 
 #### Scenario: Reject a budget line from a different budget
@@ -44,6 +46,14 @@ The system SHALL allow report lines to be added to a `draft` report, each refere
 #### Scenario: Multiple report lines against the same budget line
 - **WHEN** two report lines are created referencing the same `budget_line_id` on the same draft report
 - **THEN** both report lines are created successfully, each independently trackable
+
+#### Scenario: Expense date must fall within the report's period
+- **WHEN** a report line is created or updated with an `expense_date` before `period_start` or after `period_end` of its report
+- **THEN** the system rejects the request
+
+#### Scenario: Expense date on the period boundary is accepted
+- **WHEN** a report line's `expense_date` is exactly `period_start` or exactly `period_end`
+- **THEN** the system creates or updates the report line successfully
 
 ### Requirement: Report status workflow
 The system SHALL enforce a report status lifecycle of `draft → submitted → approved` or `draft → submitted → rejected`, with `rejected → draft` allowed to reopen the report, and no other transitions permitted. Approval/rejection is restricted to the user matching the budget's `funding_customer_id`; when the budget has no `funding_customer_id` set, the budget owner may approve or reject instead.

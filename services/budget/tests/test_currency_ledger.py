@@ -111,6 +111,7 @@ def _make_expense(db, report, budget_line, amount):
             budget_line_id=budget_line.id,
             description="Expense",
             amount=amount,
+            expense_date=date(2026, 6, 15),
         ),
     )
 
@@ -323,6 +324,7 @@ class TestCompensatingRollback:
                         budget_line_id=budget_line.id,
                         description="Expense",
                         amount=300.0,
+                        expense_date=date(2026, 6, 15),
                     ),
                 )
 

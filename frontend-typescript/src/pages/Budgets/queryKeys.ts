@@ -6,3 +6,9 @@ export const budgetDetailsQueryKey = (id: string | undefined) => ["budgetDetails
 
 export const reportsByBudgetQueryKey = (budgetId: string | undefined) =>
   ["reports", "byBudget", budgetId] as const;
+
+export const reportQueryKey = (reportId: string | undefined) =>
+  ["reports", "detail", reportId] as const;
+
+export const reportLinesQueryKey = (reportId: string | undefined) =>
+  ["reportLines", "byReport", reportId] as const;

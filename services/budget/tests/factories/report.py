@@ -35,6 +35,7 @@ class ReportLineFactory(factory.Factory):
     budget_line_id = factory.LazyFunction(uuid4)
     description = factory.Faker("sentence", nb_words=4)
     amount = 250.0
+    expense_date = date(2026, 6, 15)
     extra_fields = None
     created_by = factory.LazyFunction(uuid4)
     updated_by = factory.LazyFunction(uuid4)

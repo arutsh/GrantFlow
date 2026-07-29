@@ -132,6 +132,9 @@ export interface ReportLine {
   budget_line_id?: string;
   description?: string;
   amount?: number;
+  // The real-world date the expense happened — distinct from created_at
+  // (when the row was written).
+  expense_date?: string; // ISO date string
   extra_fields?: Record<string, unknown> | null;
   created_by?: string;
   updated_by?: string;
@@ -144,6 +147,7 @@ export interface ReportLineCreate {
   budget_line_id: string;
   description: string;
   amount: number;
+  expense_date: string;
   extra_fields?: Record<string, unknown>;
 }
 
@@ -151,6 +155,7 @@ export interface ReportLineUpdate {
   report_id: string;
   description?: string;
   amount?: number;
+  expense_date?: string;
   extra_fields?: Record<string, unknown>;
 }
 
