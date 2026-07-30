@@ -82,6 +82,11 @@ interface ConfirmDeleteButtonProps {
   children?: React.ReactNode;
   variant?: "danger" | "icon-danger";
   title?: string;
+  // Shown above the Yes/No pair — for confirmations with a consequence
+  // beyond "delete this one thing" (e.g. cascading deletes) that's worth
+  // spelling out before the user commits, not just implied by the button.
+  confirmMessage?: string;
+  disabled?: boolean;
 }
 export function ConfirmDeleteButton({
   onConfirm,
@@ -89,29 +94,36 @@ export function ConfirmDeleteButton({
   children,
   variant = "danger",
   title,
+  confirmMessage,
+  disabled = false,
 }: ConfirmDeleteButtonProps) {
   const [confirming, setConfirming] = useState(false);
 
   if (confirming) {
     return (
-      <div className="flex items-center space-x-2">
-        <Button
-          variant="danger"
-          onClick={() => {
-            onConfirm();
-            setConfirming(false);
-          }}
-          className="text-xs py-1 px-2"
-        >
-          Yes
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => setConfirming(false)}
-          className="text-xs py-1 px-2"
-        >
-          No
-        </Button>
+      <div className="flex items-center gap-2 flex-wrap">
+        {confirmMessage && <span className="text-sm text-slate-600">{confirmMessage}</span>}
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="danger"
+            onClick={() => {
+              onConfirm();
+              setConfirming(false);
+            }}
+            disabled={disabled}
+            className="text-xs py-1 px-2"
+          >
+            Yes
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => setConfirming(false)}
+            disabled={disabled}
+            className="text-xs py-1 px-2"
+          >
+            No
+          </Button>
+        </div>
       </div>
     );
   }
@@ -122,6 +134,7 @@ export function ConfirmDeleteButton({
       onClick={() => setConfirming(true)}
       className={className}
       title={title}
+      disabled={disabled}
     >
       {children || "Delete"}
     </Button>

@@ -87,6 +87,18 @@ describe("BudgetViewHeader confirm action", () => {
     expect(screen.getByRole("button", { name: /confirm budget/i })).toBeDisabled();
   });
 
+  it("prefills the start date from budget.start_date, so re-confirming after a cancel doesn't require retyping it", () => {
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({ start_date: "2026-08-01" })}
+        isLocked={false}
+      />,
+    );
+
+    expect(screen.getByLabelText(/start date/i)).toHaveValue("2026-08-01");
+    expect(screen.getByRole("button", { name: /confirm budget/i })).not.toBeDisabled();
+  });
+
   it("calls editBudget with the start date and confirmed status, and reports the update", async () => {
     const user = userEvent.setup();
     const updated = makeBudget({ status: "confirmed", start_date: "2026-08-01" });
@@ -230,7 +242,48 @@ describe("BudgetViewHeader cancel confirmation", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("reverts the budget on success", async () => {
+  it("requires a second click and shows a warning before reverting", async () => {
+    const user = userEvent.setup();
+    const onBudgetUpdated = vi.fn();
+
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({ status: "confirmed" })}
+        isLocked={false}
+        onBudgetUpdated={onBudgetUpdated}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /cancel confirmation/i }));
+
+    expect(
+      screen.getByText(/this will delete any draft report\(s\)/i),
+    ).toBeInTheDocument();
+    expect(editBudgetMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "No" })).toBeInTheDocument();
+  });
+
+  it("does not revert when the warning is dismissed with No", async () => {
+    const user = userEvent.setup();
+    const onBudgetUpdated = vi.fn();
+
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({ status: "confirmed" })}
+        isLocked={false}
+        onBudgetUpdated={onBudgetUpdated}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /cancel confirmation/i }));
+    await user.click(screen.getByRole("button", { name: "No" }));
+
+    expect(editBudgetMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /cancel confirmation/i })).toBeInTheDocument();
+  });
+
+  it("reverts the budget once the warning is confirmed with Yes", async () => {
     const user = userEvent.setup();
     const reverted = makeBudget({ status: "draft" });
     editBudgetMock.mockResolvedValue(reverted);
@@ -245,6 +298,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /cancel confirmation/i }));
+    await user.click(screen.getByRole("button", { name: "Yes" }));
 
     await waitFor(() =>
       expect(editBudgetMock).toHaveBeenCalledWith("b1", { status: "draft" }),
@@ -273,6 +327,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /cancel confirmation/i }));
+    await user.click(screen.getByRole("button", { name: "Yes" }));
 
     await waitFor(() =>
       expect(
