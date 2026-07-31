@@ -58,5 +58,10 @@ jobs:
               mv "$f.real" "$f"
             done
 
+            # Reclaim space from images/build cache orphaned by the previous
+            # deploy before building — runs unconditionally (success or
+            # failure) each time, so cruft never has a chance to compound.
+            docker image prune -a -f
+            docker builder prune -f
+
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
-            docker image prune -f

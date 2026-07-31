@@ -49,6 +49,8 @@ services:
     container_name: grandflow-redis
     ports:
       - "6379:6379"
+    volumes:
+      - grandflow_dev_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -62,6 +64,8 @@ services:
       - "5672:5672"   # AMQP protocol
       - "15672:15672" # Management UI
       - "15692:15692" # Prometheus metrics
+    volumes:
+      - grandflow_dev_rabbitmq_data:/var/lib/rabbitmq
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
@@ -198,6 +202,8 @@ networks:
 volumes:
   grandflow_dev_data:
   grandflow_dev_minio_data:
+  grandflow_dev_redis_data:
+  grandflow_dev_rabbitmq_data:
   prometheus_dev_data:
   grafana_dev_data:
 
