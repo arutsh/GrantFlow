@@ -15,10 +15,13 @@ import { formatDateOnly } from "@/utils/datetime";
 import { canReviewReport, getCurrentCustomerId, isBudgetOwner } from "@/utils/roleAccess";
 import { ReportStatusBadge } from "./components/ReportStatusBadge";
 import { ReportLineRow } from "./components/ReportLineRow";
+import { SummaryStat } from "./components/BudgetViewSummary";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import { Card, CardContent, CardHeader } from "@/components/ui/Card";
+import { formatCurrency } from "@/utils/currency";
 import { BudgetLine, Report, ReportLine } from "./types/budget";
 
 function ReportDetailView() {
@@ -66,6 +69,11 @@ function ReportDetailView() {
     return Array.from(keys);
   }, [lines]);
 
+  const totalAmount = useMemo(
+    () => (lines ?? []).reduce((sum, line) => sum + (line.amount ?? 0), 0),
+    [lines],
+  );
+
   const updateReportCache = (updated: Report) => {
     queryClient.setQueryData(reportQueryKey(reportId), (prev: typeof report) =>
       prev ? { ...prev, ...updated } : updated,
@@ -95,7 +103,7 @@ function ReportDetailView() {
   if (isReportPending) {
     return (
       <div className="w-full min-h-screen bg-gray-50 px-4 py-8">
-        <p className="text-sm text-slate-500 max-w-4xl mx-auto">Loading report...</p>
+        <p className="text-sm text-slate-500 max-w-[1600px] mx-auto">Loading report...</p>
       </div>
     );
   }
@@ -103,16 +111,17 @@ function ReportDetailView() {
   if (isReportError || !report) {
     return (
       <div className="w-full min-h-screen bg-gray-50 px-4 py-8">
-        <p className="text-sm text-red-600 max-w-4xl mx-auto">Failed to load this report.</p>
+        <p className="text-sm text-red-600 max-w-[1600px] mx-auto">Failed to load this report.</p>
       </div>
     );
   }
 
   const isDraft = report.status === "draft";
+  const canEditLines = isDraft && owner;
 
   return (
     <div className="w-full min-h-screen bg-gray-50 px-4 py-8">
-      <div className="w-full max-w-4xl mx-auto flex flex-col gap-5">
+      <div className="w-full max-w-[1600px] mx-auto flex flex-col gap-5">
         <Link
           to={`/budgets/${budgetId}`}
           className="text-sm text-slate-500 hover:text-slate-700 w-fit"
@@ -136,10 +145,25 @@ function ReportDetailView() {
           )}
         </div>
 
+        <Card className="w-full bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-5">
+          <CardHeader>
+            <h2 className="text-section-title">Report Summary</h2>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-4">
+              <SummaryStat label="Total Expenses" value={lines?.length ?? 0} />
+              <SummaryStat
+                label="Total Amount"
+                value={formatCurrency(totalAmount, budget?.local_currency)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-section-title">Report Lines</h2>
-            {isDraft && owner && (
+            {canEditLines && (
               <Button variant="secondary" onClick={() => setIsAddLineOpen(true)} className="text-sm">
                 New Line
               </Button>
@@ -158,7 +182,8 @@ function ReportDetailView() {
                       {key}
                     </th>
                   ))}
-                  {isDraft && owner && <th className="py-2" />}
+                  <th className="py-2 font-semibold text-right">Files</th>
+                  {canEditLines && <th className="py-2" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -173,7 +198,7 @@ function ReportDetailView() {
                     periodStart={report.period_start}
                     periodEnd={report.period_end}
                     extraFieldKeys={extraFieldKeys}
-                    editable={isDraft && owner}
+                    editable={canEditLines}
                     onUpdated={handleLineUpdated}
                     onDeleted={handleLineDeleted}
                   />

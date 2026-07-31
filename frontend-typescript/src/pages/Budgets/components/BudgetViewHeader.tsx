@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
+import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { editBudget } from "@/api/budgetApi";
 import { getCurrentCustomerId, isBudgetFunder, isBudgetOwner } from "@/utils/roleAccess";
@@ -260,7 +260,11 @@ function BudgetConfirmAction({
   onConfirmed?: (updated: Budget) => void;
   onBusyChange?: (busy: boolean) => void;
 }) {
-  const [startDate, setStartDate] = useState("");
+  // Seeded from budget.start_date (not blank) so a budget that was already
+  // confirmed once — then reverted via Cancel Confirmation, which leaves
+  // start_date unchanged — doesn't force the owner to redundantly retype a
+  // date the system already has on record.
+  const [startDate, setStartDate] = useState(budget.start_date ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -268,6 +272,14 @@ function BudgetConfirmAction({
   const isConfirmable = budget.status === "draft" || budget.status === "ai_draft";
   const canConfirm =
     isBudgetOwner(budget, currentCustomerId) || isBudgetFunder(budget, currentCustomerId);
+
+  // Re-sync whenever the widget becomes visible again (e.g. after a revert),
+  // covering the case where this component's state outlives the round trip
+  // without a remount, not just the initial-mount case above.
+  useEffect(() => {
+    if (isConfirmable) setStartDate(budget.start_date ?? "");
+  }, [isConfirmable, budget.start_date]);
+
   if (!isConfirmable || !canConfirm) return null;
 
   const handleConfirm = async () => {
@@ -343,14 +355,15 @@ function BudgetCancelConfirmationAction({
   return (
     <div className="w-full flex flex-wrap items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
       <span className="text-sm text-slate-500">This budget is confirmed.</span>
-      <Button
+      <ConfirmDeleteButton
         variant="danger"
-        onClick={handleCancel}
+        onConfirm={handleCancel}
         disabled={isSaving}
         className="text-sm"
+        confirmMessage="This will delete any draft report(s) on this budget — this can't be undone."
       >
         {isSaving ? "Cancelling..." : "Cancel Confirmation"}
-      </Button>
+      </ConfirmDeleteButton>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );

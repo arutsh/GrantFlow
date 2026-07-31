@@ -29,6 +29,10 @@ vi.mock("@/api/reportApi", async (importOriginal) => {
     submitReport: vi.fn(),
     reviewReport: vi.fn(),
     reopenReport: vi.fn(),
+    listAttachmentsByReportLine: vi.fn(),
+    uploadAttachment: vi.fn(),
+    deleteAttachment: vi.fn(),
+    downloadAttachment: vi.fn(),
   };
 });
 
@@ -51,6 +55,7 @@ const deleteReportLineMock = reportApi.deleteReportLine as unknown as Mock;
 const submitReportMock = reportApi.submitReport as unknown as Mock;
 const reviewReportMock = reportApi.reviewReport as unknown as Mock;
 const reopenReportMock = reportApi.reopenReport as unknown as Mock;
+const listAttachmentsByReportLineMock = reportApi.listAttachmentsByReportLine as unknown as Mock;
 const getCurrentCustomerIdMock = roleAccess.getCurrentCustomerId as unknown as Mock;
 const isBudgetOwnerMock = roleAccess.isBudgetOwner as unknown as Mock;
 const canReviewReportMock = roleAccess.canReviewReport as unknown as Mock;
@@ -108,6 +113,7 @@ function renderDetail() {
 describe("ReportDetailView metadata and read-only lines", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     getCurrentCustomerIdMock.mockReturnValue(null);
     isBudgetOwnerMock.mockReturnValue(false);
@@ -124,7 +130,9 @@ describe("ReportDetailView metadata and read-only lines", () => {
     expect(screen.getByText("Submitted")).toBeInTheDocument();
     expect(screen.getByText("01 Jan 2026 – 31 Mar 2026")).toBeInTheDocument();
     expect(screen.getByText("Fuel receipts")).toBeInTheDocument();
-    expect(screen.getByText("£250")).toBeInTheDocument();
+    // Appears twice: once as the line's own amount, once as the Report
+    // Summary's Total Amount (both £250 since there's a single line).
+    expect(screen.getAllByText("£250")).toHaveLength(2);
     expect(screen.getByText("10 Feb 2026")).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: /submit/i })).not.toBeInTheDocument();
@@ -139,6 +147,22 @@ describe("ReportDetailView metadata and read-only lines", () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText("No report lines yet.")).toBeInTheDocument());
+  });
+
+  it("shows the Report Summary total expenses and total amount across all lines", async () => {
+    getReportMock.mockResolvedValue({ ...makeReport(), lines: [] });
+    listReportLinesByReportMock.mockResolvedValue([
+      makeLine({ id: "rl1", amount: 250 }),
+      makeLine({ id: "rl2", amount: 300 }),
+    ]);
+
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText("Report Summary")).toBeInTheDocument());
+    expect(screen.getByText("Total Expenses")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("Total Amount")).toBeInTheDocument();
+    expect(screen.getByText("£550")).toBeInTheDocument();
   });
 
   it("shows an error state when the report fails to load", async () => {
@@ -156,6 +180,7 @@ describe("ReportDetailView metadata and read-only lines", () => {
 describe("ReportDetailView report line CRUD (draft only)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     getCurrentCustomerIdMock.mockReturnValue("owner-1");
     isBudgetOwnerMock.mockReturnValue(true);
@@ -286,6 +311,7 @@ describe("ReportDetailView report line CRUD (draft only)", () => {
 describe("ReportDetailView extra fields", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     getCurrentCustomerIdMock.mockReturnValue("owner-1");
     isBudgetOwnerMock.mockReturnValue(true);
@@ -354,6 +380,7 @@ describe("ReportDetailView extra fields", () => {
 describe("ReportDetailView submit transition", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     getCurrentCustomerIdMock.mockReturnValue("owner-1");
     isBudgetOwnerMock.mockReturnValue(true);
@@ -400,6 +427,7 @@ describe("ReportDetailView submit transition", () => {
 describe("ReportDetailView review actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     listReportLinesByReportMock.mockResolvedValue([]);
   });
@@ -483,6 +511,7 @@ describe("ReportDetailView review actions", () => {
 describe("ReportDetailView reopen transition", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listAttachmentsByReportLineMock.mockResolvedValue([]);
     fetchBudgetByIdMock.mockResolvedValue(makeBudget());
     listReportLinesByReportMock.mockResolvedValue([]);
     getCurrentCustomerIdMock.mockReturnValue("owner-1");
