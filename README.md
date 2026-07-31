@@ -268,8 +268,10 @@ GrantFlow/
 ├── .github/workflows/      # CI: lint + tests per service
 ├── docker/                 # Postgres init (creates 4 DBs)
 ├── docker-compose.dev.yml  # Infrastructure-only compose (dev mode)
-├── docker-compose.yml      # Full containerized compose (prod)
+├── docker-compose.local.yml # Full containerized compose (local mode)
+├── docker-compose.prod.yml  # Production compose (Hetzner deploy)
 ├── dev.sh                  # Dev mode entry point
+├── local.sh                # Local mode entry point
 ├── frontend-typescript/    # React + Vite + TypeScript app
 ├── monitoring/             # OTEL collector, Prometheus, Grafana configs
 ├── nginx/                  # Gateway config (dev + prod)
