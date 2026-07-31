@@ -12,3 +12,6 @@ export const reportQueryKey = (reportId: string | undefined) =>
 
 export const reportLinesQueryKey = (reportId: string | undefined) =>
   ["reportLines", "byReport", reportId] as const;
+
+export const attachmentsQueryKey = (reportLineId: string | undefined) =>
+  ["attachments", "byReportLine", reportLineId] as const;

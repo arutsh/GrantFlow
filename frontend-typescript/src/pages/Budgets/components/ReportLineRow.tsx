@@ -6,6 +6,7 @@ import { formatDateOnly } from "@/utils/datetime";
 import { updateReportLine, deleteReportLine } from "@/api/reportApi";
 import { BudgetLine, ReportLine } from "../types/budget";
 import { Edit2, Trash2 } from "lucide-react";
+import { AttachmentUpload } from "./AttachmentUpload";
 
 export function ReportLineRow({
   line,
@@ -125,6 +126,9 @@ export function ReportLineRow({
           {String(line.extra_fields?.[key] ?? "—")}
         </td>
       ))}
+      <td className="py-2 align-top">
+        <AttachmentUpload reportLineId={line.id} editable={editable} />
+      </td>
       {editable && (
         <td className="py-2 text-right align-top">
           {isEditing ? (
