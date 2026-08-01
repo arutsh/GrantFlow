@@ -339,6 +339,35 @@ class TestEditLockedOnceConfirmed:
         # A bare metadata edit that omits `status` must not silently reset it.
         assert result.status == BudgetStatus.draft
 
+    def test_actual_currency_can_be_set_on_a_confirmed_budget(self, db):
+        # currency-ledger-ui's "set actual currency" prompt only ever appears
+        # on an already-confirmed budget (design.md task 6.7) — actual_currency
+        # is deliberately excluded from the metadata lock so that flow works.
+        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        payload = BudgetUpdate(actual_currency="USD")
+
+        import asyncio
+
+        result = asyncio.run(
+            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
+        )
+
+        assert result.actual_currency == "USD"
+        assert result.status == BudgetStatus.confirmed
+
+    def test_actual_currency_alongside_another_metadata_field_still_blocked(self, db):
+        # The carve-out is currency-only: bundling actual_currency with a
+        # still-locked field (name) must not smuggle the name change through.
+        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        payload = BudgetUpdate(actual_currency="USD", name="Renamed")
+
+        import asyncio
+
+        with pytest.raises(DomainError):
+            asyncio.run(
+                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
+            )
+
     def test_create_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
         budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetLineCreate(

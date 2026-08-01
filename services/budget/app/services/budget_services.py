@@ -81,15 +81,20 @@ def is_budget_locked(budget) -> bool:
 
 def _is_metadata_edit(budget: BudgetCreate) -> bool:
     """True if the payload touches anything beyond a bare status/start_date
-    transition (confirm or revert-to-draft) — i.e. name/duration/currency/
-    funder/owner fields."""
+    transition (confirm or revert-to-draft) or a currency-only update — i.e.
+    name/duration/local_currency/funder/owner fields. `actual_currency` is
+    deliberately excluded: it's the donor-transfer currency the currency-
+    ledger UI needs set, and the ledger's "set actual currency" prompt only
+    ever appears on an already-confirmed budget (see budget-report-frontend
+    tasks.md 6.7), so locking it the same as name/duration would make that
+    flow permanently unreachable. A payload that also touches any other
+    metadata field alongside actual_currency is still blocked as usual."""
     return any(
         value is not None
         for value in (
             budget.name,
             budget.duration_months,
             budget.local_currency,
-            budget.actual_currency,
             budget.external_funder_name,
             budget.funding_customer_id,
             budget.owner_id,

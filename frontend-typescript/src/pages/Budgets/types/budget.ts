@@ -172,6 +172,54 @@ export interface Attachment {
   created_at?: string;
 }
 
+// Currency ledger
+
+export interface FundingReceipt {
+  id: string;
+  budget_id?: string;
+  amount?: number;
+  received_at?: string; // ISO date string
+  created_by?: string;
+  updated_by?: string;
+  updated_at?: string;
+  created_at?: string;
+}
+
+export interface FundingReceiptCreate {
+  budget_id: string;
+  amount: number;
+  received_at: string;
+}
+
+export interface CurrencyConversion {
+  id: string;
+  budget_id?: string;
+  donor_amount?: number;
+  local_amount?: number;
+  converted_at?: string; // ISO date string
+  created_by?: string;
+  updated_by?: string;
+  updated_at?: string;
+  created_at?: string;
+}
+
+export interface CurrencyConversionCreate {
+  budget_id: string;
+  donor_amount: number;
+  local_amount: number;
+  converted_at: string;
+}
+
+// Per-currency balances only — never blended into one figure, per
+// design.md's "group by currency, never blend" rule.
+export interface LedgerBalance {
+  budget_id: string;
+  actual_currency: string | null;
+  donor_balance: number;
+  local_currency: string | null;
+  local_balance: number;
+}
+
 export interface BudgetLinePreview {
   category_name: string;
   description: string;

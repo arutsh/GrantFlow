@@ -45,16 +45,22 @@ function renderTable(lines: BudgetLine[], spendByLineId: Record<string, number>)
 }
 
 describe("BudgetViewLinesTable Used column", () => {
+  // Every assertion below uses getAllByText/getAllByRole rather than the
+  // singular getBy* form: the component now renders both a desktop table
+  // (hidden sm:block) and a mobile card list (sm:hidden) at once — CSS
+  // decides which is visible, but jsdom has no viewport, so both exist in
+  // the DOM, and single-line fixtures also duplicate the mobile category
+  // header's aggregated pill (subtotal == the one line's amount).
   it("shows a green 100% pill when a line's reported spend exactly matches its allocation", () => {
     renderTable(
       [makeLine({ id: "bl1", amount: 400, category: { id: "c1", name: "Coordinator", code: "COORD" } })],
       { bl1: 400 },
     );
 
-    const pill = screen.getByText("100%");
-    expect(pill).toBeInTheDocument();
-    expect(pill.className).toContain("bg-green-100");
-    expect(screen.getByText("£400 / £400")).toBeInTheDocument();
+    const pills = screen.getAllByText("100%");
+    expect(pills.length).toBeGreaterThan(0);
+    expect(pills[0].className).toContain("bg-green-100");
+    expect(screen.getAllByText("£400 / £400").length).toBeGreaterThan(0);
   });
 
   it("shows an amber pill when a line is only partially reported", () => {
@@ -63,9 +69,9 @@ describe("BudgetViewLinesTable Used column", () => {
       { bl2: 50 },
     );
 
-    const pill = screen.getByText("25%");
-    expect(pill.className).toContain("bg-amber-100");
-    expect(screen.getByText("£50 / £200")).toBeInTheDocument();
+    const pills = screen.getAllByText("25%");
+    expect(pills[0].className).toContain("bg-amber-100");
+    expect(screen.getAllByText("£50 / £200").length).toBeGreaterThan(0);
   });
 
   it("shows a red pill when a line's reported spend exceeds its allocation", () => {
@@ -74,8 +80,8 @@ describe("BudgetViewLinesTable Used column", () => {
       { bl3: 150 },
     );
 
-    const pill = screen.getByText("150%");
-    expect(pill.className).toContain("bg-red-100");
+    const pills = screen.getAllByText("150%");
+    expect(pills[0].className).toContain("bg-red-100");
   });
 
   it("shows a neutral pill when nothing has been reported against a line yet", () => {
@@ -84,8 +90,59 @@ describe("BudgetViewLinesTable Used column", () => {
       {},
     );
 
-    const pill = screen.getByText("0%");
-    expect(pill.className).toContain("bg-slate-100");
-    expect(screen.getByText("£0 / £300")).toBeInTheDocument();
+    const pills = screen.getAllByText("0%");
+    expect(pills[0].className).toContain("bg-slate-100");
+    expect(screen.getAllByText("£0 / £300").length).toBeGreaterThan(0);
+  });
+});
+
+describe("BudgetViewLinesTable mobile card list", () => {
+  it("groups lines by category with a subtotal, mirroring the desktop table's grouping", () => {
+    renderTable(
+      [
+        makeLine({ id: "bl1", description: "Salary", amount: 400, category: { id: "c1", name: "Staff costs", code: "STAFF" } }),
+        makeLine({ id: "bl2", description: "Stipend", amount: 100, category: { id: "c1", name: "Staff costs", code: "STAFF" } }),
+      ],
+      { bl1: 400, bl2: 0 },
+    );
+
+    expect(screen.getAllByText(/Staff costs/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("(2)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("£500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Salary").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Stipend").length).toBeGreaterThan(0);
+  });
+
+  it("hides edit/delete actions in the mobile cards when readOnly", () => {
+    useDetailedBudgetMock.mockReturnValue({
+      budget: makeBudget(),
+      setBudget: vi.fn(),
+      budgetCategories: [],
+      budgetCategoryNames: [],
+      existingExtraKeys: [],
+      spendByLineId: {},
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BudgetViewLinesTable
+          lines={[makeLine({ id: "bl1", category: { id: "c1", name: "Misc", code: "MISC" } })]}
+          onEdit={vi.fn()}
+          onNew={vi.fn()}
+          onClose={vi.fn()}
+          readOnly
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByTitle("Edit line")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Delete line")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state when there are no lines", () => {
+    renderTable([], {});
+    expect(screen.getByText("No budget lines yet.")).toBeInTheDocument();
   });
 });

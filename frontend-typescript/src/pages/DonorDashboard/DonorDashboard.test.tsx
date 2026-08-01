@@ -100,13 +100,12 @@ describe("DonorDashboard", () => {
     expect(screen.getByText("Clean Water Phase 1")).toBeInTheDocument();
     expect(screen.getByText("School Rebuild")).toBeInTheDocument();
 
-    // Disabled "View Reports" with "Coming soon" tooltip, no fabricated data
-    const reportButtons = screen.getAllByRole("button", { name: "View Reports" });
-    expect(reportButtons).toHaveLength(2);
-    for (const button of reportButtons) {
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute("title", "Coming soon");
-    }
+    // "View Reports" now links to the dedicated per-budget reports page
+    // instead of showing a disabled "Coming soon" placeholder.
+    const reportLinks = screen.getAllByRole("link", { name: "View Reports" });
+    expect(reportLinks).toHaveLength(2);
+    expect(reportLinks[0]).toHaveAttribute("href", "/budgets/b1/reports");
+    expect(reportLinks[1]).toHaveAttribute("href", "/budgets/b2/reports");
 
     // "View Budget" links to the real budget detail page
     const viewBudgetLinks = screen.getAllByRole("link", { name: "View Budget" });
@@ -169,6 +168,6 @@ describe("DonorDashboard", () => {
       expect(screen.getByText("No funded budgets yet")).toBeInTheDocument(),
     );
     expect(screen.queryByText("Grantees")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "View Reports" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View Reports" })).not.toBeInTheDocument();
   });
 });

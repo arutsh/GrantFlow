@@ -30,14 +30,19 @@ from app.services.report_line_services import (
     create_report_line_service,
     update_report_line_service,
 )
+from app.core.exceptions import DomainError, PermissionDenied
 from app.services.currency_ledger_services import (
     record_receipt_service,
     record_conversion_service,
     get_ledger_balance_service,
+    list_funding_receipts_service,
+    list_currency_conversions_service,
 )
 from tests.factories.user import make_valid_user
 
 OWNER_ID = str(uuid4())
+FUNDER_ID = str(uuid4())
+STRANGER_ID = str(uuid4())
 
 
 def _valid_user(customer_id=OWNER_ID):
@@ -64,10 +69,17 @@ def db():
     return sessionmaker(bind=engine)()
 
 
-def _make_budget(db, owner_id=OWNER_ID, local_currency="USD", actual_currency="EUR"):
+def _make_budget(
+    db,
+    owner_id=OWNER_ID,
+    funding_customer_id=None,
+    local_currency="USD",
+    actual_currency="EUR",
+):
     budget = BudgetModel(
         name="Test Budget",
         owner_id=owner_id,
+        funding_customer_id=funding_customer_id,
         status=BudgetStatus.confirmed,
         start_date=date(2026, 1, 1),
         duration_months=12,
@@ -353,3 +365,50 @@ class TestCompensatingRollback:
 
         db.refresh(expense)
         assert expense.amount == 300.0
+
+
+class TestFunderCanViewButNotRecord:
+    """Currency-ledger-ui: owner and funder can both view the ledger (matching
+    the frontend panel now showing to either), but recording a receipt or
+    conversion stays owner-only."""
+
+    def test_funder_can_list_receipts_and_conversions_and_read_balance(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+
+        assert list_funding_receipts_service(db, _valid_user(FUNDER_ID), budget.id) == []
+        assert list_currency_conversions_service(db, _valid_user(FUNDER_ID), budget.id) == []
+        balance = get_ledger_balance_service(db, _valid_user(FUNDER_ID), budget.id)
+        assert balance.budget_id == budget.id
+
+    def test_stranger_cannot_view_the_ledger(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+
+        with pytest.raises(DomainError):
+            list_funding_receipts_service(db, _valid_user(STRANGER_ID), budget.id)
+
+    def test_funder_cannot_record_a_receipt(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+
+        with pytest.raises(PermissionDenied):
+            record_receipt_service(
+                db,
+                _valid_user(FUNDER_ID),
+                FundingReceiptCreate(
+                    budget_id=budget.id, amount=100.0, received_at=date(2026, 1, 5)
+                ),
+            )
+
+    def test_funder_cannot_record_a_conversion(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+
+        with pytest.raises(PermissionDenied):
+            record_conversion_service(
+                db,
+                _valid_user(FUNDER_ID),
+                CurrencyConversionCreate(
+                    budget_id=budget.id,
+                    donor_amount=100.0,
+                    local_amount=110.0,
+                    converted_at=date(2026, 1, 5),
+                ),
+            )

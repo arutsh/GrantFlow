@@ -203,6 +203,21 @@ export function BudgetViewLinesTable({
     [extraFieldKeys, readOnly, budget?.local_currency, spendByLineId],
   );
 
+  // Mobile card list: same data as the desktop table, grouped by category
+  // like TableCommon's grouping does, but always-expanded (no separate
+  // collapse state) — simpler, and mobile users are scrolling vertically
+  // anyway. Table.tsx/TableCommon has no card-fallback mode, so this is
+  // hand-rolled, same pattern as BudgetReportsPage's mobile cards.
+  const groupedByCategory = useMemo(() => {
+    const groups = new Map<string, BudgetLine[]>();
+    (lines ?? []).forEach((line) => {
+      const key = line.category?.name ?? "—";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(line);
+    });
+    return Array.from(groups.entries());
+  }, [lines]);
+
   return (
     <div className="w-full bg-white rounded-xl border border-slate-200 shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
@@ -215,7 +230,82 @@ export function BudgetViewLinesTable({
           </Button>
         )}
       </div>
-      <TableCommon data={lines || []} columns={columns} bare />
+
+      <div className="hidden sm:block">
+        <TableCommon data={lines || []} columns={columns} bare />
+      </div>
+
+      <div className="sm:hidden flex flex-col gap-4">
+        {groupedByCategory.length === 0 ? (
+          <p className="text-sm text-slate-500">No budget lines yet.</p>
+        ) : (
+          groupedByCategory.map(([categoryName, categoryLines]) => {
+            const subtotal = categoryLines.reduce((sum, l) => sum + (l.amount ?? 0), 0);
+            const categoryUsed = categoryLines.reduce(
+              (sum, l) => sum + (spendByLineId[l.id] ?? 0),
+              0,
+            );
+            return (
+              <div key={categoryName} className="border border-slate-200 rounded-lg">
+                <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 rounded-t-lg">
+                  <span className="text-sm font-semibold text-slate-700">
+                    {categoryName} <span className="text-slate-400 font-normal">({categoryLines.length})</span>
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-800">
+                      {formatCurrency(subtotal, budget?.local_currency)}
+                    </span>
+                    <UsedPill used={categoryUsed} allocated={subtotal} currency={budget?.local_currency} />
+                  </div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {categoryLines.map((line) => (
+                    <div key={line.id} className="p-3 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-sm text-slate-700">{line.description}</span>
+                        <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
+                          {formatCurrency(line.amount ?? 0, budget?.local_currency)}
+                        </span>
+                      </div>
+                      <UsedPill
+                        used={spendByLineId[line.id] ?? 0}
+                        allocated={line.amount ?? 0}
+                        currency={budget?.local_currency}
+                      />
+                      {extraFieldKeys
+                        .filter((key) => line.extra_fields?.[key] !== undefined)
+                        .map((key) => (
+                          <div key={key} className="text-xs text-slate-500">
+                            <span className="font-medium text-slate-600">{key}:</span>{" "}
+                            {String(line.extra_fields?.[key] ?? "—")}
+                          </div>
+                        ))}
+                      {!readOnly && (
+                        <div className="flex items-center gap-1 pt-1">
+                          <Button
+                            variant="icon"
+                            onClick={() => onEdit(line)}
+                            title="Edit line"
+                          >
+                            <Edit2 size={16} />
+                          </Button>
+                          <ConfirmDeleteButton
+                            variant="icon-danger"
+                            title="Delete line"
+                            onConfirm={() => onDelete(line.id)}
+                          >
+                            <Trash2 size={16} />
+                          </ConfirmDeleteButton>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
