@@ -33,14 +33,12 @@ class S3StorageService(StorageService):
             region_name="us-east-1",
         )
 
-    def _ensure_bucket(self) -> None:
-        try:
-            self._client.head_bucket(Bucket=self.bucket_name)
-        except ClientError:
-            self._client.create_bucket(Bucket=self.bucket_name)
-
     def save(self, key: str, data: bytes | BinaryIO, content_type: str | None = None) -> None:
-        self._ensure_bucket()
+        # The bucket is provisioned out-of-band, not by the app: storage
+        # credentials are scoped to object-level read/write only (least
+        # privilege), which can't call HeadBucket/CreateBucket — an
+        # ensure-bucket-exists check here would 403 even though the bucket
+        # is right there and writable.
         fileobj = io.BytesIO(data) if isinstance(data, bytes) else data
         extra_args = {"ContentType": content_type} if content_type else {}
         self._client.upload_fileobj(fileobj, self.bucket_name, key, ExtraArgs=extra_args)
