@@ -68,3 +68,11 @@ jobs:
             docker builder prune -f
 
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+
+            # Caddyfile is bind-mounted (docker-compose.prod.yml), so `up -d`
+            # above never recreates the caddy container just because the file
+            # on disk changed — the service definition itself didn't change.
+            # Without this, routing fixes land in git but never reach the
+            # running proxy.
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T caddy \
+              caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
