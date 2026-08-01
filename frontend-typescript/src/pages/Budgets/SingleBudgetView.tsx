@@ -7,6 +7,7 @@ import { BudgetViewTraces } from "./components/BudgetViewTraces";
 import { BudgetViewSummary } from "./components/BudgetViewSummary";
 import { AddBudgetLineModal } from "./components/AddBudgetLine";
 import { ReportsList } from "./components/ReportsList";
+import { CurrencyLedgerPanel } from "./components/CurrencyLedgerPanel";
 import { Budget, BudgetLine } from "./types/budget";
 import {
   SingleBudgetViewContextProvider,
@@ -32,6 +33,10 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
   const [isEditLineOpen, setIsEditLineOpen] = useState<BudgetLine | undefined>(
     undefined
   );
+  // Bumped by CurrencyLedgerPanel's "set actual currency first" prompt to
+  // open BudgetViewHeader's edit mode from outside it (see that prop's
+  // comment) — undefined until first bumped, so it never fires on mount.
+  const [headerEditTrigger, setHeaderEditTrigger] = useState<number>();
   const { budget, setBudget } = useDetailedBudget();
   const queryClient = useQueryClient();
 
@@ -74,6 +79,7 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
               budget={budget}
               isLocked={isLocked}
               onBudgetUpdated={handleBudgetUpdated}
+              editTrigger={headerEditTrigger}
             />
             <BudgetViewSummary />
             <BudgetViewLinesTable
@@ -87,6 +93,12 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
               }}
             />
             <ReportsList budget={budget} />
+            <CurrencyLedgerPanel
+              budget={budget}
+              onRequestEditActualCurrency={() =>
+                setHeaderEditTrigger((v) => (v ?? 0) + 1)
+              }
+            />
             <BudgetViewTraces budget={budget} />
           </div>
         </div>

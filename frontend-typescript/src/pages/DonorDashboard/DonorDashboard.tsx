@@ -3,7 +3,6 @@ import { createColumnHelper } from "@tanstack/react-table";
 import { Link } from "react-router-dom";
 import { FileText, Users, DollarSign } from "lucide-react";
 import { TableCommon } from "@/components/ui/Table";
-import Button from "@/components/ui/Button";
 import { formatCurrency, formatCurrencyAmounts } from "@/utils/currency";
 import {
   getFundedBudgetsSummary,
@@ -63,9 +62,12 @@ const budgetColumns = [
         >
           View Budget
         </Link>
-        <Button variant="outline" disabled title="Coming soon">
+        <Link
+          to={`/budgets/${info.row.original.id}/reports`}
+          className="rounded-lg transition-all font-medium focus:outline-none focus:ring-2 border border-slate-300 text-slate-700 hover:bg-slate-50 focus:ring-slate-300 py-2 px-4"
+        >
           View Reports
-        </Button>
+        </Link>
       </div>
     ),
   }),

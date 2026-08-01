@@ -214,6 +214,57 @@ describe("BudgetViewHeader edit lock", () => {
   });
 });
 
+describe("BudgetViewHeader currency-only edit via editTrigger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentCustomerIdMock.mockReturnValue("owner-1");
+    isBudgetOwnerMock.mockReturnValue(true);
+    isBudgetFunderMock.mockReturnValue(false);
+  });
+
+  it("opens a currency-only form on a locked budget and saves only actual_currency", async () => {
+    const user = userEvent.setup();
+    const budget = makeBudget({ status: "confirmed", actual_currency: undefined });
+    editBudgetMock.mockResolvedValue(makeBudget({ status: "confirmed", actual_currency: "USD" }));
+    const onBudgetUpdated = vi.fn();
+
+    const { rerender } = render(
+      <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={onBudgetUpdated} />,
+    );
+    rerender(
+      <BudgetViewHeader
+        budget={budget}
+        isLocked
+        onBudgetUpdated={onBudgetUpdated}
+        editTrigger={1}
+      />,
+    );
+
+    // Name/funder/duration stay read-only text, not inputs — only currency
+    // is editable while the budget is locked.
+    expect(screen.queryByDisplayValue("Clean Water Phase 1")).not.toBeInTheDocument();
+    expect(screen.getByText("Clean Water Phase 1")).toBeInTheDocument();
+    expect(screen.getByText(/only the actual currency can be updated/i)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox"), "USD");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith("b1", { actual_currency: "USD" }),
+    );
+    await waitFor(() => expect(onBudgetUpdated).toHaveBeenCalled());
+  });
+
+  it("still opens the full edit form via editTrigger when the budget is not locked", async () => {
+    const budget = makeBudget({ status: "draft" });
+
+    const { rerender } = render(<BudgetViewHeader budget={budget} isLocked={false} />);
+    rerender(<BudgetViewHeader budget={budget} isLocked={false} editTrigger={1} />);
+
+    expect(screen.getByDisplayValue("Clean Water Phase 1")).toBeInTheDocument();
+  });
+});
+
 describe("BudgetViewHeader cancel confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();

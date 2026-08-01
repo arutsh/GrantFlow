@@ -90,8 +90,14 @@ The frontend SHALL let the report owner reopen a `rejected` report via `POST /re
 - **THEN** the frontend calls `POST /reports/{id}/reopen` and, on success, updates the displayed status to `draft` and re-enables line edit/delete controls
 
 ### Requirement: Funder access to reports from the donor dashboard
-The frontend SHALL let a funder reach the report list for any budget they fund from the `DonorDashboard`'s "View Reports" entry point.
+The frontend SHALL let a funder reach the report list for any budget they fund from the `DonorDashboard`'s "View Reports" entry point, via a dedicated reports-list page for that budget (not a deep-link into a single report, and not the grantee's inline `SingleBudgetView` section).
+
+> **Amended 2026-07-31:** resolves design.md's former open question ("list vs. single-report deep-link when there's exactly one report") in favor of always showing the list, at its own route (`/budgets/:id/reports`, `BudgetReportsPage`). Below a ~640px viewport, this page SHALL render the reports as stacked cards instead of a table.
 
 #### Scenario: View Reports from donor dashboard
 - **WHEN** a funder clicks "View Reports" for a funded budget on the `DonorDashboard`
-- **THEN** the frontend navigates to that budget's report list
+- **THEN** the frontend navigates to `/budgets/:id/reports`, which lists every report for that budget regardless of count
+
+#### Scenario: Reports list on a narrow viewport
+- **WHEN** `/budgets/:id/reports` is viewed below ~640px wide
+- **THEN** the frontend renders each report as a stacked card (name, status, period, "View Report" action) instead of a table row

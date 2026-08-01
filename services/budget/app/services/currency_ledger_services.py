@@ -106,12 +106,15 @@ def record_receipt_service(db, valid_user: dict, receipt: FundingReceiptCreate):
 
 def get_funding_receipt_service(db, valid_user: dict, receipt_id: UUID):
     receipt = _get_funding_receipt_or_404(db, receipt_id)
-    _get_owned_budget(db, valid_user, receipt.budget_id)
+    get_viewable_budget(db, valid_user, receipt.budget_id)
     return receipt
 
 
 def list_funding_receipts_service(db, valid_user: dict, budget_id: UUID):
-    _get_owned_budget(db, valid_user, budget_id)
+    # Owner or funder may view the ledger (matches the currency-ledger-ui
+    # panel being visible to both) — only recording a receipt/conversion
+    # stays owner-only, via _get_owned_budget below.
+    get_viewable_budget(db, valid_user, budget_id)
     return list_funding_receipts(db, budget_id=budget_id)
 
 
@@ -194,12 +197,12 @@ def record_conversion_service(db, valid_user: dict, conversion: CurrencyConversi
 
 def get_currency_conversion_service(db, valid_user: dict, conversion_id: UUID):
     conversion = _get_currency_conversion_or_404(db, conversion_id)
-    _get_owned_budget(db, valid_user, conversion.budget_id)
+    get_viewable_budget(db, valid_user, conversion.budget_id)
     return conversion
 
 
 def list_currency_conversions_service(db, valid_user: dict, budget_id: UUID):
-    _get_owned_budget(db, valid_user, budget_id)
+    get_viewable_budget(db, valid_user, budget_id)
     return list_currency_conversions(db, budget_id=budget_id)
 
 
@@ -207,8 +210,9 @@ def get_ledger_balance_service(db, valid_user: dict, budget_id: UUID) -> LedgerB
     """Per-currency balances, never blended: the unconverted donor-currency
     balance (receipts not yet converted) and the unconsumed local-currency
     balance (converted funds not yet allocated to a report-line expense,
-    which can be negative — see allocate_fifo_service)."""
-    budget = _get_owned_budget(db, valid_user, budget_id)
+    which can be negative — see allocate_fifo_service). Owner or funder may
+    read this, matching the other ledger read endpoints."""
+    budget = get_viewable_budget(db, valid_user, budget_id)
 
     conversions = list_currency_conversions(db, budget_id=budget_id)
     donor_balance = sum(r.amount for r in list_funding_receipts(db, budget_id=budget_id)) - sum(

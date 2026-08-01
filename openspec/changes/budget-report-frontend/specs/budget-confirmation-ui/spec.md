@@ -63,6 +63,8 @@ The frontend SHALL let the budget owner revert a `confirmed` budget back to `dra
 ### Requirement: Editing is blocked once a budget is confirmed
 The frontend SHALL hide/disable the budget's "Edit" action once `Budget.status === "confirmed"`, and the backend SHALL reject direct attempts to modify budget metadata or lines in that state. This is gated on confirmation, not on report existence — a report can only exist on an already-confirmed budget, so confirmed status is the broader and correct condition.
 
+> **Amended 2026-08-01**: `actual_currency` is a narrow, deliberate exception to this lock — see `specs/budget-currency-ledger-ui/spec.md`. The currency-ledger's "set actual currency" action only ever runs on an already-confirmed budget, so a PATCH containing only `actual_currency` is allowed through even while `isLocked`; a PATCH bundling `actual_currency` with any other still-locked field (name, duration, funder, lines) is rejected exactly as before. This surfaced as a real bug during dogfooding: the ledger's own setup flow was rejected by this same lock before the carve-out existed.
+
 #### Scenario: Edit action hidden once confirmed, even before any report exists
 - **WHEN** a budget's `status` is `confirmed`, regardless of whether it has any report yet
 - **THEN** the single-budget view hides or disables the "Edit" action, with an explanatory message, and a direct edit attempt is rejected by the backend
@@ -70,3 +72,11 @@ The frontend SHALL hide/disable the budget's "Edit" action once `Budget.status =
 #### Scenario: Backend rejects a direct edit attempt
 - **WHEN** a budget line or metadata update request is sent for a budget whose `status` is `confirmed`, regardless of whether it has any report yet
 - **THEN** the backend rejects the request rather than applying it
+
+#### Scenario: actual_currency alone is allowed through the lock
+- **WHEN** a confirmed budget receives a PATCH containing only `actual_currency`
+- **THEN** the backend applies it rather than rejecting it as a locked metadata edit
+
+#### Scenario: actual_currency bundled with another locked field is still rejected
+- **WHEN** a confirmed budget receives a PATCH containing `actual_currency` together with another metadata field (e.g. `name`)
+- **THEN** the backend rejects the entire request

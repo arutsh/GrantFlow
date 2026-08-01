@@ -15,3 +15,12 @@ export const reportLinesQueryKey = (reportId: string | undefined) =>
 
 export const attachmentsQueryKey = (reportLineId: string | undefined) =>
   ["attachments", "byReportLine", reportLineId] as const;
+
+export const fundingReceiptsQueryKey = (budgetId: string | undefined) =>
+  ["fundingReceipts", "byBudget", budgetId] as const;
+
+export const currencyConversionsQueryKey = (budgetId: string | undefined) =>
+  ["currencyConversions", "byBudget", budgetId] as const;
+
+export const ledgerBalanceQueryKey = (budgetId: string | undefined) =>
+  ["ledgerBalance", budgetId] as const;

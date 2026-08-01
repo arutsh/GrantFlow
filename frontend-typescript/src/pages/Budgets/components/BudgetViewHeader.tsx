@@ -5,6 +5,7 @@ import Input from "@/components/ui/Input";
 import { editBudget } from "@/api/budgetApi";
 import { getCurrentCustomerId, isBudgetFunder, isBudgetOwner } from "@/utils/roleAccess";
 import { formatDateOnly } from "@/utils/datetime";
+import { CURRENCY_CODES } from "@/utils/currency";
 import { Budget } from "../types/budget";
 
 function ownerTypeLabel(owner?: { is_ngo?: boolean; is_donor?: boolean } | null): string {
@@ -26,7 +27,7 @@ const STATUS_STYLES: Record<string, string> = {
   archived: "bg-gray-200 text-gray-600",
 };
 
-function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_STYLES[status] ?? STATUS_STYLES.draft;
   const label = STATUS_LABELS[status] ?? status;
   return (
@@ -43,6 +44,7 @@ export function BudgetViewHeader({
   budget,
   isLocked,
   onBudgetUpdated,
+  editTrigger,
 }: {
   budget: Budget;
   // Metadata/lines lock as soon as the budget is confirmed — not only once a
@@ -52,6 +54,11 @@ export function BudgetViewHeader({
   // check would have wrongly left editable).
   isLocked: boolean;
   onBudgetUpdated?: (updated: Budget) => void;
+  // Bumped by a sibling section (e.g. CurrencyLedgerPanel's "set actual
+  // currency first" prompt) to open edit mode from outside this component,
+  // without lifting isEditMode itself into shared state. Only reacts to a
+  // change from a defined value, so it never fires on initial mount.
+  editTrigger?: number;
 }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [name, setName] = useState(budget.name ?? "");
@@ -61,8 +68,16 @@ export function BudgetViewHeader({
   const [durationMonths, setDurationMonths] = useState<number | "">(
     budget.duration_months ?? ""
   );
+  const [actualCurrency, setActualCurrency] = useState(
+    budget.actual_currency ?? ""
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  // True when edit mode was entered via editTrigger on an already-locked
+  // (confirmed) budget — restricts the form to the actual-currency field
+  // only, both visually and in the payload sent on save, since the backend
+  // still locks every other metadata field once confirmed.
+  const [isCurrencyOnlyEdit, setIsCurrencyOnlyEdit] = useState(false);
   // Shared with BudgetConfirmAction/BudgetCancelConfirmationAction so the
   // Edit button can't be clicked mid-confirm/revert — without this, entering
   // edit mode while one of those requests is in flight lets a stale edit
@@ -84,12 +99,33 @@ export function BudgetViewHeader({
     setName(budget.name ?? "");
     setFunderName((budget.funder as { name?: string } | null)?.name ?? "");
     setDurationMonths(budget.duration_months ?? "");
+    setActualCurrency(budget.actual_currency ?? "");
     setError("");
+    setIsCurrencyOnlyEdit(false);
     setIsEditMode(true);
   };
 
+  // Only reachable while isLocked (the normal Edit button is hidden once
+  // locked) — restricts the form to actual_currency so the saved payload
+  // never carries name/duration/funder, which the backend still blocks on a
+  // confirmed budget.
+  const enterCurrencyOnlyEdit = () => {
+    setActualCurrency(budget.actual_currency ?? "");
+    setError("");
+    setIsCurrencyOnlyEdit(true);
+    setIsEditMode(true);
+  };
+
+  useEffect(() => {
+    if (editTrigger === undefined) return;
+    if (isLocked) enterCurrencyOnlyEdit();
+    else enterEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTrigger]);
+
   const discardEdit = () => {
     setIsEditMode(false);
+    setIsCurrencyOnlyEdit(false);
     setError("");
   };
 
@@ -97,17 +133,25 @@ export function BudgetViewHeader({
     setIsSaving(true);
     setError("");
     try {
-      const updated = await editBudget(budget.id, {
-        name: name.trim() || undefined,
-        // Always sent (even blank) — this form always carries the budget's
-        // full current metadata, so an empty value here means the user
-        // intentionally cleared it, not "leave unchanged".
-        external_funder_name: funderName.trim(),
-        duration_months: durationMonths !== "" ? Number(durationMonths) : undefined,
-        status: budget.status === "ai_draft" ? "draft" : undefined,
-      });
+      const updated = await editBudget(
+        budget.id,
+        isCurrencyOnlyEdit
+          ? { actual_currency: actualCurrency.trim() || undefined }
+          : {
+              name: name.trim() || undefined,
+              // Always sent (even blank) — this form always carries the
+              // budget's full current metadata, so an empty value here
+              // means the user intentionally cleared it, not "leave
+              // unchanged".
+              external_funder_name: funderName.trim(),
+              duration_months: durationMonths !== "" ? Number(durationMonths) : undefined,
+              actual_currency: actualCurrency.trim() || undefined,
+              status: budget.status === "ai_draft" ? "draft" : undefined,
+            }
+      );
       onBudgetUpdated?.(updated);
       setIsEditMode(false);
+      setIsCurrencyOnlyEdit(false);
     } catch {
       setError("Failed to save changes. Please try again.");
     } finally {
@@ -122,7 +166,7 @@ export function BudgetViewHeader({
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex-1 min-w-[240px]">
             <StatusBadge status={budget.status} />
-            {isEditMode ? (
+            {isEditMode && !isCurrencyOnlyEdit ? (
               <input
                 type="text"
                 value={name}
@@ -143,7 +187,11 @@ export function BudgetViewHeader({
                 <Button
                   variant="primary"
                   onClick={saveEdit}
-                  disabled={isSaving || !name.trim() || (durationMonths !== "" && durationMonths < 1)}
+                  disabled={
+                    isSaving ||
+                    (!isCurrencyOnlyEdit &&
+                      (!name.trim() || (durationMonths !== "" && durationMonths < 1)))
+                  }
                 >
                   {isSaving ? "Saving..." : "Save Changes"}
                 </Button>
@@ -173,7 +221,7 @@ export function BudgetViewHeader({
           Owner: <span className="text-slate-700 font-medium">{budget.owner?.name ?? "Unknown"}</span>
           {ownerTypeLabel(budget.owner)}
         </p>
-        {isEditMode ? (
+        {isEditMode && !isCurrencyOnlyEdit ? (
           <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
             <span>Funder:</span>
             <input
@@ -187,6 +235,12 @@ export function BudgetViewHeader({
         ) : (
           <p className="text-sm text-slate-500">
             Funder: <span className="text-slate-700 font-medium">{budget.funder?.name ?? "—"}</span>
+          </p>
+        )}
+
+        {isCurrencyOnlyEdit && (
+          <p className="text-xs text-amber-700 mt-2">
+            This budget is confirmed — only the actual currency can be updated.
           </p>
         )}
 
@@ -213,7 +267,7 @@ export function BudgetViewHeader({
             <div className="text-micro-label">
               Duration
             </div>
-            {isEditMode ? (
+            {isEditMode && !isCurrencyOnlyEdit ? (
               <input
                 type="number"
                 min={1}
@@ -227,6 +281,36 @@ export function BudgetViewHeader({
             ) : (
               <div className="text-sm font-semibold text-slate-700 mt-0.5">
                 {budget.duration_months ? `${budget.duration_months} months` : "—"}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-micro-label">
+              Original currency
+            </div>
+            {isEditMode ? (
+              <select
+                value={actualCurrency}
+                onChange={(e) => setActualCurrency(e.target.value)}
+                disabled={isSaving}
+                className="mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                <option value="">—</option>
+                {/* Current value always offered, even if outside the fixed
+                    list below, so an existing budget's actual_currency is
+                    never silently blanked out just by entering edit mode. */}
+                {actualCurrency && !CURRENCY_CODES.includes(actualCurrency) && (
+                  <option value={actualCurrency}>{actualCurrency}</option>
+                )}
+                {CURRENCY_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                {budget.actual_currency ?? "—"}
               </div>
             )}
           </div>

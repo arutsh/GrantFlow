@@ -58,6 +58,31 @@ api.opengrantflow.com {
 		reverse_proxy budget:8000
 	}
 
+	# ---- REPORTS SERVICE ----
+	handle /api/v1/reports/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- REPORT LINES SERVICE ----
+	handle /api/v1/report-lines/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- ATTACHMENTS SERVICE ----
+	handle /api/v1/attachments/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- FUNDING RECEIPTS SERVICE ----
+	handle /api/v1/funding-receipts/* {
+		reverse_proxy budget:8000
+	}
+
+	# ---- CURRENCY CONVERSIONS SERVICE ----
+	handle /api/v1/currency-conversions/* {
+		reverse_proxy budget:8000
+	}
+
 	# ---- AI SERVICE ----
 	handle /api/v1/ai/* {
 		reverse_proxy ai:8000 {
