@@ -49,3 +49,6 @@ class BudgetFactory(factory.Factory):
     local_currency = "GBP"
     actual_currency = None
     start_date = None
+    donor_total_amount = None
+    estimated_exchange_rate = None
+    confirmed_at = None

@@ -1,5 +1,6 @@
 import asyncio
 import structlog
+from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from fastapi import status, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -82,7 +83,8 @@ def is_budget_locked(budget) -> bool:
 def _is_metadata_edit(budget: BudgetCreate) -> bool:
     """True if the payload touches anything beyond a bare status/start_date
     transition (confirm or revert-to-draft) or a currency-only update — i.e.
-    name/duration/local_currency/funder/owner fields. `actual_currency` is
+    name/duration/local_currency/funder/owner/donor_total_amount/
+    estimated_exchange_rate fields. `actual_currency` is
     deliberately excluded: it's the donor-transfer currency the currency-
     ledger UI needs set, and the ledger's "set actual currency" prompt only
     ever appears on an already-confirmed budget (see budget-report-frontend
@@ -98,6 +100,8 @@ def _is_metadata_edit(budget: BudgetCreate) -> bool:
             budget.external_funder_name,
             budget.funding_customer_id,
             budget.owner_id,
+            budget.donor_total_amount,
+            budget.estimated_exchange_rate,
         )
     )
 
@@ -201,6 +205,11 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
                 status.HTTP_400_BAD_REQUEST,
             )
 
+    # Set on every confirm transition (is_confirm_attempt is only reachable
+    # here from draft/ai_draft, per the guard above) so a later revert +
+    # reconfirm always overwrites the prior value, never left stale.
+    confirmed_at = datetime.now(timezone.utc) if is_confirm_attempt else None
+
     if is_reverting:
         non_draft_reports = [r for r in valid_budget.reports if r.status != ReportStatus.draft]
         if non_draft_reports:
@@ -229,6 +238,9 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         owner_id=owner_id,
         funding_customer_id=budget.funding_customer_id,
         external_funder_name=budget.external_funder_name,
+        donor_total_amount=budget.donor_total_amount,
+        estimated_exchange_rate=budget.estimated_exchange_rate,
+        confirmed_at=confirmed_at,
     )
 
 
@@ -415,6 +427,15 @@ def _compute_end_date(budget: BudgetModel):
     return budget.start_date + relativedelta(months=budget.duration_months or 0)
 
 
+def _compute_estimated_local_cap(budget: BudgetModel) -> float | None:
+    """donor_total_amount × estimated_exchange_rate, derived at read time —
+    never persisted (see design.md Decision 2). `null` when either input is
+    unset or zero, not just when unset."""
+    if not budget.donor_total_amount or not budget.estimated_exchange_rate:
+        return None
+    return budget.donor_total_amount * budget.estimated_exchange_rate
+
+
 async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_user: dict):
     # Collect unique user and customer IDs
     user_ids = {b.created_by for b in budgets if b.created_by}
@@ -447,6 +468,10 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             "start_date": b.start_date,
             "end_date": _compute_end_date(b),
             "total_amount": b.total_amount,
+            "donor_total_amount": b.donor_total_amount,
+            "estimated_exchange_rate": b.estimated_exchange_rate,
+            "confirmed_at": b.confirmed_at,
+            "estimated_local_cap": _compute_estimated_local_cap(b),
             "owner": customers_map.get(b.owner_id),
             # Preserve `id` from the budget's own funding_customer_id even
             # when the customer-name lookup is empty/failed, so a real

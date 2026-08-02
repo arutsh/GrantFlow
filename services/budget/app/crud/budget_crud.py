@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -77,6 +77,9 @@ def update_budget(
     local_currency: str | None = None,
     actual_currency: str | None = None,
     start_date: date | None = None,
+    donor_total_amount: float | None = None,
+    estimated_exchange_rate: float | None = None,
+    confirmed_at: datetime | None = None,
 ) -> BudgetModel | None:
     budget = get_budget(session, budget_id)
     if not budget:
@@ -100,6 +103,12 @@ def update_budget(
         budget.funding_customer_id = funding_customer_id
     if external_funder_name is not None:
         budget.external_funder_name = external_funder_name
+    if donor_total_amount is not None:
+        budget.donor_total_amount = donor_total_amount
+    if estimated_exchange_rate is not None:
+        budget.estimated_exchange_rate = estimated_exchange_rate
+    if confirmed_at is not None:
+        budget.confirmed_at = confirmed_at
     session.commit()
     session.refresh(budget)
     return budget
