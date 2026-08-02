@@ -154,6 +154,57 @@ describe("DonorDashboard", () => {
     );
   });
 
+  it("shows the donor commitment and estimated rate alongside a budget's total when estimated_local_cap is set", async () => {
+    getFundedBudgetsSummaryMock.mockResolvedValue({
+      total_budgets: 1,
+      total_allocated_by_currency: [{ currency: "GBP", total_allocated: 4200 }],
+    });
+    getFundedGranteesMock.mockResolvedValue([]);
+    getFundedBudgetsMock.mockResolvedValue([
+      {
+        id: "b1",
+        name: "Clean Water Phase 1",
+        status: "draft",
+        total_amount: 6000,
+        local_currency: "GBP",
+        actual_currency: "EUR",
+        donor_total_amount: 10000,
+        estimated_exchange_rate: 0.8,
+        estimated_local_cap: 8000,
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => expect(screen.getByText("Clean Water Phase 1")).toBeInTheDocument());
+    expect(screen.getByText("£6,000")).toBeInTheDocument();
+    expect(screen.getByText("€10,000 @ 0.8 (est.)")).toBeInTheDocument();
+  });
+
+  it("shows only the local total for a budget with no estimated_local_cap set", async () => {
+    getFundedBudgetsSummaryMock.mockResolvedValue({
+      total_budgets: 1,
+      total_allocated_by_currency: [{ currency: "GBP", total_allocated: 4200 }],
+    });
+    getFundedGranteesMock.mockResolvedValue([]);
+    getFundedBudgetsMock.mockResolvedValue([
+      {
+        id: "b1",
+        name: "Clean Water Phase 1",
+        status: "draft",
+        total_amount: 1000,
+        local_currency: "GBP",
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => expect(screen.getByText("£1,000")).toBeInTheDocument());
+    expect(screen.queryByText(/\(est\.\)/)).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when the donor has zero funded budgets", async () => {
     getFundedBudgetsSummaryMock.mockResolvedValue({
       total_budgets: 0,

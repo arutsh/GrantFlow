@@ -56,6 +56,13 @@ class BudgetUpdate(BudgetBase):
     # for "unset"). BudgetBase's default only makes sense for BudgetCreate,
     # where a brand-new budget really does start as a draft.
     status: BudgetStatus | None = None
+    # Also the PATCH response shape (response_model=BudgetUpdate) — declared
+    # here, same as on Budget/BudgetWithLines, so a confirm/revert or a
+    # donor-commitment edit doesn't leave the caller with a stale value until
+    # it refetches (see budget_services._budget_update_response).
+    confirmed_at: datetime | None = None
+    estimated_local_cap: float | None = None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Budget(BudgetBase):
@@ -143,5 +150,10 @@ class FundedBudgetListItem(BaseModel):
     status: BudgetStatus
     total_amount: float | None = None
     local_currency: str | None = None
+    actual_currency: str | None = None
+    donor_total_amount: float | None = None
+    estimated_exchange_rate: float | None = None
+    confirmed_at: datetime | None = None
+    estimated_local_cap: float | None = None
     owner: CustomerOut | None = None
     model_config = ConfigDict(from_attributes=True)

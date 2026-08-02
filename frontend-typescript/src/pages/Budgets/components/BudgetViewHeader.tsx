@@ -3,13 +3,21 @@ import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { editBudget } from "@/api/budgetApi";
-import { getCurrentCustomerId, isBudgetFunder, isBudgetOwner } from "@/utils/roleAccess";
+import {
+  getCurrentCustomerId,
+  isBudgetFunder,
+  isBudgetOwner,
+} from "@/utils/roleAccess";
 import { formatDateOnly } from "@/utils/datetime";
 import { CURRENCY_CODES } from "@/utils/currency";
 import { Budget } from "../types/budget";
 
-function ownerTypeLabel(owner?: { is_ngo?: boolean; is_donor?: boolean } | null): string {
-  const tags = [owner?.is_ngo && "NGO", owner?.is_donor && "Donor"].filter(Boolean);
+function ownerTypeLabel(
+  owner?: { is_ngo?: boolean; is_donor?: boolean } | null,
+): string {
+  const tags = [owner?.is_ngo && "NGO", owner?.is_donor && "Donor"].filter(
+    Boolean,
+  );
   return tags.length ? ` (${tags.join(" / ")})` : "";
 }
 
@@ -63,14 +71,20 @@ export function BudgetViewHeader({
   const [isEditMode, setIsEditMode] = useState(false);
   const [name, setName] = useState(budget.name ?? "");
   const [funderName, setFunderName] = useState(
-    (budget.funder as { name?: string } | null)?.name ?? ""
+    (budget.funder as { name?: string } | null)?.name ?? "",
   );
   const [durationMonths, setDurationMonths] = useState<number | "">(
-    budget.duration_months ?? ""
+    budget.duration_months ?? "",
   );
   const [actualCurrency, setActualCurrency] = useState(
-    budget.actual_currency ?? ""
+    budget.actual_currency ?? "",
   );
+  const [donorTotalAmount, setDonorTotalAmount] = useState<number | "">(
+    budget.donor_total_amount ?? "",
+  );
+  const [estimatedExchangeRate, setEstimatedExchangeRate] = useState<
+    number | ""
+  >(budget.estimated_exchange_rate ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   // True when edit mode was entered via editTrigger on an already-locked
@@ -100,6 +114,8 @@ export function BudgetViewHeader({
     setFunderName((budget.funder as { name?: string } | null)?.name ?? "");
     setDurationMonths(budget.duration_months ?? "");
     setActualCurrency(budget.actual_currency ?? "");
+    setDonorTotalAmount(budget.donor_total_amount ?? "");
+    setEstimatedExchangeRate(budget.estimated_exchange_rate ?? "");
     setError("");
     setIsCurrencyOnlyEdit(false);
     setIsEditMode(true);
@@ -129,6 +145,14 @@ export function BudgetViewHeader({
     setError("");
   };
 
+  // Donor commitment can be zero (no commitment yet), but the estimated
+  // rate can't — a zero rate divides by zero everywhere it's used to
+  // convert an amount back to the donor's currency (see
+  // BudgetViewLinesTable's toDonorAmount).
+  const donorAmountInvalid = donorTotalAmount !== "" && Number(donorTotalAmount) < 0;
+  const estimatedRateInvalid =
+    estimatedExchangeRate !== "" && Number(estimatedExchangeRate) <= 0;
+
   const saveEdit = async () => {
     setIsSaving(true);
     setError("");
@@ -144,10 +168,19 @@ export function BudgetViewHeader({
               // means the user intentionally cleared it, not "leave
               // unchanged".
               external_funder_name: funderName.trim(),
-              duration_months: durationMonths !== "" ? Number(durationMonths) : undefined,
+              duration_months:
+                durationMonths !== "" ? Number(durationMonths) : undefined,
               actual_currency: actualCurrency.trim() || undefined,
+              // Explicit `null` (not `undefined`) when the user blanks the
+              // field — `undefined` is dropped from the JSON body entirely,
+              // which the backend reads as "field omitted, leave
+              // unchanged", so it could never actually be cleared.
+              donor_total_amount:
+                donorTotalAmount !== "" ? Number(donorTotalAmount) : null,
+              estimated_exchange_rate:
+                estimatedExchangeRate !== "" ? Number(estimatedExchangeRate) : null,
               status: budget.status === "ai_draft" ? "draft" : undefined,
-            }
+            },
       );
       onBudgetUpdated?.(updated);
       setIsEditMode(false);
@@ -163,174 +196,247 @@ export function BudgetViewHeader({
     <>
       <Card className="w-full bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-5">
         <CardHeader>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex-1 min-w-[240px]">
-            <StatusBadge status={budget.status} />
-            {isEditMode && !isCurrencyOnlyEdit ? (
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[240px]">
+              <StatusBadge status={budget.status} />
+              {isEditMode && !isCurrencyOnlyEdit ? (
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={isSaving}
+                  className="block w-full max-w-md text-2xl font-semibold border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                />
+              ) : (
+                <h1 className="text-2xl font-semibold">{budget.name}</h1>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {isEditMode ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    onClick={discardEdit}
+                    disabled={isSaving}
+                  >
+                    Discard
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={saveEdit}
+                    disabled={
+                      isSaving ||
+                      (!isCurrencyOnlyEdit &&
+                        (!name.trim() ||
+                          (durationMonths !== "" && durationMonths < 1) ||
+                          donorAmountInvalid ||
+                          estimatedRateInvalid))
+                    }
+                  >
+                    {isSaving ? "Saving..." : "Save Changes"}
+                  </Button>
+                </>
+              ) : owner && isLocked ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg"
+                  title="This budget is confirmed — its metadata and lines are locked to keep reported figures accurate."
+                >
+                  🔒 Locked: confirmed
+                </span>
+              ) : owner ? (
+                <Button
+                  variant="secondary"
+                  onClick={enterEdit}
+                  className="text-sm"
+                  disabled={isActionBusy}
+                >
+                  Edit
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isEditMode && !isCurrencyOnlyEdit ? (
+            <div className="mt-1 flex items-center flex-wrap gap-2 text-sm text-slate-500">
+              <span className="text-slate-700 font-medium">
+                {budget.owner?.name ?? "Unknown"}
+              </span>
+              {ownerTypeLabel(budget.owner)}
+              <span className="text-slate-300">→</span>
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={funderName}
+                onChange={(e) => setFunderName(e.target.value)}
                 disabled={isSaving}
-                className="block w-full max-w-md text-2xl font-semibold border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
               />
-            ) : (
-              <h1 className="text-2xl font-semibold">{budget.name}</h1>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {isEditMode ? (
-              <>
-                <Button variant="secondary" onClick={discardEdit} disabled={isSaving}>
-                  Discard
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={saveEdit}
-                  disabled={
-                    isSaving ||
-                    (!isCurrencyOnlyEdit &&
-                      (!name.trim() || (durationMonths !== "" && durationMonths < 1)))
-                  }
-                >
-                  {isSaving ? "Saving..." : "Save Changes"}
-                </Button>
-              </>
-            ) : owner && isLocked ? (
-              <span
-                className="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg"
-                title="This budget is confirmed — its metadata and lines are locked to keep reported figures accurate."
-              >
-                🔒 Locked: confirmed
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 mt-1">
+              <span className="text-slate-700 font-medium">
+                {budget.owner?.name ?? "Unknown"}
               </span>
-            ) : owner ? (
-              <Button
-                variant="secondary"
-                onClick={enterEdit}
-                className="text-sm"
-                disabled={isActionBusy}
-              >
-                Edit
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-slate-500 mt-1">
-          Owner: <span className="text-slate-700 font-medium">{budget.owner?.name ?? "Unknown"}</span>
-          {ownerTypeLabel(budget.owner)}
-        </p>
-        {isEditMode && !isCurrencyOnlyEdit ? (
-          <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-            <span>Funder:</span>
-            <input
-              type="text"
-              value={funderName}
-              onChange={(e) => setFunderName(e.target.value)}
-              disabled={isSaving}
-              className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
-            />
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Funder: <span className="text-slate-700 font-medium">{budget.funder?.name ?? "—"}</span>
-          </p>
-        )}
+              {ownerTypeLabel(budget.owner)}
+              <span className="mx-1.5 text-slate-300">→</span>
+              <span className="text-slate-700 font-medium">
+                {budget.funder?.name ?? "—"}
+              </span>
+            </p>
+          )}
 
-        {isCurrencyOnlyEdit && (
-          <p className="text-xs text-amber-700 mt-2">
-            This budget is confirmed — only the actual currency can be updated.
-          </p>
-        )}
+          {isCurrencyOnlyEdit && (
+            <p className="text-xs text-amber-700 mt-2">
+              This budget is confirmed — only the actual currency can be
+              updated.
+            </p>
+          )}
 
-        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
 
-        <div className="mt-4 flex flex-wrap gap-8 pt-4 border-t border-dashed border-slate-200">
-          <div>
-            <div className="text-micro-label">
-              Start date
-            </div>
-            <div className="text-sm font-semibold text-slate-700 mt-0.5">
-              {formatDateOnly(budget.start_date) ?? "—"}
-            </div>
-          </div>
-          <div>
-            <div className="text-micro-label">
-              End date
-            </div>
-            <div className="text-sm font-semibold text-slate-700 mt-0.5">
-              {formatDateOnly(budget.end_date) ?? "—"}
-            </div>
-          </div>
-          <div>
-            <div className="text-micro-label">
-              Duration
-            </div>
-            {isEditMode && !isCurrencyOnlyEdit ? (
-              <input
-                type="number"
-                min={1}
-                value={durationMonths}
-                onChange={(e) =>
-                  setDurationMonths(e.target.value ? parseInt(e.target.value) : "")
-                }
-                disabled={isSaving}
-                className="w-20 mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-              />
-            ) : (
+          <div className="mt-4 flex flex-wrap gap-8 pt-4 border-t border-dashed border-slate-200">
+            <div>
+              <div className="text-micro-label">Start date</div>
               <div className="text-sm font-semibold text-slate-700 mt-0.5">
-                {budget.duration_months ? `${budget.duration_months} months` : "—"}
+                {formatDateOnly(budget.start_date) ?? "—"}
               </div>
-            )}
-          </div>
-          <div>
-            <div className="text-micro-label">
-              Original currency
             </div>
-            {isEditMode ? (
-              <select
-                value={actualCurrency}
-                onChange={(e) => setActualCurrency(e.target.value)}
-                disabled={isSaving}
-                className="mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-              >
-                <option value="">—</option>
-                {/* Current value always offered, even if outside the fixed
+            <div>
+              <div className="text-micro-label">End date</div>
+              <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                {formatDateOnly(budget.end_date) ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-micro-label">Duration</div>
+              {isEditMode && !isCurrencyOnlyEdit ? (
+                <input
+                  type="number"
+                  min={1}
+                  value={durationMonths}
+                  onChange={(e) =>
+                    setDurationMonths(
+                      e.target.value ? parseInt(e.target.value) : "",
+                    )
+                  }
+                  disabled={isSaving}
+                  className="w-20 mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                />
+              ) : (
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {budget.duration_months
+                    ? `${budget.duration_months} months`
+                    : "—"}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-micro-label">Original currency</div>
+              {isEditMode ? (
+                <select
+                  value={actualCurrency}
+                  onChange={(e) => setActualCurrency(e.target.value)}
+                  disabled={isSaving}
+                  className="mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  <option value="">—</option>
+                  {/* Current value always offered, even if outside the fixed
                     list below, so an existing budget's actual_currency is
                     never silently blanked out just by entering edit mode. */}
-                {actualCurrency && !CURRENCY_CODES.includes(actualCurrency) && (
-                  <option value={actualCurrency}>{actualCurrency}</option>
-                )}
-                {CURRENCY_CODES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="text-sm font-semibold text-slate-700 mt-0.5">
-                {budget.actual_currency ?? "—"}
-              </div>
-            )}
+                  {actualCurrency &&
+                    !CURRENCY_CODES.includes(actualCurrency) && (
+                      <option value={actualCurrency}>{actualCurrency}</option>
+                    )}
+                  {CURRENCY_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {budget.actual_currency ?? "—"}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-micro-label">Donor commitment</div>
+              {isEditMode && !isCurrencyOnlyEdit ? (
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={donorTotalAmount}
+                  onChange={(e) =>
+                    setDonorTotalAmount(
+                      e.target.value ? Number(e.target.value) : "",
+                    )
+                  }
+                  disabled={isSaving}
+                  className={`w-28 mt-0.5 border rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                    donorAmountInvalid
+                      ? "border-red-300 focus:ring-red-400"
+                      : "border-slate-300 focus:ring-slate-400"
+                  }`}
+                />
+              ) : (
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {budget.donor_total_amount != null
+                    ? `${budget.donor_total_amount} ${budget.actual_currency ?? ""}`.trim()
+                    : "—"}
+                </div>
+              )}
+              {donorAmountInvalid && (
+                <p className="text-xs text-red-600 mt-0.5">Must be zero or greater.</p>
+              )}
+            </div>
+            <div>
+              <div className="text-micro-label">Estimated rate</div>
+              {isEditMode && !isCurrencyOnlyEdit ? (
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={estimatedExchangeRate}
+                  onChange={(e) =>
+                    setEstimatedExchangeRate(
+                      e.target.value ? Number(e.target.value) : "",
+                    )
+                  }
+                  disabled={isSaving}
+                  className={`w-24 mt-0.5 border rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 ${
+                    estimatedRateInvalid
+                      ? "border-red-300 focus:ring-red-400"
+                      : "border-slate-300 focus:ring-slate-400"
+                  }`}
+                />
+              ) : (
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {budget.estimated_exchange_rate ?? "—"}
+                </div>
+              )}
+              {estimatedRateInvalid && (
+                <p className="text-xs text-red-600 mt-0.5">Must be greater than zero.</p>
+              )}
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-    {!isEditMode && (
-      <>
-        <BudgetConfirmAction
-          budget={budget}
-          onConfirmed={onBudgetUpdated}
-          onBusyChange={setIsActionBusy}
-        />
-        <BudgetCancelConfirmationAction
-          budget={budget}
-          onReverted={onBudgetUpdated}
-          onBusyChange={setIsActionBusy}
-        />
-      </>
-    )}
+
+          {!isEditMode && (
+            <>
+              <BudgetConfirmAction
+                budget={budget}
+                onConfirmed={onBudgetUpdated}
+                onBusyChange={setIsActionBusy}
+              />
+              <BudgetCancelConfirmationAction
+                budget={budget}
+                onReverted={onBudgetUpdated}
+                onBusyChange={setIsActionBusy}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }
@@ -353,9 +459,11 @@ function BudgetConfirmAction({
   const [error, setError] = useState("");
 
   const currentCustomerId = getCurrentCustomerId();
-  const isConfirmable = budget.status === "draft" || budget.status === "ai_draft";
+  const isConfirmable =
+    budget.status === "draft" || budget.status === "ai_draft";
   const canConfirm =
-    isBudgetOwner(budget, currentCustomerId) || isBudgetFunder(budget, currentCustomerId);
+    isBudgetOwner(budget, currentCustomerId) ||
+    isBudgetFunder(budget, currentCustomerId);
 
   // Re-sync whenever the widget becomes visible again (e.g. after a revert),
   // covering the case where this component's state outlives the round trip
@@ -386,20 +494,34 @@ function BudgetConfirmAction({
   };
 
   return (
-    <div className="w-full flex flex-wrap items-end gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 pt-3 pb-1">
-      <span className="text-sm text-slate-600 mb-4">Confirm this budget to unlock reporting:</span>
-      <Input
-        label="Start Date"
-        name="start_date"
-        type="date"
-        value={startDate}
-        onChange={(e) => setStartDate(e.target.value)}
-        disabled={isSaving}
-      />
-      <Button onClick={handleConfirm} disabled={!startDate || isSaving} className="mb-4">
+    <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex flex-wrap items-center justify-end gap-2">
+      <span className="text-xs text-slate-400 mr-auto">
+        Confirm to unlock reporting
+      </span>
+      <label htmlFor="start_date" className="text-xs text-slate-500">
+        Start date
+      </label>
+      <div className="[&>div]:mb-0">
+        <Input
+          name="start_date"
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          disabled={isSaving}
+          showLabel={false}
+        />
+      </div>
+      <Button
+        variant="primary"
+        onClick={handleConfirm}
+        disabled={!startDate || isSaving}
+        className="text-sm"
+      >
         {isSaving ? "Confirming..." : "Confirm Budget"}
       </Button>
-      {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+      {error && (
+        <p className="text-sm text-red-600 w-full text-right">{error}</p>
+      )}
     </div>
   );
 }
@@ -417,7 +539,11 @@ function BudgetCancelConfirmationAction({
   const [error, setError] = useState("");
 
   const currentCustomerId = getCurrentCustomerId();
-  if (budget.status !== "confirmed" || !isBudgetOwner(budget, currentCustomerId)) return null;
+  if (
+    budget.status !== "confirmed" ||
+    !isBudgetOwner(budget, currentCustomerId)
+  )
+    return null;
 
   const handleCancel = async () => {
     setIsSaving(true);
@@ -427,8 +553,8 @@ function BudgetCancelConfirmationAction({
       const updated = await editBudget(budget.id, { status: "draft" });
       onReverted?.(updated);
     } catch (err) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data
-        ?.detail;
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
       setError(detail || "Failed to cancel confirmation. Please try again.");
     } finally {
       setIsSaving(false);
@@ -437,8 +563,10 @@ function BudgetCancelConfirmationAction({
   };
 
   return (
-    <div className="w-full flex flex-wrap items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-      <span className="text-sm text-slate-500">This budget is confirmed.</span>
+    <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex flex-wrap items-center justify-end gap-2">
+      <span className="text-xs text-slate-400 mr-auto">
+        This budget is confirmed
+      </span>
       <ConfirmDeleteButton
         variant="danger"
         onConfirm={handleCancel}
@@ -448,7 +576,9 @@ function BudgetCancelConfirmationAction({
       >
         {isSaving ? "Cancelling..." : "Cancel Confirmation"}
       </ConfirmDeleteButton>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="text-sm text-red-600 w-full text-right">{error}</p>
+      )}
     </div>
   );
 }

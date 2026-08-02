@@ -7,6 +7,7 @@ from app.crud.report_crud import (
     create_report,
     get_report,
     list_reports,
+    list_all_reports,
     list_overlapping_reports,
     update_report,
     delete_report,
@@ -15,7 +16,13 @@ from app.crud.report_crud import (
 from app.core.exceptions import DomainError, PermissionDenied
 from app.models.budget import BudgetModel
 from app.schemas.budget_schema import BudgetStatus
-from app.schemas.report_schema import ReportCreate, ReportUpdate, ReportStatus
+from app.schemas.report_schema import (
+    Report,
+    ReportCreate,
+    ReportUpdate,
+    ReportStatus,
+    ReportWithBudgetInfo,
+)
 from app.services.budget_services import _can_view_budget
 
 
@@ -123,6 +130,43 @@ def get_report_service(db, valid_user: dict, report_id: UUID):
 def list_reports_service(db, valid_user: dict, budget_id: UUID):
     get_viewable_budget(db, valid_user, budget_id)
     return list_reports(db, budget_id=budget_id)
+
+
+def _report_with_budget_info(report) -> ReportWithBudgetInfo:
+    base = Report.model_validate(report)
+    budget = report.budget
+    return ReportWithBudgetInfo(
+        **base.model_dump(),
+        budget_name=budget.name if budget else None,
+        budget_status=budget.status if budget else None,
+        funding_customer_id=budget.funding_customer_id if budget else None,
+        external_funder_name=budget.external_funder_name if budget else None,
+    )
+
+
+def list_all_reports_service(
+    db,
+    valid_user: dict,
+    status: ReportStatus | None = None,
+    budget_id: UUID | None = None,
+    funding_customer_id: UUID | None = None,
+) -> list[ReportWithBudgetInfo]:
+    """Cross-budget reports directory (GET /reports/) — every report across
+    every budget visible to this user (owner or funder, see design.md
+    Decision 7), optionally narrowed by status/budget_id/funding_customer_id."""
+    is_superuser = valid_user["role"] == "superuser"
+    customer_id = valid_user.get("customer_id")
+    if not is_superuser and not customer_id:
+        return []
+
+    reports = list_all_reports(
+        db,
+        customer_id=None if is_superuser else customer_id,
+        status=status,
+        budget_id=budget_id,
+        funding_customer_id=funding_customer_id,
+    )
+    return [_report_with_budget_info(report) for report in reports]
 
 
 def update_report_service(db, valid_user: dict, report_id: UUID, report_update: ReportUpdate):

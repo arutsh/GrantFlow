@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@theme {  --color-mint-500: oklch(0.72 0.11 178);}
-
 /* Type-scale tokens from the budget-report-frontend mockup
    (openspec/changes/budget-report-frontend, ticket #160). Adopted going
    forward on new/touched components — not retrofitted across the whole app

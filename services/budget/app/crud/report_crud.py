@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
+from app.crud.budget_crud import budget_visible_to_customer_clause
+from app.models.budget import BudgetModel
 from app.models.report import ReportModel
 from app.schemas.report_schema import ReportStatus
 from uuid import UUID
@@ -37,6 +39,42 @@ def list_reports(session: Session, budget_id: UUID | None = None) -> list[Report
     query = session.query(ReportModel)
     if budget_id:
         query = query.filter(ReportModel.budget_id == budget_id)
+    return query.all()
+
+
+def list_all_reports(
+    session: Session,
+    customer_id: UUID | str | None,
+    status: ReportStatus | None = None,
+    budget_id: UUID | None = None,
+    funding_customer_id: UUID | None = None,
+) -> list[ReportModel]:
+    """Cross-budget report listing for the reports directory (GET /reports/).
+
+    customer_id=None means "no visibility restriction" (superuser); otherwise
+    scoped to every budget the customer owns OR funds — the same combined
+    owner-or-funder rule already used by get_viewable_budget for a single
+    budget (see design.md Decision 7), not two separate owner/donor routes;
+    budget_visible_to_customer_clause is the single source of truth for that
+    rule in SQL form, so it can't drift from budget_services._can_view_budget.
+    Eager-loads Budget via contains_eager (not joinedload, which would issue
+    a second join on top of the one already needed for the filter) so the
+    service layer can attach budget name/status/funder without a per-row
+    lookup.
+    """
+    query = (
+        session.query(ReportModel)
+        .join(BudgetModel, ReportModel.budget_id == BudgetModel.id)
+        .options(contains_eager(ReportModel.budget))
+    )
+    if customer_id is not None:
+        query = query.filter(budget_visible_to_customer_clause(customer_id))
+    if status:
+        query = query.filter(ReportModel.status == status)
+    if budget_id:
+        query = query.filter(ReportModel.budget_id == budget_id)
+    if funding_customer_id:
+        query = query.filter(BudgetModel.funding_customer_id == funding_customer_id)
     return query.all()
 
 

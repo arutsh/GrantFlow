@@ -52,6 +52,14 @@ export interface Budget {
   start_date?: string | null; // ISO date string
   end_date?: string | null; // ISO date string — computed backend-side from start_date + duration_months
   total_amount?: number;
+  // Donor's stated commitment, in actual_currency — directly entered, not derived.
+  donor_total_amount?: number | null;
+  // Grantee's own planning-time estimate of actual_currency -> local_currency, entered up front.
+  estimated_exchange_rate?: number | null;
+  // Set when the budget transitions to confirmed; refreshed on revert + re-confirm.
+  confirmed_at?: string | null; // ISO date string
+  // Read-only, computed backend-side as donor_total_amount * estimated_exchange_rate; null when either input is unset.
+  estimated_local_cap?: number | null;
   owner?: CustomerOut;
   funder?: CustomerOut | { name?: string; id?: string };
   trace?: TraceOut;
@@ -68,6 +76,10 @@ export interface BudgetUpdate {
   status?: string;
   actual_currency?: string;
   start_date?: string;
+  // Explicit `null` clears the field on save; `undefined` (the key omitted
+  // entirely) leaves it unchanged — see BudgetViewHeader's saveEdit.
+  donor_total_amount?: number | null;
+  estimated_exchange_rate?: number | null;
 }
 
 export interface BudgetPatched {
@@ -81,6 +93,8 @@ export interface BudgetPatched {
   local_currency?: string;
   actual_currency?: string;
   start_date?: string | null;
+  donor_total_amount?: number | null;
+  estimated_exchange_rate?: number | null;
 }
 
 // Reports

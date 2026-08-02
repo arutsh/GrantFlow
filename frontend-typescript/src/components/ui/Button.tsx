@@ -102,7 +102,9 @@ export function ConfirmDeleteButton({
   if (confirming) {
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        {confirmMessage && <span className="text-sm text-slate-600">{confirmMessage}</span>}
+        {confirmMessage && (
+          <span className="text-sm text-slate-600">{confirmMessage}</span>
+        )}
         <div className="flex items-center space-x-2">
           <Button
             variant="danger"

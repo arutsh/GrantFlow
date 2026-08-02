@@ -27,6 +27,7 @@ from app.services.report_services import (
     create_report_service,
     get_report_service,
     list_reports_service,
+    list_all_reports_service,
     update_report_service,
     delete_report_service,
     submit_report_service,
@@ -231,6 +232,122 @@ class TestReportAccess:
             list_reports_service(db, _valid_user(STRANGER_ID), budget.id)
 
 
+class TestListAllReportsService:
+    """GET /reports/ — cross-budget reports directory (ticket #182)."""
+
+    def test_owner_sees_reports_across_all_their_budgets(self, db):
+        budget_a = _make_budget(db)
+        budget_b = _make_budget(db)
+        other_owner_budget = _make_budget(db, owner_id=STRANGER_ID)
+        report_a = _make_report(db, budget_a.id)
+        report_b = _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
+        _make_report(db, other_owner_budget.id)
+
+        results = list_all_reports_service(db, _valid_user(OWNER_ID))
+
+        assert {r.id for r in results} == {report_a.id, report_b.id}
+
+    def test_donor_sees_reports_across_all_budgets_they_fund(self, db):
+        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
+        unrelated_budget = _make_budget(db)
+        report_a = _make_report(db, budget_a.id)
+        report_b = _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
+        _make_report(db, unrelated_budget.id)
+
+        results = list_all_reports_service(db, _valid_user(FUNDER_ID))
+
+        assert {r.id for r in results} == {report_a.id, report_b.id}
+
+    def test_stranger_sees_nothing(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+        _make_report(db, budget.id)
+
+        assert list_all_reports_service(db, _valid_user(STRANGER_ID)) == []
+
+    def test_status_filter(self, db):
+        budget = _make_budget(db)
+        draft = _make_report(db, budget.id, status=ReportStatus.draft)
+        _make_report(
+            db,
+            budget.id,
+            status=ReportStatus.submitted,
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 6, 30),
+        )
+
+        results = list_all_reports_service(db, _valid_user(OWNER_ID), status=ReportStatus.draft)
+
+        assert [r.id for r in results] == [draft.id]
+
+    def test_budget_id_filter(self, db):
+        budget_a = _make_budget(db)
+        budget_b = _make_budget(db)
+        report_a = _make_report(db, budget_a.id)
+        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+
+        results = list_all_reports_service(db, _valid_user(OWNER_ID), budget_id=budget_a.id)
+
+        assert [r.id for r in results] == [report_a.id]
+
+    def test_funding_customer_id_filter(self, db):
+        funded_budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+        unfunded_budget = _make_budget(db, owner_id=OWNER_ID)
+        funded_report = _make_report(db, funded_budget.id)
+        _make_report(
+            db,
+            unfunded_budget.id,
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 6, 30),
+        )
+
+        results = list_all_reports_service(db, _valid_user(OWNER_ID), funding_customer_id=FUNDER_ID)
+
+        assert [r.id for r in results] == [funded_report.id]
+
+    def test_filters_combine(self, db):
+        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
+        matching = _make_report(db, budget_a.id, status=ReportStatus.draft)
+        _make_report(
+            db,
+            budget_a.id,
+            status=ReportStatus.submitted,
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 6, 30),
+        )
+        _make_report(db, budget_b.id, status=ReportStatus.draft)
+
+        results = list_all_reports_service(
+            db,
+            _valid_user(FUNDER_ID),
+            status=ReportStatus.draft,
+            budget_id=budget_a.id,
+        )
+
+        assert [r.id for r in results] == [matching.id]
+
+    def test_budget_and_funder_fields_present_on_each_returned_report(self, db):
+        budget = _make_budget(
+            db,
+            funding_customer_id=FUNDER_ID,
+        )
+        budget.external_funder_name = "Acme Foundation"
+        db.commit()
+        _make_report(db, budget.id)
+
+        [result] = list_all_reports_service(db, _valid_user(OWNER_ID))
+
+        assert result.budget_name == "Test Budget"
+        assert result.budget_status == BudgetStatus.confirmed
+        assert str(result.funding_customer_id) == FUNDER_ID
+        assert result.external_funder_name == "Acme Foundation"
+
+
 class TestUpdateDeleteOwnership:
     def test_funder_cannot_update_or_delete(self, db):
         budget = _make_budget(db, funding_customer_id=FUNDER_ID)
@@ -401,6 +518,19 @@ class TestReportRoutesWiring:
         ) as mock_service:
             response = client.post(f"/api/v1/reports/{report_id}/submit")
         assert response.status_code == 200
+        mock_service.assert_called_once()
+
+    def test_list_all_reports_route_delegates_to_service(self, make_client):
+        client = make_client()
+        with patch(
+            "app.api.report_routes.list_all_reports_service", return_value=[]
+        ) as mock_service:
+            response = client.get(
+                "/api/v1/reports/",
+                params={"status": "draft", "budget_id": str(uuid4())},
+            )
+        assert response.status_code == 200
+        assert response.json() == []
         mock_service.assert_called_once()
 
     def test_review_report_route_delegates_to_service(self, make_client):
