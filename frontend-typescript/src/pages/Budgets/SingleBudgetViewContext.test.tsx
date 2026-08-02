@@ -53,12 +53,13 @@ function makeLine(overrides: Partial<ReportLine> = {}): ReportLine {
 }
 
 function Consumer() {
-  const { spendByLineId, totalReported } = useDetailedBudget();
+  const { spendByLineId, totalReported, hasReports } = useDetailedBudget();
   return (
     <div>
       <span data-testid="total">{totalReported}</span>
       <span data-testid="bl1">{spendByLineId["bl1"] ?? 0}</span>
       <span data-testid="bl2">{spendByLineId["bl2"] ?? 0}</span>
+      <span data-testid="hasReports">{String(hasReports)}</span>
     </div>
   );
 }
@@ -83,7 +84,10 @@ describe("SingleBudgetViewContext spend aggregation", () => {
   });
 
   it("sums reported spend per budget line across every report on the budget", async () => {
-    listReportsByBudgetMock.mockResolvedValue([makeReport({ id: "r1" }), makeReport({ id: "r2" })]);
+    listReportsByBudgetMock.mockResolvedValue([
+      makeReport({ id: "r1", status: "submitted" }),
+      makeReport({ id: "r2", status: "submitted" }),
+    ]);
     listReportLinesByReportMock.mockImplementation((reportId: string) =>
       Promise.resolve(
         reportId === "r1"
@@ -97,6 +101,7 @@ describe("SingleBudgetViewContext spend aggregation", () => {
     await waitFor(() => expect(screen.getByTestId("bl1")).toHaveTextContent("500"));
     expect(screen.getByTestId("bl2")).toHaveTextContent("0");
     expect(screen.getByTestId("total")).toHaveTextContent("500");
+    expect(screen.getByTestId("hasReports")).toHaveTextContent("true");
   });
 
   it("reports zero spend when the budget has no reports yet", async () => {
@@ -107,5 +112,16 @@ describe("SingleBudgetViewContext spend aggregation", () => {
     await waitFor(() => expect(listReportsByBudgetMock).toHaveBeenCalledWith("b1"));
     expect(screen.getByTestId("total")).toHaveTextContent("0");
     expect(listReportLinesByReportMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("hasReports")).toHaveTextContent("false");
+  });
+
+  it("does not count a draft-only report — nothing has actually been reported yet", async () => {
+    listReportsByBudgetMock.mockResolvedValue([makeReport({ id: "r1", status: "draft" })]);
+    listReportLinesByReportMock.mockResolvedValue([]);
+
+    renderContext();
+
+    await waitFor(() => expect(listReportsByBudgetMock).toHaveBeenCalledWith("b1"));
+    expect(screen.getByTestId("hasReports")).toHaveTextContent("false");
   });
 });

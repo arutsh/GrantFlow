@@ -24,6 +24,10 @@ export interface FundedBudgetListItem {
   status: string;
   total_amount?: number;
   local_currency?: string;
+  actual_currency?: string;
+  donor_total_amount?: number | null;
+  estimated_exchange_rate?: number | null;
+  estimated_local_cap?: number | null;
   owner?: { id?: string; name?: string };
 }
 

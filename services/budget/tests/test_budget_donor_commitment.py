@@ -23,7 +23,7 @@ from app.api.budget_routes import get_validated_user
 from tests.factories.user import make_valid_user
 from tests.factories.budget import BudgetFactory
 from app.core.exceptions import DomainError
-from app.schemas.budget_schema import BudgetCreate, BudgetStatus
+from app.schemas.budget_schema import BudgetCreate, BudgetStatus, BudgetUpdate
 from app.services.budget_services import update_budget_service
 
 USER_ID = str(uuid4())
@@ -113,10 +113,12 @@ class TestMetadataLockOnConfirmed:
 
             result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
-        assert result is existing
+        assert result.id == existing.id
         mock_update.assert_called_once()
         assert mock_update.call_args.kwargs["donor_total_amount"] == 10000
+        assert mock_update.call_args.kwargs["donor_total_amount_set"] is True
         assert mock_update.call_args.kwargs["estimated_exchange_rate"] == 0.8
+        assert mock_update.call_args.kwargs["estimated_exchange_rate_set"] is True
 
     def test_donor_commitment_edit_rejected_on_confirmed_budget(self):
         existing = BudgetFactory.build(
@@ -159,6 +161,66 @@ class TestMetadataLockOnConfirmed:
                 import asyncio
 
                 asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
+
+
+class TestClearingDonorFields:
+    """Regression test: update_budget's CRUD used to treat an incoming None
+    the same as "field omitted", so blanking the donor commitment/rate in
+    the edit form could never actually clear them — the old value silently
+    survived every save (see update_budget_service's donor_total_amount_set/
+    estimated_exchange_rate_set kwargs)."""
+
+    def test_donor_total_amount_and_rate_can_be_cleared(self, db):
+        from app.models.budget import BudgetModel
+
+        budget = BudgetModel(
+            name="Grant",
+            owner_id=CUSTOMER_ID,
+            status=BudgetStatus.draft,
+            donor_total_amount=10000,
+            estimated_exchange_rate=0.8,
+        )
+        db.add(budget)
+        db.commit()
+        db.refresh(budget)
+
+        payload = BudgetUpdate(donor_total_amount=None, estimated_exchange_rate=None)
+
+        with patch("app.services.budget_services.validate_customer_can_fund", return_value=None):
+            import asyncio
+
+            result = asyncio.run(update_budget_service(budget.id, payload, _valid_user(), db))
+
+        assert result.donor_total_amount is None
+        assert result.estimated_exchange_rate is None
+        db.refresh(budget)
+        assert budget.donor_total_amount is None
+        assert budget.estimated_exchange_rate is None
+
+    def test_omitting_the_fields_leaves_them_unchanged(self, db):
+        from app.models.budget import BudgetModel
+
+        budget = BudgetModel(
+            name="Grant",
+            owner_id=CUSTOMER_ID,
+            status=BudgetStatus.draft,
+            donor_total_amount=10000,
+            estimated_exchange_rate=0.8,
+        )
+        db.add(budget)
+        db.commit()
+        db.refresh(budget)
+
+        payload = BudgetUpdate(name="Renamed")
+
+        with patch("app.services.budget_services.validate_customer_can_fund", return_value=None):
+            import asyncio
+
+            result = asyncio.run(update_budget_service(budget.id, payload, _valid_user(), db))
+
+        assert result.name == "Renamed"
+        assert result.donor_total_amount == 10000
+        assert result.estimated_exchange_rate == 0.8
 
 
 class TestConfirmedAtTransition:

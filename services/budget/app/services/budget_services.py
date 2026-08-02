@@ -14,10 +14,26 @@ from app.crud.budget_crud import (
     get_funded_grantees,
 )
 from app.crud.budget_line_crud import delete_budget_line
+from app.crud.dashboard_crud import (
+    count_budgets_by_status,
+    sum_committed_by_currency,
+    sum_received_by_currency,
+    sum_converted_by_currency,
+    budget_breakdown,
+)
 from app.core.exceptions import DomainError, PermissionDenied
 
 from app.services.customer_client import validate_customer_can_fund, validate_customer_can_own
-from app.schemas.budget_schema import BudgetCreate, BudgetStatus
+from app.schemas.budget_schema import (
+    BudgetCreate,
+    BudgetStatus,
+    BudgetStatusCount,
+    BudgetUpdate,
+    CurrencyAmount,
+    ConversionProgress,
+    BudgetBreakdownRow,
+    GranteeDashboardSummary,
+)
 from app.schemas.report_schema import ReportStatus
 from app.schemas.with_lines_schema import CreateBudgetWithLinesRequest
 from uuid import UUID
@@ -210,6 +226,11 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
     # reconfirm always overwrites the prior value, never left stale.
     confirmed_at = datetime.now(timezone.utc) if is_confirm_attempt else None
 
+    # Cleared explicitly on revert — update_budget's "None means don't
+    # touch" convention would otherwise leave the prior confirm timestamp on
+    # a budget that's back to draft.
+    clear_confirmed_at = is_reverting
+
     if is_reverting:
         non_draft_reports = [r for r in valid_budget.reports if r.status != ReportStatus.draft]
         if non_draft_reports:
@@ -226,7 +247,7 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         for report in list(valid_budget.reports):
             db.delete(report)
 
-    return update_budget(
+    updated_budget = update_budget(
         session=db,
         budget_id=budget_id,
         name=budget.name,
@@ -239,9 +260,15 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         funding_customer_id=budget.funding_customer_id,
         external_funder_name=budget.external_funder_name,
         donor_total_amount=budget.donor_total_amount,
+        donor_total_amount_set="donor_total_amount" in budget.model_fields_set,
         estimated_exchange_rate=budget.estimated_exchange_rate,
+        estimated_exchange_rate_set="estimated_exchange_rate" in budget.model_fields_set,
         confirmed_at=confirmed_at,
+        clear_confirmed_at=clear_confirmed_at,
     )
+    if not updated_budget:
+        return None
+    return _budget_update_response(updated_budget)
 
 
 async def get_budget_service(budget_id, valid_user, db, include_user_details: bool = False):
@@ -307,6 +334,68 @@ async def list_budget_service(valid_user, db, include_user_details: bool = False
 
 def get_funded_budgets_summary_service(funding_customer_id: UUID, db) -> dict:
     return get_funded_budgets_summary(db, funding_customer_id)
+
+
+def get_grantee_dashboard_summary_service(customer_id: UUID | None, db) -> GranteeDashboardSummary:
+    """Grantee-facing dashboard aggregation (GET /budgets/dashboard/summary).
+    Owner-scoped only (no donor/superuser branch — see design.md's "no new
+    permission model" non-goal). Currency figures are always grouped by
+    currency, never blended (see the mixed-currency-aggregation fix this
+    change follows the same rule as)."""
+    if not customer_id:
+        return GranteeDashboardSummary()
+
+    status_counts = count_budgets_by_status(db, customer_id)
+    committed = sum_committed_by_currency(db, customer_id)
+    received = sum_received_by_currency(db, customer_id)
+    converted = sum_converted_by_currency(db, customer_id)
+    breakdown_rows = budget_breakdown(db, customer_id)
+
+    received_map = dict(received)
+    converted_map = dict(converted)
+    currencies = sorted(set(received_map) | set(converted_map))
+    conversion_progress = [
+        ConversionProgress(
+            currency=currency,
+            received=received_map.get(currency, 0.0),
+            converted=converted_map.get(currency, 0.0),
+            percent=(
+                (converted_map.get(currency, 0.0) / received_map[currency] * 100)
+                if received_map.get(currency)
+                else 0.0
+            ),
+        )
+        for currency in currencies
+    ]
+
+    return GranteeDashboardSummary(
+        budget_counts_by_status=[
+            BudgetStatusCount(status=budget_status, count=count)
+            for budget_status, count in status_counts
+        ],
+        committed_by_currency=[
+            CurrencyAmount(currency=currency, total_allocated=amount)
+            for currency, amount in committed
+        ],
+        received_by_currency=[
+            CurrencyAmount(currency=currency, total_allocated=amount)
+            for currency, amount in received
+        ],
+        conversion_progress_by_currency=conversion_progress,
+        budget_breakdown=[
+            BudgetBreakdownRow(
+                budget_id=budget.id,
+                budget_name=budget.name,
+                funding_customer_id=budget.funding_customer_id,
+                external_funder_name=budget.external_funder_name,
+                local_currency=budget.local_currency,
+                converted=converted_amount,
+                spent=spent_amount,
+                remaining=converted_amount - spent_amount,
+            )
+            for budget, converted_amount, spent_amount in breakdown_rows
+        ],
+    )
 
 
 # TODO return in pydantic?
@@ -434,6 +523,42 @@ def _compute_estimated_local_cap(budget: BudgetModel) -> float | None:
     if not budget.donor_total_amount or not budget.estimated_exchange_rate:
         return None
     return budget.donor_total_amount * budget.estimated_exchange_rate
+
+
+def _budget_update_response(budget: BudgetModel) -> BudgetUpdate:
+    """PATCH /budgets/{id} response shape (response_model=BudgetUpdate).
+
+    Unlike Budget/BudgetWithLines — which are always built from an already-
+    enriched dict via populate_budget_with_user_details — handing the raw ORM
+    object straight to response_model=BudgetUpdate raises a pydantic
+    ValidationError (BudgetBase has no `from_attributes` config). Building a
+    real BudgetUpdate instance here also lets confirmed_at (a real column,
+    but excluded from BudgetBase) and estimated_local_cap (never a column at
+    all) round-trip on this response, matching what a follow-up GET would
+    return instead of leaving the caller with stale values until it
+    refetches.
+    """
+    return BudgetUpdate(
+        id=budget.id,
+        name=budget.name,
+        owner_id=budget.owner_id,
+        funding_customer_id=budget.funding_customer_id,
+        local_currency=budget.local_currency,
+        actual_currency=budget.actual_currency,
+        start_date=budget.start_date,
+        status=budget.status,
+        duration_months=budget.duration_months,
+        external_funder_name=budget.external_funder_name,
+        total_amount=budget.total_amount,
+        donor_total_amount=budget.donor_total_amount,
+        estimated_exchange_rate=budget.estimated_exchange_rate,
+        created_by=budget.created_by,
+        updated_by=budget.updated_by,
+        updated_at=budget.updated_at,
+        created_at=budget.created_at,
+        confirmed_at=budget.confirmed_at,
+        estimated_local_cap=_compute_estimated_local_cap(budget),
+    )
 
 
 async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_user: dict):

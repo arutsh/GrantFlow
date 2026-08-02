@@ -36,6 +36,11 @@ interface SingleBudgetViewContextType {
   // usual handful of reports per budget.
   spendByLineId: Record<string, number>;
   totalReported: number;
+  // Whether any report has ever been submitted against this budget — gates
+  // whether "Total Reported" is worth showing at all. A draft report with
+  // nothing filled in yet is exactly the always-£0 stat this is meant to
+  // hide, so a draft alone doesn't count.
+  hasReports: boolean;
   // isAddOpen: boolean;
   // openAddModal: () => void;
   // closeAddModal: () => void;
@@ -154,6 +159,7 @@ export const SingleBudgetViewContextProvider: React.FC<{
         existingExtraKeys,
         spendByLineId,
         totalReported,
+        hasReports: (reports ?? []).some((r) => r.status !== "draft"),
       }}
     >
       {children}

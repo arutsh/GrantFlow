@@ -1,5 +1,5 @@
 # /services/budget/app/api/report_routes.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -10,12 +10,15 @@ from app.schemas.report_schema import (
     ReportCreate,
     ReportUpdate,
     ReportWithLines,
+    ReportWithBudgetInfo,
     ReportReviewRequest,
+    ReportStatus,
 )
 from app.services.report_services import (
     create_report_service,
     get_report_service,
     list_reports_service,
+    list_all_reports_service,
     update_report_service,
     delete_report_service,
     submit_report_service,
@@ -42,6 +45,23 @@ def create_report_view(
     valid_user=Depends(get_validated_user),
 ):
     return create_report_service(db, valid_user, report)
+
+
+@router.get("/", response_model=List[ReportWithBudgetInfo])
+def list_all_reports_view(
+    status: ReportStatus | None = Query(default=None),
+    budget_id: UUID | None = Query(default=None),
+    funding_customer_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    return list_all_reports_service(
+        db,
+        valid_user,
+        status=status,
+        budget_id=budget_id,
+        funding_customer_id=funding_customer_id,
+    )
 
 
 @router.get("/by-budget/{budget_id}", response_model=List[Report])

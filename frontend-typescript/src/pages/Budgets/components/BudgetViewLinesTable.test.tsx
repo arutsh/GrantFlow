@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, type Mock } from "vitest";
 import { BudgetViewLinesTable } from "./BudgetViewLinesTable";
@@ -20,9 +21,13 @@ function makeLine(overrides: Partial<BudgetLine> = {}): BudgetLine {
   return { id: "bl1", budget_id: "b1", description: "Line", amount: 100, ...overrides };
 }
 
-function renderTable(lines: BudgetLine[], spendByLineId: Record<string, number>) {
+function renderTable(
+  lines: BudgetLine[],
+  spendByLineId: Record<string, number>,
+  budgetOverrides: Partial<Budget> = {},
+) {
   useDetailedBudgetMock.mockReturnValue({
-    budget: makeBudget(),
+    budget: makeBudget(budgetOverrides),
     setBudget: vi.fn(),
     budgetCategories: [],
     budgetCategoryNames: [],
@@ -144,5 +149,79 @@ describe("BudgetViewLinesTable mobile card list", () => {
   it("shows an empty state when there are no lines", () => {
     renderTable([], {});
     expect(screen.getByText("No budget lines yet.")).toBeInTheDocument();
+  });
+});
+
+describe("BudgetViewLinesTable currency toggle", () => {
+  it("hides the toggle when the budget has no estimated_exchange_rate", () => {
+    renderTable(
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      { bl1: 400 },
+    );
+
+    expect(screen.queryByRole("group", { name: /currency display/i })).not.toBeInTheDocument();
+    expect(screen.getAllByText("£800").length).toBeGreaterThan(0);
+  });
+
+  it("shows the toggle when the budget has an estimated_exchange_rate", () => {
+    renderTable(
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      { bl1: 400 },
+      { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
+    );
+
+    expect(screen.getByRole("group", { name: /currency display/i })).toBeInTheDocument();
+  });
+
+  it("labels Amount/Used with the currency in the column header instead of repeating it inline", () => {
+    renderTable(
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      { bl1: 400 },
+      { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
+    );
+
+    expect(screen.getByText("Amount (GBP)")).toBeInTheDocument();
+    expect(screen.getByText("Used")).toBeInTheDocument();
+  });
+
+  it("converts Amount and Used to the donor currency when Donor (estimated) is selected, stating the currency once in the header", async () => {
+    const user = userEvent.setup();
+    renderTable(
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      { bl1: 400 },
+      { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Donor (estimated)" }));
+
+    expect(screen.getByText("Amount (EUR est.)")).toBeInTheDocument();
+    expect(screen.getByText("Used (EUR est.)")).toBeInTheDocument();
+    // The desktop table cell doesn't repeat "(est.)" per row — only the
+    // mobile card fallback (no persistent header) still does.
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText(/€1,000/).length).toBeGreaterThan(0);
+    expect(within(table).queryByText("€1,000 (est.)")).not.toBeInTheDocument();
+    // Mobile cards keep the inline label since they have no column header.
+    expect(screen.getAllByText("€1,000 (est.)").length).toBeGreaterThan(0);
+  });
+
+  it("splits Amount into two real columns — one per currency — when Both is selected", async () => {
+    const user = userEvent.setup();
+    renderTable(
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      { bl1: 0 },
+      { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Both" }));
+
+    expect(screen.getByText("Amount (GBP)")).toBeInTheDocument();
+    expect(screen.getByText("Amount (EUR est.)")).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText(/£800/).length).toBeGreaterThan(0);
+    expect(within(table).getAllByText(/€1,000/).length).toBeGreaterThan(0);
+
+    expect(screen.getAllByText(/£800/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/€1,000 \(est\.\)/).length).toBeGreaterThan(0);
   });
 });

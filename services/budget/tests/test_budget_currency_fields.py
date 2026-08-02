@@ -127,7 +127,7 @@ class TestConfirmRequiresStartDate:
 
             result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
-        assert result is existing
+        assert result.id == existing.id
         mock_update.assert_called_once()
 
     def test_confirm_with_start_date_in_payload_is_allowed(self):
@@ -153,7 +153,7 @@ class TestConfirmRequiresStartDate:
 
             result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
-        assert result is existing
+        assert result.id == existing.id
         mock_update.assert_called_once()
         # confirmed_at (budget-report-iteration-2, ticket #179) is a freshly
         # generated timestamp on every successful confirm — asserted
@@ -174,7 +174,10 @@ class TestConfirmRequiresStartDate:
             funding_customer_id=payload.funding_customer_id,
             external_funder_name=payload.external_funder_name,
             donor_total_amount=payload.donor_total_amount,
+            donor_total_amount_set=False,
             estimated_exchange_rate=payload.estimated_exchange_rate,
+            estimated_exchange_rate_set=False,
+            clear_confirmed_at=False,
         )
 
     def test_non_confirm_update_does_not_require_start_date(self):
@@ -200,5 +203,5 @@ class TestConfirmRequiresStartDate:
 
             result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
-        assert result is existing
+        assert result.id == existing.id
         mock_update.assert_called_once()

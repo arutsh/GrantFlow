@@ -1,5 +1,6 @@
 # /services/budget/app/api/budget_routes.py
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from uuid import uuid4, UUID  # noqa: F401
 
@@ -11,6 +12,7 @@ from app.schemas.budget_schema import (
     FundedBudgetsSummary,
     GranteeSummary,
     FundedBudgetListItem,
+    GranteeDashboardSummary,
 )
 from app.schemas.budget_line_schema import BudgetLine
 from app.schemas.with_lines_schema import CreateBudgetWithLinesRequest
@@ -25,6 +27,7 @@ from app.services.budget_services import (
     get_funded_budgets_summary_service,
     get_funded_grantees_service,
     get_funded_budgets_service,
+    get_grantee_dashboard_summary_service,
 )
 from app.services.customer_client import require_donor
 from shared.security.dependencies import get_validated_user  # noqa: F401
@@ -75,6 +78,19 @@ async def get_funded_budgets_endpoint(
 ):
     require_donor(valid_user)
     return await get_funded_budgets_service(valid_user["customer_id"], valid_user, db)
+
+
+@router.get("/dashboard/summary", response_model=GranteeDashboardSummary)
+async def get_dashboard_summary_endpoint(
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    # get_grantee_dashboard_summary_service is a plain sync function running
+    # five queries against a sync SQLAlchemy Session — calling it directly
+    # here would block the event loop for every other request while it runs.
+    return await run_in_threadpool(
+        get_grantee_dashboard_summary_service, valid_user.get("customer_id"), db
+    )
 
 
 @router.get("/{budget_id}", response_model=BudgetWithLines)

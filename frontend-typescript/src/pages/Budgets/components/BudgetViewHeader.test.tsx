@@ -430,8 +430,127 @@ describe("BudgetViewHeader metadata edit", () => {
         name: "Renamed",
         external_funder_name: "Donor 7",
         duration_months: 24,
+        // Sent as explicit null (not omitted) since the budget never had
+        // these set — same as the user clearing them — so the backend
+        // reads it as "no commitment", not "leave untouched".
+        donor_total_amount: null,
+        estimated_exchange_rate: null,
       }),
     );
     await waitFor(() => expect(onBudgetUpdated).toHaveBeenCalledWith(updated));
+  });
+
+  it("shows editable donor commitment and estimated rate fields and saves them", async () => {
+    const user = userEvent.setup();
+    const updated = makeBudget({ donor_total_amount: 10000, estimated_exchange_rate: 0.8 });
+    editBudgetMock.mockResolvedValue(updated);
+    const onBudgetUpdated = vi.fn();
+
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({ actual_currency: "EUR" })}
+        isLocked={false}
+        onBudgetUpdated={onBudgetUpdated}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const donorInput = screen.getByText(/donor commitment/i).parentElement!.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    const rateInput = screen.getByText(/estimated rate/i).parentElement!.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    await user.type(donorInput, "10000");
+    await user.type(rateInput, "0.8");
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith(
+        "b1",
+        expect.objectContaining({ donor_total_amount: 10000, estimated_exchange_rate: 0.8 }),
+      ),
+    );
+    await waitFor(() => expect(onBudgetUpdated).toHaveBeenCalledWith(updated));
+  });
+
+  it("sends explicit null when an existing donor commitment/rate is cleared, so the backend actually clears it", async () => {
+    const user = userEvent.setup();
+    const updated = makeBudget({ donor_total_amount: null, estimated_exchange_rate: null });
+    editBudgetMock.mockResolvedValue(updated);
+
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({
+          actual_currency: "EUR",
+          donor_total_amount: 10000,
+          estimated_exchange_rate: 0.8,
+        })}
+        isLocked={false}
+        onBudgetUpdated={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const donorInput = screen.getByText(/donor commitment/i).parentElement!.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    const rateInput = screen.getByText(/estimated rate/i).parentElement!.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    await user.clear(donorInput);
+    await user.clear(rateInput);
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith(
+        "b1",
+        expect.objectContaining({ donor_total_amount: null, estimated_exchange_rate: null }),
+      ),
+    );
+  });
+
+  it("disables Save and shows an error when the estimated rate is zero or negative", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <BudgetViewHeader
+        budget={makeBudget({ actual_currency: "EUR" })}
+        isLocked={false}
+        onBudgetUpdated={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const rateInput = screen.getByText(/estimated rate/i).parentElement!.querySelector(
+      "input",
+    ) as HTMLInputElement;
+    await user.type(rateInput, "0");
+
+    expect(screen.getByText("Must be greater than zero.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled();
+  });
+
+  it("shows donor commitment and estimated rate as read-only text, not inputs, during a currency-only edit", () => {
+    const budget = makeBudget({
+      status: "confirmed",
+      donor_total_amount: 10000,
+      estimated_exchange_rate: 0.8,
+      actual_currency: "EUR",
+    });
+
+    const { rerender } = render(
+      <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={vi.fn()} />,
+    );
+    rerender(
+      <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={vi.fn()} editTrigger={1} />,
+    );
+
+    expect(screen.getByText("10000 EUR")).toBeInTheDocument();
+    expect(screen.getByText("0.8")).toBeInTheDocument();
   });
 });

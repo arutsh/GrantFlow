@@ -1,9 +1,21 @@
 from datetime import date, datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetStatus
 from uuid import UUID
+
+
+def budget_visible_to_customer_clause(customer_id: UUID | str) -> ColumnElement[bool]:
+    """SQL form of the owner-or-funder visibility rule — the single source
+    of truth for any cross-budget query that needs it (e.g.
+    report_crud.list_all_reports), mirroring budget_services._can_view_budget's
+    single-object check on the same two columns."""
+    return or_(
+        BudgetModel.owner_id == customer_id,
+        BudgetModel.funding_customer_id == customer_id,
+    )
 
 
 def create_budget(
@@ -78,8 +90,11 @@ def update_budget(
     actual_currency: str | None = None,
     start_date: date | None = None,
     donor_total_amount: float | None = None,
+    donor_total_amount_set: bool = False,
     estimated_exchange_rate: float | None = None,
+    estimated_exchange_rate_set: bool = False,
     confirmed_at: datetime | None = None,
+    clear_confirmed_at: bool = False,
 ) -> BudgetModel | None:
     budget = get_budget(session, budget_id)
     if not budget:
@@ -103,11 +118,18 @@ def update_budget(
         budget.funding_customer_id = funding_customer_id
     if external_funder_name is not None:
         budget.external_funder_name = external_funder_name
-    if donor_total_amount is not None:
+    # Unlike the "None means don't touch" fields above, these two need to be
+    # explicitly clearable (an owner blanking the input to undo a mistaken
+    # entry) — so the caller signals presence via the _set flags instead of
+    # relying on None to mean "omitted". donor_total_amount_set/
+    # estimated_exchange_rate_set=True always assigns, including None.
+    if donor_total_amount_set:
         budget.donor_total_amount = donor_total_amount
-    if estimated_exchange_rate is not None:
+    if estimated_exchange_rate_set:
         budget.estimated_exchange_rate = estimated_exchange_rate
-    if confirmed_at is not None:
+    if clear_confirmed_at:
+        budget.confirmed_at = None
+    elif confirmed_at is not None:
         budget.confirmed_at = confirmed_at
     session.commit()
     session.refresh(budget)

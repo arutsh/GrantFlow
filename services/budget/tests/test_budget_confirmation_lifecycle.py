@@ -10,7 +10,7 @@ hinge on the real Budget<->Report relationship rather than a single mocked
 crud call.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -170,6 +170,25 @@ class TestRevertToDraft:
         )
 
         assert result.status == BudgetStatus.draft
+
+    def test_revert_clears_confirmed_at(self, db):
+        # Nothing reads confirmed_at on a draft budget today, but leaving a
+        # stale confirm timestamp behind would misrepresent the budget's
+        # history the moment something does.
+        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        budget.confirmed_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db.commit()
+        payload = BudgetUpdate(status=BudgetStatus.draft)
+
+        import asyncio
+
+        result = asyncio.run(
+            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
+        )
+
+        assert result.confirmed_at is None
+        db.refresh(budget)
+        assert budget.confirmed_at is None
 
     def test_revert_blocked_by_a_submitted_report(self, db):
         budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))

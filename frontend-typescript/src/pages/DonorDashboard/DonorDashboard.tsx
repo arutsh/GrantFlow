@@ -46,9 +46,20 @@ const budgetColumns = [
     header: "Total Allocated",
     cell: (info) => {
       const value = info.getValue();
-      return value != null
+      const local = value != null
         ? formatCurrency(value, info.row.original.local_currency)
         : "—";
+      const { donor_total_amount, estimated_exchange_rate, estimated_local_cap, actual_currency } =
+        info.row.original;
+      if (estimated_local_cap == null) return local;
+      return (
+        <div>
+          <div>{local}</div>
+          <div className="text-xs text-slate-500">
+            {`${formatCurrency(donor_total_amount!, actual_currency)} @ ${estimated_exchange_rate} (est.)`}
+          </div>
+        </div>
+      );
     },
   }),
   budgetColumnHelper.display({
