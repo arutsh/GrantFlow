@@ -27,6 +27,11 @@ class BudgetBase(BaseModel):
     duration_months: int | None = None
     external_funder_name: str | None = None
     total_amount: float | None = None
+    # Donor's stated commitment (in actual_currency) and the grantee's own
+    # planning-time rate estimate, directly entered — never derived. Locked
+    # once the budget is confirmed, same as local_currency/actual_currency.
+    donor_total_amount: float | None = None
+    estimated_exchange_rate: float | None = None
     created_by: UUID | None = None
     updated_by: UUID | None = None
     updated_at: datetime | None = None
@@ -55,6 +60,11 @@ class BudgetUpdate(BudgetBase):
 
 class Budget(BudgetBase):
     id: UUID
+    # Read-only: set by the server (confirm transition) / derived at read
+    # time (donor_total_amount × estimated_exchange_rate) — never accepted
+    # from BudgetCreate/BudgetUpdate payloads since they don't inherit these.
+    confirmed_at: datetime | None = None
+    estimated_local_cap: float | None = None
     lines: list[BudgetLine] = []
     model_config = ConfigDict(from_attributes=True)
 
@@ -98,6 +108,10 @@ class BudgetWithLines(BaseModel):
     # period_end: budget.start_date + relativedelta(months=duration_months)).
     end_date: date | None = None
     total_amount: float | None = None
+    donor_total_amount: float | None = None
+    estimated_exchange_rate: float | None = None
+    confirmed_at: datetime | None = None
+    estimated_local_cap: float | None = None
     owner: CustomerOut | None = None
     funder: CustomerOut | None = None
     trace: TraceOut | None = None

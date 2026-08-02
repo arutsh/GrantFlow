@@ -99,9 +99,7 @@ class TestConfirmRequiresStartDate:
             with pytest.raises((DomainError, HTTPException)):
                 import asyncio
 
-                asyncio.run(
-                    update_budget_service(existing.id, payload, _valid_user(), DB)
-                )
+                asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
     def test_confirm_with_start_date_already_on_record_is_allowed(self):
         existing = BudgetFactory.build(
@@ -127,9 +125,7 @@ class TestConfirmRequiresStartDate:
         ):
             import asyncio
 
-            result = asyncio.run(
-                update_budget_service(existing.id, payload, _valid_user(), DB)
-            )
+            result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
         assert result is existing
         mock_update.assert_called_once()
@@ -155,12 +151,17 @@ class TestConfirmRequiresStartDate:
         ):
             import asyncio
 
-            result = asyncio.run(
-                update_budget_service(existing.id, payload, _valid_user(), DB)
-            )
+            result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
         assert result is existing
-        mock_update.assert_called_once_with(
+        mock_update.assert_called_once()
+        # confirmed_at (budget-report-iteration-2, ticket #179) is a freshly
+        # generated timestamp on every successful confirm — asserted
+        # separately from the rest of the static kwargs below.
+        call_kwargs = dict(mock_update.call_args.kwargs)
+        confirmed_at = call_kwargs.pop("confirmed_at")
+        assert confirmed_at is not None
+        assert call_kwargs == dict(
             session=DB,
             budget_id=existing.id,
             name=payload.name,
@@ -172,6 +173,8 @@ class TestConfirmRequiresStartDate:
             owner_id=None,
             funding_customer_id=payload.funding_customer_id,
             external_funder_name=payload.external_funder_name,
+            donor_total_amount=payload.donor_total_amount,
+            estimated_exchange_rate=payload.estimated_exchange_rate,
         )
 
     def test_non_confirm_update_does_not_require_start_date(self):
@@ -195,9 +198,7 @@ class TestConfirmRequiresStartDate:
         ):
             import asyncio
 
-            result = asyncio.run(
-                update_budget_service(existing.id, payload, _valid_user(), DB)
-            )
+            result = asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
         assert result is existing
         mock_update.assert_called_once()

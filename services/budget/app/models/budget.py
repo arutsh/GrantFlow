@@ -1,8 +1,18 @@
 # /services/budget/app/models/budget.py
 from __future__ import annotations
 import uuid
-from datetime import date
-from sqlalchemy import String, ForeignKey, Float, JSON, Integer, Date, Enum as SQLEnum, text
+from datetime import date, datetime
+from sqlalchemy import (
+    String,
+    ForeignKey,
+    Float,
+    JSON,
+    Integer,
+    Date,
+    DateTime,
+    Enum as SQLEnum,
+    text,
+)
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.utils.db import GUID
 
@@ -47,6 +57,12 @@ class BudgetModel(Base, AuditMixin):
     total_amount: Mapped[float | None] = mapped_column(
         Float, nullable=True, default=0, server_default=text("0")
     )
+    # Donor's stated commitment (in actual_currency) and the grantee's own
+    # planning-time rate estimate — distinct from the currency-ledger's real,
+    # bank-derived rate. See budget-report-iteration-2/design.md Decisions 1-4.
+    donor_total_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_exchange_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lines: Mapped[list["BudgetLineModel"]] = relationship(
         "BudgetLineModel", back_populates="budget"
     )
