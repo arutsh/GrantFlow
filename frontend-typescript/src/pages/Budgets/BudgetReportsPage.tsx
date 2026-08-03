@@ -7,6 +7,7 @@ import { formatDateOnly } from "@/utils/datetime";
 import { formatCurrency } from "@/utils/currency";
 import { StatusBadge } from "./components/BudgetViewHeader";
 import { ReportStatusBadge } from "./components/ReportStatusBadge";
+import { LinkButton } from "@/components/ui/LinkButton";
 
 // A dedicated, always-a-list reports page for one budget — the funder's
 // entry point from DonorDashboard's "View Reports". Never deep-links
@@ -97,8 +98,8 @@ function BudgetReportsPage() {
           ) : (
             <>
               {/* Desktop / tablet: table, matching TableCommon's own default look */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 bg-white shadow rounded">
+              <div className="hidden sm:block ledger-card overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="px-4 py-2.5 text-left text-micro-label">Report</th>
@@ -121,12 +122,9 @@ function BudgetReportsPage() {
                           <ReportStatusBadge status={report.status} />
                         </td>
                         <td className="px-4 py-2.5 text-right text-sm font-normal text-slate-700">
-                          <Link
-                            to={`/budgets/${budgetId}/reports/${report.id}`}
-                            className="rounded-lg transition-all font-medium focus:outline-none focus:ring-2 border border-slate-300 text-slate-700 hover:bg-slate-50 focus:ring-slate-300 py-2 px-4"
-                          >
+                          <LinkButton to={`/budgets/${budgetId}/reports/${report.id}`}>
                             View Report
-                          </Link>
+                          </LinkButton>
                         </td>
                       </tr>
                     ))}
@@ -149,12 +147,9 @@ function BudgetReportsPage() {
                       {formatDateOnly(report.period_start) ?? "—"} –{" "}
                       {formatDateOnly(report.period_end) ?? "—"}
                     </span>
-                    <Link
-                      to={`/budgets/${budgetId}/reports/${report.id}`}
-                      className="rounded-lg transition-all font-medium focus:outline-none focus:ring-2 border border-slate-300 text-slate-700 hover:bg-slate-50 focus:ring-slate-300 py-2 px-4 text-center text-sm"
-                    >
+                    <LinkButton to={`/budgets/${budgetId}/reports/${report.id}`}>
                       View Report
-                    </Link>
+                    </LinkButton>
                   </div>
                 ))}
               </div>

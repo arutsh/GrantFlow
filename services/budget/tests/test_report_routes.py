@@ -11,8 +11,9 @@ bottom covers route wiring (auth dependency, status codes) with the service
 layer mocked, matching test_donor_scoped_endpoints.py's convention.
 """
 
+import asyncio
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -28,6 +29,7 @@ from app.services.report_services import (
     get_report_service,
     list_reports_service,
     list_all_reports_service,
+    list_funded_reports_service,
     update_report_service,
     delete_report_service,
     submit_report_service,
@@ -233,7 +235,9 @@ class TestReportAccess:
 
 
 class TestListAllReportsService:
-    """GET /reports/ — cross-budget reports directory (ticket #182)."""
+    """GET /reports/ — owner's cross-budget reports directory (ticket #182;
+    scoped to owner-only, not owner-or-funder, see design.md Decision 11's
+    follow-up splitting this into /reports/ vs /reports/funded/)."""
 
     def test_owner_sees_reports_across_all_their_budgets(self, db):
         budget_a = _make_budget(db)
@@ -249,19 +253,13 @@ class TestListAllReportsService:
 
         assert {r.id for r in results} == {report_a.id, report_b.id}
 
-    def test_donor_sees_reports_across_all_budgets_they_fund(self, db):
-        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
-        unrelated_budget = _make_budget(db)
-        report_a = _make_report(db, budget_a.id)
-        report_b = _make_report(
-            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
-        )
-        _make_report(db, unrelated_budget.id)
+    def test_donor_does_not_see_reports_on_budgets_they_only_fund(self, db):
+        """The owner-scoped directory must not leak funder-visible reports —
+        those belong to /reports/funded/ (TestListFundedReportsService)."""
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+        _make_report(db, budget.id)
 
-        results = list_all_reports_service(db, _valid_user(FUNDER_ID))
-
-        assert {r.id for r in results} == {report_a.id, report_b.id}
+        assert list_all_reports_service(db, _valid_user(FUNDER_ID)) == []
 
     def test_stranger_sees_nothing(self, db):
         budget = _make_budget(db, funding_customer_id=FUNDER_ID)
@@ -324,7 +322,7 @@ class TestListAllReportsService:
 
         results = list_all_reports_service(
             db,
-            _valid_user(FUNDER_ID),
+            _valid_user(OWNER_ID),
             status=ReportStatus.draft,
             budget_id=budget_a.id,
         )
@@ -346,6 +344,138 @@ class TestListAllReportsService:
         assert result.budget_status == BudgetStatus.confirmed
         assert str(result.funding_customer_id) == FUNDER_ID
         assert result.external_funder_name == "Acme Foundation"
+
+
+class TestListFundedReportsService:
+    """GET /reports/funded/ — donor's cross-budget reports directory: each
+    grantee's reports against the budgets this donor funds. The funder-side
+    counterpart to TestListAllReportsService, added when that directory was
+    split into separate owner/donor routes (design.md Decision 11's
+    follow-up), mirroring /budgets/ vs /budgets/funded/.
+
+    list_funded_reports_service is async (it resolves grantee names via an
+    HTTP call), and no async pytest plugin is installed in this service
+    (confirmed: no pytest-asyncio/anyio-pytest in the environment) — so
+    every call below goes through asyncio.run() from a plain `def test_`,
+    matching how the rest of this suite has no precedent for calling an
+    async service function directly (existing async services are only
+    exercised through the sync TestClient route layer elsewhere)."""
+
+    def _patched_customers(self, customers_map=None):
+        return patch(
+            "app.services.report_services.get_customers_by_ids",
+            new_callable=AsyncMock,
+            return_value=customers_map or {},
+        )
+
+    def test_donor_sees_reports_across_all_budgets_they_fund(self, db):
+        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
+        unrelated_budget = _make_budget(db)
+        report_a = _make_report(db, budget_a.id)
+        report_b = _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
+        _make_report(db, unrelated_budget.id)
+
+        with self._patched_customers():
+            results = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+
+        assert {r.id for r in results} == {report_a.id, report_b.id}
+
+    def test_grantee_does_not_see_reports_on_budgets_they_only_own(self, db):
+        """The donor-scoped directory must not leak owner-visible reports —
+        those belong to /reports/ (TestListAllReportsService)."""
+        budget = _make_budget(db, owner_id=OWNER_ID)
+        _make_report(db, budget.id)
+
+        with self._patched_customers():
+            results = asyncio.run(list_funded_reports_service(db, _valid_user(OWNER_ID)))
+
+        assert results == []
+
+    def test_stranger_sees_nothing(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+        _make_report(db, budget.id)
+
+        with self._patched_customers():
+            results = asyncio.run(list_funded_reports_service(db, _valid_user(STRANGER_ID)))
+
+        assert results == []
+
+    def test_status_filter(self, db):
+        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+        draft = _make_report(db, budget.id, status=ReportStatus.draft)
+        _make_report(
+            db,
+            budget.id,
+            status=ReportStatus.submitted,
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 6, 30),
+        )
+
+        with self._patched_customers():
+            results = asyncio.run(
+                list_funded_reports_service(db, _valid_user(FUNDER_ID), status=ReportStatus.draft)
+            )
+
+        assert [r.id for r in results] == [draft.id]
+
+    def test_budget_id_filter(self, db):
+        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
+        report_a = _make_report(db, budget_a.id)
+        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+
+        with self._patched_customers():
+            results = asyncio.run(
+                list_funded_reports_service(db, _valid_user(FUNDER_ID), budget_id=budget_a.id)
+            )
+
+        assert [r.id for r in results] == [report_a.id]
+
+    def test_owner_id_filter_narrows_to_one_grantee(self, db):
+        grantee_a = str(uuid4())
+        grantee_b = str(uuid4())
+        budget_a = _make_budget(db, owner_id=grantee_a, funding_customer_id=FUNDER_ID)
+        budget_b = _make_budget(db, owner_id=grantee_b, funding_customer_id=FUNDER_ID)
+        report_a = _make_report(db, budget_a.id)
+        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+
+        with self._patched_customers():
+            results = asyncio.run(
+                list_funded_reports_service(db, _valid_user(FUNDER_ID), owner_id=grantee_a)
+            )
+
+        assert [r.id for r in results] == [report_a.id]
+
+    def test_budget_owner_and_funder_fields_present_with_resolved_owner_name(self, db):
+        budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+        budget.external_funder_name = "Acme Foundation"
+        db.commit()
+        _make_report(db, budget.id)
+
+        with self._patched_customers({OWNER_ID: {"name": "Hope Relief NGO"}}):
+            [result] = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+
+        assert result.budget_name == "Test Budget"
+        assert result.budget_status == BudgetStatus.confirmed
+        assert str(result.owner_id) == OWNER_ID
+        assert result.owner_name == "Hope Relief NGO"
+        assert result.external_funder_name == "Acme Foundation"
+
+    def test_owner_name_is_none_when_customers_service_fails(self, db):
+        budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+        _make_report(db, budget.id)
+
+        with patch(
+            "app.services.report_services.get_customers_by_ids",
+            new_callable=AsyncMock,
+            side_effect=Exception("customers service unavailable"),
+        ):
+            [result] = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+
+        assert result.owner_name is None
 
 
 class TestUpdateDeleteOwnership:
@@ -532,6 +662,25 @@ class TestReportRoutesWiring:
         assert response.status_code == 200
         assert response.json() == []
         mock_service.assert_called_once()
+
+    def test_list_funded_reports_route_delegates_to_service(self, make_client):
+        client = make_client(is_donor=True)
+        with patch(
+            "app.api.report_routes.list_funded_reports_service",
+            AsyncMock(return_value=[]),
+        ) as mock_service:
+            response = client.get(
+                "/api/v1/reports/funded/",
+                params={"status": "draft", "budget_id": str(uuid4())},
+            )
+        assert response.status_code == 200
+        assert response.json() == []
+        mock_service.assert_called_once()
+
+    def test_list_funded_reports_route_rejects_non_donor(self, make_client):
+        client = make_client(is_donor=False)
+        response = client.get("/api/v1/reports/funded/")
+        assert response.status_code == 403
 
     def test_review_report_route_delegates_to_service(self, make_client):
         client = make_client()

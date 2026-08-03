@@ -39,10 +39,10 @@ function renderDashboard() {
 }
 
 describe("DonorDashboard", () => {
-  it("renders stat tiles, grantee table, and funded-budgets table with real-shaped data", async () => {
+  it("renders the portfolio summary, grantee cards, and funded-budgets table with real-shaped data", async () => {
     getFundedBudgetsSummaryMock.mockResolvedValue({
       total_budgets: 3,
-      total_allocated_by_currency: [{ currency: "GBP", total_allocated: 2200 }],
+      total_allocated_by_currency: [{ currency: "EUR", total_allocated: 2700 }],
     });
     getFundedGranteesMock.mockResolvedValue([
       {
@@ -50,23 +50,25 @@ describe("DonorDashboard", () => {
         name: "Hope Relief NGO",
         country: "GB",
         budgets_count: 2,
-        total_allocated_by_currency: [{ currency: "GBP", total_allocated: 1500 }],
+        total_allocated_by_currency: [{ currency: "EUR", total_allocated: 2000 }],
       },
       {
         id: "g2",
         name: "Clean Water Trust",
         country: "GB",
         budgets_count: 1,
-        total_allocated_by_currency: [{ currency: "GBP", total_allocated: 700 }],
+        total_allocated_by_currency: [{ currency: "EUR", total_allocated: 700 }],
       },
     ]);
     getFundedBudgetsMock.mockResolvedValue([
       {
         id: "b1",
         name: "Clean Water Phase 1",
-        status: "draft",
+        status: "confirmed",
         total_amount: 1000,
         local_currency: "GBP",
+        actual_currency: "EUR",
+        estimated_exchange_rate: 0.5,
         owner: { id: "g1", name: "Hope Relief NGO" },
       },
       {
@@ -75,46 +77,53 @@ describe("DonorDashboard", () => {
         status: "confirmed",
         total_amount: 700,
         local_currency: "GBP",
+        actual_currency: "EUR",
+        estimated_exchange_rate: 1,
         owner: { id: "g2", name: "Clean Water Trust" },
       },
     ]);
 
     renderDashboard();
 
-    await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("€2,700")).toBeInTheDocument());
 
-    // Stat tiles
-    expect(screen.getByText("Total Budgets")).toBeInTheDocument();
-    expect(screen.getByText("£2,200")).toBeInTheDocument();
-    expect(screen.getByText("Total Grantees")).toBeInTheDocument();
+    // Portfolio summary figures — the hero total is in the donor's own
+    // currency (EUR), not either grantee's local operating currency (GBP).
+    expect(screen.getByText("EUR across 2 budgets")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("funded budgets")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("grantee organisations")).toBeInTheDocument();
 
-    // Grantee table rows — proves TableCommon (with its hardcoded
-    // grouping=["category"] initialState) renders fine against data that has
-    // no "category" column at all. Both grantee names also appear as the
-    // funded-budgets table's "owner" column, hence getAllByText.
+    // Grantee cards — proves both name occurrences (card + budgets-table
+    // owner column) render fine, and the card total is in donor currency too.
     expect(screen.getAllByText("Hope Relief NGO").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Clean Water Trust").length).toBeGreaterThan(0);
-    expect(screen.getByText("£1,500")).toBeInTheDocument();
+    expect(screen.getAllByText("€2,000").length).toBeGreaterThan(0);
 
-    // Funded-budgets table rows
-    expect(screen.getByText("Clean Water Phase 1")).toBeInTheDocument();
-    expect(screen.getByText("School Rebuild")).toBeInTheDocument();
+    // Funded-budgets rows (rendered twice: desktop table + mobile cards) —
+    // Total Amount (donor currency, converted via the rate), Total in Local,
+    // and Est. Rate all present.
+    expect(screen.getAllByText("Clean Water Phase 1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("School Rebuild").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("£1,000").length).toBeGreaterThan(0); // b1 local total
+    expect(screen.getAllByText("£700").length).toBeGreaterThan(0); // b2 local total
+    expect(screen.getAllByText("0.5").length).toBeGreaterThan(0); // b1 rate
 
-    // "View Reports" now links to the dedicated per-budget reports page
-    // instead of showing a disabled "Coming soon" placeholder.
     const reportLinks = screen.getAllByRole("link", { name: "View Reports" });
-    expect(reportLinks).toHaveLength(2);
-    expect(reportLinks[0]).toHaveAttribute("href", "/budgets/b1/reports");
-    expect(reportLinks[1]).toHaveAttribute("href", "/budgets/b2/reports");
+    expect(reportLinks.length).toBeGreaterThan(0);
+    reportLinks.forEach((link) => {
+      expect(link).toHaveAttribute("href", expect.stringMatching(/^\/budgets\/b[12]\/reports$/));
+    });
 
-    // "View Budget" links to the real budget detail page
     const viewBudgetLinks = screen.getAllByRole("link", { name: "View Budget" });
-    expect(viewBudgetLinks).toHaveLength(2);
-    expect(viewBudgetLinks[0]).toHaveAttribute("href", "/budgets/b1");
-    expect(viewBudgetLinks[1]).toHaveAttribute("href", "/budgets/b2");
+    expect(viewBudgetLinks.length).toBeGreaterThan(0);
+    viewBudgetLinks.forEach((link) => {
+      expect(link).toHaveAttribute("href", expect.stringMatching(/^\/budgets\/b[12]$/));
+    });
   });
 
-  it("renders each currency's total separately instead of blending them", async () => {
+  it("renders each currency's total separately in the hero, instead of blending them", async () => {
     getFundedBudgetsSummaryMock.mockResolvedValue({
       total_budgets: 2,
       total_allocated_by_currency: [
@@ -147,29 +156,30 @@ describe("DonorDashboard", () => {
 
     renderDashboard();
 
-    // Stat tile and grantee row both show BOTH currencies, not one blended
-    // (and wrongly labeled) figure — see #139 review.
-    await waitFor(() =>
-      expect(screen.getAllByText("£3,000 + US$5,000").length).toBeGreaterThan(0),
-    );
+    // Hero shows both currencies as their own separate figures, not joined.
+    await waitFor(() => expect(screen.getByText("£3,000")).toBeInTheDocument());
+    expect(screen.getByText("US$5,000")).toBeInTheDocument();
+
+    // The grantee card's compact total still joins them (existing convention).
+    expect(screen.getByText("£3,000 · US$5,000")).toBeInTheDocument();
   });
 
-  it("shows the donor commitment and estimated rate alongside a budget's total when estimated_local_cap is set", async () => {
+  it("shows Total Amount (donor currency), Total in Local, and Est. Rate for a budget with a usable rate", async () => {
     getFundedBudgetsSummaryMock.mockResolvedValue({
       total_budgets: 1,
-      total_allocated_by_currency: [{ currency: "GBP", total_allocated: 4200 }],
+      total_allocated_by_currency: [{ currency: "EUR", total_allocated: 7500 }],
     });
     getFundedGranteesMock.mockResolvedValue([]);
     getFundedBudgetsMock.mockResolvedValue([
       {
         id: "b1",
         name: "Clean Water Phase 1",
-        status: "draft",
+        status: "confirmed",
         total_amount: 6000,
         local_currency: "GBP",
         actual_currency: "EUR",
-        donor_total_amount: 10000,
         estimated_exchange_rate: 0.8,
+        donor_total_amount: 10000,
         estimated_local_cap: 8000,
         owner: { id: "g1", name: "Hope Relief NGO" },
       },
@@ -177,17 +187,95 @@ describe("DonorDashboard", () => {
 
     renderDashboard();
 
-    await waitFor(() => expect(screen.getByText("Clean Water Phase 1")).toBeInTheDocument());
-    expect(screen.getByText("£6,000")).toBeInTheDocument();
-    expect(screen.getByText("€10,000 @ 0.8 (est.)")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getAllByText("Clean Water Phase 1").length).toBeGreaterThan(0),
+    );
+    // Total Amount: 6000 / 0.8 = 7500 EUR (converted real total, not the
+    // 10000 EUR donor_total_amount promise).
+    expect(screen.getAllByText("€7,500").length).toBeGreaterThan(0);
+    // Total in Local: the real local total.
+    expect(screen.getAllByText("£6,000").length).toBeGreaterThan(0);
+    // Est. Rate.
+    expect(screen.getAllByText("0.8").length).toBeGreaterThan(0);
   });
 
-  it("shows only the local total for a budget with no estimated_local_cap set", async () => {
+  it("shows — for Total Amount and Est. Rate when a budget has no usable exchange rate", async () => {
     getFundedBudgetsSummaryMock.mockResolvedValue({
       total_budgets: 1,
-      total_allocated_by_currency: [{ currency: "GBP", total_allocated: 4200 }],
+      total_allocated_by_currency: [],
     });
     getFundedGranteesMock.mockResolvedValue([]);
+    getFundedBudgetsMock.mockResolvedValue([
+      {
+        id: "b1",
+        name: "Clean Water Phase 1",
+        status: "confirmed",
+        total_amount: 1000,
+        local_currency: "GBP",
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText("£1,000").length).toBeGreaterThan(0));
+    // Total Amount and Est. Rate both fall back to "—" (desktop table +
+    // mobile card, so two of each).
+    expect(screen.getAllByText("—").length).toBe(4);
+  });
+
+  it("only shows confirmed budgets in the Funded Budgets table, draft budgets excluded", async () => {
+    getFundedBudgetsSummaryMock.mockResolvedValue({
+      total_budgets: 2,
+      total_allocated_by_currency: [{ currency: "EUR", total_allocated: 1000 }],
+    });
+    getFundedGranteesMock.mockResolvedValue([]);
+    getFundedBudgetsMock.mockResolvedValue([
+      {
+        id: "b1",
+        name: "Confirmed Budget",
+        status: "confirmed",
+        total_amount: 1000,
+        local_currency: "GBP",
+        actual_currency: "EUR",
+        estimated_exchange_rate: 1,
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+      {
+        id: "b2",
+        name: "Draft Budget",
+        status: "draft",
+        total_amount: 500,
+        local_currency: "GBP",
+        actual_currency: "EUR",
+        estimated_exchange_rate: 1,
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Confirmed Budget").length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText("Draft Budget")).not.toBeInTheDocument();
+    expect(screen.getByText("1 confirmed")).toBeInTheDocument();
+  });
+
+  it("shows a muted note instead of a total when there are no confirmed budgets with a usable rate", async () => {
+    getFundedBudgetsSummaryMock.mockResolvedValue({
+      total_budgets: 1,
+      total_allocated_by_currency: [],
+    });
+    getFundedGranteesMock.mockResolvedValue([
+      {
+        id: "g1",
+        name: "Hope Relief NGO",
+        country: "GB",
+        budgets_count: 1,
+        total_allocated_by_currency: [],
+      },
+    ]);
     getFundedBudgetsMock.mockResolvedValue([
       {
         id: "b1",
@@ -201,8 +289,8 @@ describe("DonorDashboard", () => {
 
     renderDashboard();
 
-    await waitFor(() => expect(screen.getByText("£1,000")).toBeInTheDocument());
-    expect(screen.queryByText(/\(est\.\)/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("No committed total yet.")).toBeInTheDocument());
+    expect(screen.getByText("No committed total yet")).toBeInTheDocument();
   });
 
   it("shows an empty state when the donor has zero funded budgets", async () => {
@@ -220,5 +308,29 @@ describe("DonorDashboard", () => {
     );
     expect(screen.queryByText("Grantees")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View Reports" })).not.toBeInTheDocument();
+  });
+
+  it("renders both the desktop table and the mobile card list for funded budgets", async () => {
+    getFundedBudgetsSummaryMock.mockResolvedValue({
+      total_budgets: 1,
+      total_allocated_by_currency: [{ currency: "EUR", total_allocated: 1000 }],
+    });
+    getFundedGranteesMock.mockResolvedValue([]);
+    getFundedBudgetsMock.mockResolvedValue([
+      {
+        id: "b1",
+        name: "Clean Water Phase 1",
+        status: "confirmed",
+        total_amount: 1000,
+        local_currency: "GBP",
+        actual_currency: "EUR",
+        estimated_exchange_rate: 1,
+        owner: { id: "g1", name: "Hope Relief NGO" },
+      },
+    ]);
+
+    renderDashboard();
+
+    await waitFor(() => expect(screen.getAllByText("Clean Water Phase 1").length).toBe(2));
   });
 });

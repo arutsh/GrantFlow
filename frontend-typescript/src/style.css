@@ -23,3 +23,11 @@
 @utility text-section-title {
   @apply text-sm font-semibold uppercase tracking-wide text-slate-500;
 }
+
+/* Bordered/rounded card wrapper for a ledger-style table (desktop table +
+   mobile card list both sit inside one of these) — replaces the bare
+   `shadow rounded` table treatment with a properly contained card, per the
+   dashboard-concepts mockup (see openspec/changes/budget-report-iteration-2). */
+@utility ledger-card {
+  @apply bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden;
+}

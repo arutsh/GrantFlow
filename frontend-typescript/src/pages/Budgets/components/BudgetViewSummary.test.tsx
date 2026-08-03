@@ -96,7 +96,11 @@ describe("BudgetViewSummary", () => {
     expect(screen.queryByText("Total Reported")).not.toBeInTheDocument();
   });
 
-  it("shows the donor commitment and estimated local cap when estimated_local_cap is set", () => {
+  it("pairs Total Amount with its OWN actual donor-currency equivalent, not the flat donor commitment", () => {
+    // total_amount (2200) ÷ estimated_exchange_rate (0.8) = 2750 — the real,
+    // built total translated into the donor's currency — not the flat
+    // donor_total_amount promise (10000), which would misrepresent what's
+    // actually been built as if it were the committed figure.
     useDetailedBudgetMock.mockReturnValue({
       budget: makeBudget({
         donor_total_amount: 10000,
@@ -111,9 +115,10 @@ describe("BudgetViewSummary", () => {
 
     render(<BudgetViewSummary />);
 
-    expect(screen.getByText("€10,000")).toBeInTheDocument();
+    expect(screen.getByText("€2,750")).toBeInTheDocument();
+    expect(screen.queryByText("€10,000")).not.toBeInTheDocument();
     expect(
-      screen.getByText("donor commitment @ 0.8 est. → £8,000 local cap"),
+      screen.getByText("actual @ 0.8 est. (€10,000 committed)"),
     ).toBeInTheDocument();
   });
 
@@ -128,7 +133,7 @@ describe("BudgetViewSummary", () => {
     render(<BudgetViewSummary />);
 
     expect(screen.queryByText("€10,000")).not.toBeInTheDocument();
-    expect(screen.queryByText(/donor commitment/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/actual @/)).not.toBeInTheDocument();
   });
 
   it("flags the total amount green and 'on target' when within tolerance of the cap", () => {

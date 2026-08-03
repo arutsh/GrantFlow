@@ -11,6 +11,7 @@ import {
 import { formatDateOnly } from "@/utils/datetime";
 import { CURRENCY_CODES } from "@/utils/currency";
 import { Budget } from "../types/budget";
+import { STATUS_LABELS, STATUS_STYLES } from "../constants/budgetStatus";
 
 function ownerTypeLabel(
   owner?: { is_ngo?: boolean; is_donor?: boolean } | null,
@@ -20,20 +21,6 @@ function ownerTypeLabel(
   );
   return tags.length ? ` (${tags.join(" / ")})` : "";
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  ai_draft: "AI Draft",
-  confirmed: "Confirmed",
-  archived: "Archived",
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-600",
-  ai_draft: "bg-blue-100 text-blue-700",
-  confirmed: "bg-green-100 text-green-700",
-  archived: "bg-gray-200 text-gray-600",
-};
 
 export function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_STYLES[status] ?? STATUS_STYLES.draft;

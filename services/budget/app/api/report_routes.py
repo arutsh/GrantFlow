@@ -19,12 +19,14 @@ from app.services.report_services import (
     get_report_service,
     list_reports_service,
     list_all_reports_service,
+    list_funded_reports_service,
     update_report_service,
     delete_report_service,
     submit_report_service,
     review_report_service,
     reopen_report_service,
 )
+from app.services.customer_client import require_donor
 from shared.security.dependencies import get_validated_user  # noqa: F401
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -61,6 +63,24 @@ def list_all_reports_view(
         status=status,
         budget_id=budget_id,
         funding_customer_id=funding_customer_id,
+    )
+
+
+@router.get("/funded/", response_model=List[ReportWithBudgetInfo])
+async def list_funded_reports_view(
+    status: ReportStatus | None = Query(default=None),
+    budget_id: UUID | None = Query(default=None),
+    owner_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    require_donor(valid_user)
+    return await list_funded_reports_service(
+        db,
+        valid_user,
+        status=status,
+        budget_id=budget_id,
+        owner_id=owner_id,
     )
 
 
