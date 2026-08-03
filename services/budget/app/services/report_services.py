@@ -2,12 +2,15 @@ from dateutil.relativedelta import relativedelta
 from fastapi import status
 from uuid import UUID
 
+import structlog
+
 from app.crud.budget_crud import get_budget
 from app.crud.report_crud import (
     create_report,
     get_report,
     list_reports,
     list_all_reports,
+    list_funded_reports,
     list_overlapping_reports,
     update_report,
     delete_report,
@@ -24,6 +27,9 @@ from app.schemas.report_schema import (
     ReportWithBudgetInfo,
 )
 from app.services.budget_services import _can_view_budget
+from app.services.user_client import get_customers_by_ids
+
+logger = structlog.get_logger(__name__)
 
 
 def _get_report_or_404(db, report_id: UUID):
@@ -132,7 +138,7 @@ def list_reports_service(db, valid_user: dict, budget_id: UUID):
     return list_reports(db, budget_id=budget_id)
 
 
-def _report_with_budget_info(report) -> ReportWithBudgetInfo:
+def _report_with_budget_info(report, owner_name: str | None = None) -> ReportWithBudgetInfo:
     base = Report.model_validate(report)
     budget = report.budget
     return ReportWithBudgetInfo(
@@ -141,6 +147,8 @@ def _report_with_budget_info(report) -> ReportWithBudgetInfo:
         budget_status=budget.status if budget else None,
         funding_customer_id=budget.funding_customer_id if budget else None,
         external_funder_name=budget.external_funder_name if budget else None,
+        owner_id=budget.owner_id if budget else None,
+        owner_name=owner_name,
     )
 
 
@@ -151,9 +159,12 @@ def list_all_reports_service(
     budget_id: UUID | None = None,
     funding_customer_id: UUID | None = None,
 ) -> list[ReportWithBudgetInfo]:
-    """Cross-budget reports directory (GET /reports/) — every report across
-    every budget visible to this user (owner or funder, see design.md
-    Decision 7), optionally narrowed by status/budget_id/funding_customer_id."""
+    """Owner's cross-budget reports directory (GET /reports/) — every report
+    on a budget this customer OWNS, optionally narrowed by
+    status/budget_id/funding_customer_id. See list_funded_reports_service
+    for the donor/funder-side equivalent (GET /reports/funded/); the two
+    routes mirror /budgets/ vs /budgets/funded/'s existing owner/donor
+    split rather than one combined owner-or-funder list."""
     is_superuser = valid_user["role"] == "superuser"
     customer_id = valid_user.get("customer_id")
     if not is_superuser and not customer_id:
@@ -167,6 +178,58 @@ def list_all_reports_service(
         funding_customer_id=funding_customer_id,
     )
     return [_report_with_budget_info(report) for report in reports]
+
+
+async def list_funded_reports_service(
+    db,
+    valid_user: dict,
+    status: ReportStatus | None = None,
+    budget_id: UUID | None = None,
+    owner_id: UUID | None = None,
+) -> list[ReportWithBudgetInfo]:
+    """Donor's cross-budget reports directory (GET /reports/funded/) — every
+    report on a budget this customer funds, i.e. each grantee's reports
+    against the budgets this donor funds, optionally narrowed by
+    status/budget_id/owner_id (one specific grantee). require_donor at the
+    route layer already ensures the caller is a donor; a missing
+    customer_id (no real customer on the token) returns an empty list
+    rather than erroring, same as list_all_reports_service."""
+    customer_id = valid_user.get("customer_id")
+    if not customer_id:
+        return []
+
+    reports = list_funded_reports(
+        db,
+        funding_customer_id=customer_id,
+        status=status,
+        budget_id=budget_id,
+        owner_id=owner_id,
+    )
+    # get_customers_by_ids returns a dict keyed by the customer-service's
+    # JSON "id" string; report.budget.owner_id comes back from GUID() as a
+    # uuid.UUID object, so both sides are normalized to str() to actually
+    # match (a mismatch here would silently leave every owner_name None).
+    owner_ids = [
+        str(report.budget.owner_id)
+        for report in reports
+        if report.budget and report.budget.owner_id
+    ]
+    try:
+        customers_map = await get_customers_by_ids(owner_ids, valid_user.get("token", ""))
+    except Exception as exc:
+        logger.warning("list_funded_reports_service: customer lookup failed", error=str(exc))
+        customers_map = {}
+    return [
+        _report_with_budget_info(
+            report,
+            owner_name=(
+                (customers_map.get(str(report.budget.owner_id)) or {}).get("name")
+                if report.budget
+                else None
+            ),
+        )
+        for report in reports
+    ]
 
 
 def update_report_service(db, valid_user: dict, report_id: UUID, report_update: ReportUpdate):

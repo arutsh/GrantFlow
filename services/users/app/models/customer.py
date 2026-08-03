@@ -1,8 +1,9 @@
 import uuid
-from sqlalchemy import Boolean, String
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy import Boolean, String, ForeignKey
+from sqlalchemy.orm import relationship, Mapped, mapped_column, validates
 from app.models.base import Base
 from app.utils.db import GUID
+from shared.db.audit_mixin import AuditMixin
 
 
 class CustomerModel(Base):
@@ -20,3 +21,32 @@ class CustomerModel(Base):
     is_donor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     currency = mapped_column(String, nullable=False)
     users = relationship("UserModel", back_populates="customer")
+
+
+class DonorGranteeModel(Base, AuditMixin):
+    __tablename__ = "donor_grantees"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        primary_key=True,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    donor_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"))
+
+    grantee_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"))
+
+    donor = relationship("CustomerModel", foreign_keys=[donor_id])
+    grantee = relationship("CustomerModel", foreign_keys=[grantee_id])
+
+    @validates("donor")
+    def validate_donor(self, key, donor):
+        if not donor.is_donor:
+            raise ValueError("Customer has to be a donor")
+        return donor
+
+    @validates("grantee")
+    def validate_grantee(self, key, grantee):
+        if not grantee.is_ngo:
+            raise ValueError("Customer has to be a grantee")
+        return grantee

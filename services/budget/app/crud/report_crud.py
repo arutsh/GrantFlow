@@ -1,7 +1,6 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session, contains_eager
-from app.crud.budget_crud import budget_visible_to_customer_clause
 from app.models.budget import BudgetModel
 from app.models.report import ReportModel
 from app.schemas.report_schema import ReportStatus
@@ -49,18 +48,17 @@ def list_all_reports(
     budget_id: UUID | None = None,
     funding_customer_id: UUID | None = None,
 ) -> list[ReportModel]:
-    """Cross-budget report listing for the reports directory (GET /reports/).
+    """Cross-budget report listing for the owner's reports directory
+    (GET /reports/) — every report on a budget this customer OWNS (the
+    grantee/owner side; see list_funded_reports for the donor/funder side).
 
-    customer_id=None means "no visibility restriction" (superuser); otherwise
-    scoped to every budget the customer owns OR funds — the same combined
-    owner-or-funder rule already used by get_viewable_budget for a single
-    budget (see design.md Decision 7), not two separate owner/donor routes;
-    budget_visible_to_customer_clause is the single source of truth for that
-    rule in SQL form, so it can't drift from budget_services._can_view_budget.
-    Eager-loads Budget via contains_eager (not joinedload, which would issue
-    a second join on top of the one already needed for the filter) so the
-    service layer can attach budget name/status/funder without a per-row
-    lookup.
+    customer_id=None means "no visibility restriction" (superuser). Mirrors
+    /budgets/ vs /budgets/funded/'s existing owner/donor route split rather
+    than the combined owner-or-funder rule get_viewable_budget uses for a
+    single budget's access check. Eager-loads Budget via contains_eager (not
+    joinedload, which would issue a second join on top of the one already
+    needed for the filter) so the service layer can attach budget name/
+    status/funder without a per-row lookup.
     """
     query = (
         session.query(ReportModel)
@@ -68,13 +66,41 @@ def list_all_reports(
         .options(contains_eager(ReportModel.budget))
     )
     if customer_id is not None:
-        query = query.filter(budget_visible_to_customer_clause(customer_id))
+        query = query.filter(BudgetModel.owner_id == customer_id)
     if status:
         query = query.filter(ReportModel.status == status)
     if budget_id:
         query = query.filter(ReportModel.budget_id == budget_id)
     if funding_customer_id:
         query = query.filter(BudgetModel.funding_customer_id == funding_customer_id)
+    return query.all()
+
+
+def list_funded_reports(
+    session: Session,
+    funding_customer_id: UUID | str,
+    status: ReportStatus | None = None,
+    budget_id: UUID | None = None,
+    owner_id: UUID | None = None,
+) -> list[ReportModel]:
+    """Cross-budget report listing scoped to budgets this donor funds
+    (GET /reports/funded/) — the funder-side counterpart to
+    list_all_reports, showing each grantee's reports against the budgets
+    this donor funds. `owner_id` narrows to one grantee, mirroring
+    list_all_reports's `funding_customer_id` narrowing on the owner side.
+    """
+    query = (
+        session.query(ReportModel)
+        .join(BudgetModel, ReportModel.budget_id == BudgetModel.id)
+        .options(contains_eager(ReportModel.budget))
+        .filter(BudgetModel.funding_customer_id == funding_customer_id)
+    )
+    if status:
+        query = query.filter(ReportModel.status == status)
+    if budget_id:
+        query = query.filter(ReportModel.budget_id == budget_id)
+    if owner_id:
+        query = query.filter(BudgetModel.owner_id == owner_id)
     return query.all()
 
 

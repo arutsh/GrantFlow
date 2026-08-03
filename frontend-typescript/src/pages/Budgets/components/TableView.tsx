@@ -1,5 +1,6 @@
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import { TableCommon } from "@/components/ui/Table";
+import { StatusBadge } from "@/pages/Budgets/components/BudgetViewHeader";
 import { utcToLocal } from "@/utils/datetime";
 import { formatCurrency } from "@/utils/currency";
 import { createColumnHelper } from "@tanstack/react-table";
@@ -16,33 +17,12 @@ export function TableView({
   onEdit: (budget: any) => void;
   onDelete: (budget_id: string) => void;
 }) {
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "approved":
-        return "bg-green-100 text-green-800";
-      case "confirmed":
-        // Same green used for the "Confirmed" status badge on the
-        // single-budget view (BudgetViewHeader's STATUS_STYLES).
-        return "bg-green-100 text-green-700";
-      case "draft":
-        return "bg-yellow-100 text-yellow-800";
-      case "rejected":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-slate-100 text-slate-800";
-    }
-  };
-
   const columns = [
     columnHelper.accessor("status", {
       header: "Status",
-      cell: (info) => (
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(info.getValue())}`}
-        >
-          {info.getValue()}
-        </span>
-      ),
+      // Same pill everywhere a budget status renders — StatusBadge, not a
+      // page-local color mapping (see BudgetViewHeader's STATUS_STYLES).
+      cell: (info) => <StatusBadge status={info.getValue()} />,
     }),
     columnHelper.accessor("name", { header: "Name" }),
 

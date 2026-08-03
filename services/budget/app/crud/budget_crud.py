@@ -1,21 +1,9 @@
 from datetime import date, datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import ColumnElement
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetStatus
 from uuid import UUID
-
-
-def budget_visible_to_customer_clause(customer_id: UUID | str) -> ColumnElement[bool]:
-    """SQL form of the owner-or-funder visibility rule — the single source
-    of truth for any cross-budget query that needs it (e.g.
-    report_crud.list_all_reports), mirroring budget_services._can_view_budget's
-    single-object check on the same two columns."""
-    return or_(
-        BudgetModel.owner_id == customer_id,
-        BudgetModel.funding_customer_id == customer_id,
-    )
 
 
 def create_budget(
@@ -143,6 +131,21 @@ def delete_budget(session: Session, budget: BudgetModel) -> bool:
 
 
 def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> dict:
+    """Grouped by `actual_currency` and summed from `total_amount ÷
+    estimated_exchange_rate` — the real, line-derived total converted into
+    the donor's own currency — not the flat `donor_total_amount` promise
+    (which can overstate what's actually been built) and not `local_currency`
+    (the grantee's operating currency, meaningless to a donor who may fund
+    several grantees in different currencies). Same computation as the
+    grantee dashboard's own committed-by-currency aggregation
+    (`dashboard_crud.sum_committed_by_currency`, design.md Decision 8), just
+    scoped to `funding_customer_id` instead of `owner_id`. Budgets missing
+    `actual_currency` or a usable (non-null, non-zero) `estimated_exchange_rate`
+    are excluded from this figure entirely, not folded into another
+    currency's total — they still count toward `total_budgets`.
+    `total_budgets` counts every funded budget regardless of status; the
+    currency-grouped figure is scoped to `confirmed` only — draft totals can
+    still change."""
     total_budgets = (
         session.query(func.count(BudgetModel.id))
         .filter(BudgetModel.funding_customer_id == funding_customer_id)
@@ -150,43 +153,80 @@ def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> d
     )
     currency_rows = (
         session.query(
-            BudgetModel.local_currency,
-            func.coalesce(func.sum(BudgetModel.total_amount), 0),
+            BudgetModel.actual_currency,
+            func.sum(
+                func.coalesce(BudgetModel.total_amount, 0.0) / BudgetModel.estimated_exchange_rate
+            ),
         )
-        .filter(BudgetModel.funding_customer_id == funding_customer_id)
-        .group_by(BudgetModel.local_currency)
+        .filter(
+            BudgetModel.funding_customer_id == funding_customer_id,
+            BudgetModel.status == BudgetStatus.confirmed,
+            BudgetModel.actual_currency.isnot(None),
+            BudgetModel.estimated_exchange_rate.isnot(None),
+            BudgetModel.estimated_exchange_rate != 0,
+        )
+        .group_by(BudgetModel.actual_currency)
         .all()
     )
     return {
         "total_budgets": total_budgets,
         "total_allocated_by_currency": [
-            {"currency": currency, "total_allocated": total} for currency, total in currency_rows
+            {"currency": currency, "total_allocated": total or 0.0}
+            for currency, total in currency_rows
         ],
     }
 
 
 # TODO I guess return can be done with pydantic / revisit
 def get_funded_grantees(session: Session, funding_customer_id: UUID) -> list[dict]:
-    rows = (
+    """`budgets_count` counts every budget funded for that grantee, regardless
+    of status. `total_allocated_by_currency` is grouped by `actual_currency`
+    and summed from `total_amount ÷ estimated_exchange_rate` (see
+    `get_funded_budgets_summary` for why not `donor_total_amount`/
+    `local_currency`), scoped to `confirmed` budgets only, so it's computed
+    separately and only covers the subset with a usable rate on file."""
+    count_rows = (
         session.query(
             BudgetModel.owner_id,
-            BudgetModel.local_currency,
             func.count(BudgetModel.id).label("budgets_count"),
-            func.coalesce(func.sum(BudgetModel.total_amount), 0).label("total_allocated"),
         )
         .filter(BudgetModel.funding_customer_id == funding_customer_id)
-        .group_by(BudgetModel.owner_id, BudgetModel.local_currency)
+        .group_by(BudgetModel.owner_id)
         .all()
     )
-    grantees: dict = {}
-    for row in rows:
+    currency_rows = (
+        session.query(
+            BudgetModel.owner_id,
+            BudgetModel.actual_currency,
+            func.sum(
+                func.coalesce(BudgetModel.total_amount, 0.0) / BudgetModel.estimated_exchange_rate
+            ).label("total_allocated"),
+        )
+        .filter(
+            BudgetModel.funding_customer_id == funding_customer_id,
+            BudgetModel.status == BudgetStatus.confirmed,
+            BudgetModel.actual_currency.isnot(None),
+            BudgetModel.estimated_exchange_rate.isnot(None),
+            BudgetModel.estimated_exchange_rate != 0,
+        )
+        .group_by(BudgetModel.owner_id, BudgetModel.actual_currency)
+        .all()
+    )
+    grantees: dict = {
+        row.owner_id: {
+            "owner_id": row.owner_id,
+            "budgets_count": row.budgets_count,
+            "total_allocated_by_currency": [],
+        }
+        for row in count_rows
+    }
+    for row in currency_rows:
         grantee = grantees.setdefault(
             row.owner_id,
             {"owner_id": row.owner_id, "budgets_count": 0, "total_allocated_by_currency": []},
         )
-        grantee["budgets_count"] += row.budgets_count
         grantee["total_allocated_by_currency"].append(
-            {"currency": row.local_currency, "total_allocated": row.total_allocated}
+            {"currency": row.actual_currency, "total_allocated": row.total_allocated or 0.0}
         )
     return list(grantees.values())
 

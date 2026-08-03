@@ -122,6 +122,17 @@ export interface ReportWithLines extends Report {
   lines: ReportLine[];
 }
 
+// Report plus its parent budget's name/status/funder — returned by the
+// cross-budget reports directory endpoint (GET /reports/).
+export interface ReportWithBudgetInfo extends Report {
+  budget_name?: string | null;
+  budget_status?: string | null;
+  funding_customer_id?: string | null;
+  external_funder_name?: string | null;
+  owner_id?: string | null;
+  owner_name?: string | null;
+}
+
 export interface ReportCreate {
   budget_id: string;
   name: string;

@@ -1,0 +1,43 @@
+One task group = one GitHub ticket = one PR, merged before the next group starts.
+
+## 1. Funding receipt update and delete
+
+- [ ] 1.1 Add `update_funding_receipt`/`delete_funding_receipt` to `services/budget/app/crud/funding_receipt_crud.py`
+- [ ] 1.2 Add `update_receipt_service`/`delete_receipt_service` to `services/budget/app/services/currency_ledger_services.py`, gated by `_get_owned_budget` (owner-only), wrapped in `budget_ledger_lock`
+- [ ] 1.3 Add `PATCH`/`DELETE /funding-receipts/{receipt_id}` routes to `services/budget/app/api/funding_receipt_routes.py`
+- [ ] 1.4 Wire the new routes through nginx-dev.conf, nginx.conf, and the Caddyfile if the funding-receipts prefix needs new method exposure
+- [ ] 1.5 Add Edit/Delete actions (owner-only) to the funding receipt rows in the frontend currency-ledger history component
+- [ ] 1.6 Backend unit tests: update/delete a receipt as owner succeeds; non-owner rejected; balance recomputation reflects the change
+- [ ] 1.7 Frontend tests for the new receipt Edit/Delete UI (owner-only visibility, optimistic/refetch behavior on success and error)
+- [ ] 1.8 Run backend and frontend lint/tests clean for the affected area; PR merged (`Closes` the ticket for this group)
+
+## 2. Currency conversion update and delete, guarded by allocation state — depends on 1
+
+- [ ] 2.1 Add `count_allocations_for_conversion` (or equivalent) to `services/budget/app/crud/currency_conversion_crud.py`
+- [ ] 2.2 Add `update_currency_conversion`/`delete_currency_conversion` to `currency_conversion_crud.py`
+- [ ] 2.3 Add `update_conversion_service`/`delete_conversion_service` to `currency_ledger_services.py`: owner-only, wrapped in `budget_ledger_lock`, raising `DomainError` (400) when the conversion has any allocation rows
+- [ ] 2.4 Add `PATCH`/`DELETE /currency-conversions/{conversion_id}` routes to `services/budget/app/api/currency_conversion_routes.py`
+- [ ] 2.5 Wire the new routes through nginx-dev.conf, nginx.conf, and the Caddyfile if needed
+- [ ] 2.6 Add Edit/Delete actions (owner-only) to the currency conversion rows in the frontend currency-ledger history component, surfacing the backend's rejection message when blocked by allocations
+- [ ] 2.7 Backend unit tests: update/delete an unallocated conversion succeeds; update/delete an allocated conversion (directly consumed or backfilled) is rejected; implied-rate recomputation reflects an edit
+- [ ] 2.8 Frontend tests for the new conversion Edit/Delete UI, including the blocked-by-allocation error path
+- [ ] 2.9 Run backend and frontend lint/tests clean for the affected area; PR merged (`Closes` the ticket for this group)
+
+## 3. Ledger reset — depends on 1, 2
+
+- [ ] 3.1 Confirm whether `report_line_conversion_allocations.conversion_id` cascades on delete at the DB level (check `services/budget/migrations/versions/000007_add_currency_ledger.py`); if not, delete allocation rows explicitly in the reset function ahead of deleting conversions
+- [ ] 3.2 Add a `reset_ledger` crud/service function in `currency_ledger_services.py` that deletes all of a budget's funding receipts and currency conversions (plus their allocation rows per 3.1) in one transaction, owner-only, wrapped in `budget_ledger_lock`
+- [ ] 3.3 Add a reset route (e.g. `POST /currency-conversions/reset/{budget_id}` or a dedicated ledger-reset router) and wire it into the gateway configs (nginx-dev.conf, nginx.conf, Caddyfile)
+- [ ] 3.4 Add a "Reset Ledger" action to the frontend currency-ledger section, owner-only, behind an explicit confirmation dialog stating what will be deleted
+- [ ] 3.5 Backend unit tests: reset deletes all receipts/conversions/allocations for the budget regardless of allocation state; reset on an empty ledger is a no-op; non-owner rejected
+- [ ] 3.6 Frontend tests: confirmation dialog gates the request; cancelling sends nothing; success clears history and zeroes balances
+- [ ] 3.7 Run backend and frontend lint/tests clean for the affected area; PR merged (`Closes` the ticket for this group)
+
+## 4. Block "Cancel Confirmation" when ledger movement exists — depends on 1, 2, 3
+
+- [ ] 4.1 In `services/budget/app/services/budget_services.py`'s `is_reverting` block, query `list_funding_receipts`/`list_currency_conversions` for the budget and raise `DomainError` (400) if either is non-empty, before the existing non-draft-report check or alongside it
+- [ ] 4.2 Update the frontend "Cancel Confirmation" error handling to surface this new rejection message distinctly, directing the owner to the currency ledger section (edit, delete, or reset) to resolve it
+- [ ] 4.3 Backend unit tests: revert rejected when a funding receipt exists; rejected when a currency conversion exists; rejected when both a non-draft report and ledger movement exist; succeeds when ledger is empty and reports are all draft (existing behavior preserved)
+- [ ] 4.4 Frontend test: reverting a budget with ledger movement shows the new explanatory error and leaves the budget `confirmed`
+- [ ] 4.5 Manually verify end-to-end: confirm a budget, record a receipt and a conversion, attempt revert (blocked), reset the ledger, revert succeeds, re-confirm with a new currency/rate, and confirm no stale ledger rows remain
+- [ ] 4.6 Run backend and frontend lint/tests clean for the affected area; PR merged (`Closes` the ticket for this group)

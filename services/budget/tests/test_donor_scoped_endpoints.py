@@ -10,6 +10,8 @@ itself, including that a budget funded by a different donor is excluded.
 import uuid
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 CUSTOMER_ID = str(uuid.uuid4())
 
 
@@ -134,7 +136,7 @@ class TestFundedBudgetsCrud:
     """Direct coverage of the new aggregation queries, against a real sqlite session."""
 
     def test_summary_totals_only_this_donors_budgets(self):
-        from app.models.budget import BudgetModel
+        from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
         session = _sqlite_session()
@@ -143,16 +145,34 @@ class TestFundedBudgetsCrud:
 
         for budget in (
             BudgetModel(
-                name="A", owner_id=uuid.uuid4(), funding_customer_id=donor_id, total_amount=1000.0
+                name="A",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=1000.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
-                name="B", owner_id=uuid.uuid4(), funding_customer_id=donor_id, total_amount=500.0
+                name="B",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=500.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
                 name="C",
                 owner_id=uuid.uuid4(),
                 funding_customer_id=other_donor_id,
+                local_currency="KES",
                 total_amount=9999.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
         ):
             # Committed one at a time: BudgetModel.id's default returns a str,
@@ -182,7 +202,7 @@ class TestFundedBudgetsCrud:
     def test_summary_keeps_currencies_separate_not_blended(self):
         """A donor funding budgets in different currencies must not get one
         blended sum mislabeled with an arbitrary currency (see #139 review)."""
-        from app.models.budget import BudgetModel
+        from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
         session = _sqlite_session()
@@ -193,15 +213,21 @@ class TestFundedBudgetsCrud:
                 name="A",
                 owner_id=uuid.uuid4(),
                 funding_customer_id=donor_id,
-                total_amount=3000.0,
-                local_currency="GBP",
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
                 name="B",
                 owner_id=uuid.uuid4(),
                 funding_customer_id=donor_id,
+                local_currency="UGX",
                 total_amount=5000.0,
-                local_currency="USD",
+                actual_currency="USD",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
         ):
             session.add(budget)
@@ -213,10 +239,108 @@ class TestFundedBudgetsCrud:
         by_currency = {
             c["currency"]: c["total_allocated"] for c in summary["total_allocated_by_currency"]
         }
-        assert by_currency == {"GBP": 3000.0, "USD": 5000.0}
+        assert by_currency == {"GBP": pytest.approx(3000.0), "USD": pytest.approx(5000.0)}
+
+    def test_summary_excludes_budgets_missing_a_usable_rate(self):
+        """A confirmed budget with no actual_currency/estimated_exchange_rate
+        set (e.g. confirmed before those fields existed — no backfill, see
+        design.md's migration plan) still counts toward total_budgets, but
+        can't be converted into a donor-currency figure, so it's excluded
+        from the currency-grouped total entirely rather than folded into
+        another currency's total or silently zeroing it out — same
+        "exclude rather than misrepresent" rule as the grantee dashboard's
+        own committed-by-currency aggregation."""
+        from app.models.budget import BudgetModel, BudgetStatus
+        from app.crud.budget_crud import get_funded_budgets_summary
+
+        session = _sqlite_session()
+        donor_id = uuid.uuid4()
+
+        for budget in (
+            BudgetModel(
+                name="Has a rate",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
+            ),
+            BudgetModel(
+                name="Legacy confirmed budget — no commitment fields set",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=3000.0,
+                status=BudgetStatus.confirmed,
+            ),
+            BudgetModel(
+                name="Zero rate",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=1000.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0,
+                status=BudgetStatus.confirmed,
+            ),
+        ):
+            session.add(budget)
+            session.commit()
+
+        summary = get_funded_budgets_summary(session, donor_id)
+
+        assert summary["total_budgets"] == 3
+        assert summary["total_allocated_by_currency"] == [
+            {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
+        ]
+
+    def test_summary_excludes_unconfirmed_budgets_even_with_a_usable_rate(self):
+        """A draft budget with actual_currency/estimated_exchange_rate already
+        set still counts toward total_budgets, but doesn't contribute to the
+        currency-grouped figure until it's confirmed — a draft's total can
+        still change."""
+        from app.models.budget import BudgetModel, BudgetStatus
+        from app.crud.budget_crud import get_funded_budgets_summary
+
+        session = _sqlite_session()
+        donor_id = uuid.uuid4()
+
+        for budget in (
+            BudgetModel(
+                name="A — confirmed",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
+            ),
+            BudgetModel(
+                name="B — still draft",
+                owner_id=uuid.uuid4(),
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=9000.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.draft,
+            ),
+        ):
+            session.add(budget)
+            session.commit()
+
+        summary = get_funded_budgets_summary(session, donor_id)
+
+        assert summary["total_budgets"] == 2
+        assert summary["total_allocated_by_currency"] == [
+            {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
+        ]
 
     def test_grantees_groups_by_owner_across_multiple_budgets(self):
-        from app.models.budget import BudgetModel
+        from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
         session = _sqlite_session()
@@ -226,16 +350,44 @@ class TestFundedBudgetsCrud:
 
         for budget in (
             BudgetModel(
-                name="A", owner_id=grantee_id, funding_customer_id=donor_id, total_amount=100.0
+                name="A",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=100.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
-                name="B", owner_id=grantee_id, funding_customer_id=donor_id, total_amount=200.0
+                name="B",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=200.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
-                name="C", owner_id=grantee_id, funding_customer_id=donor_id, total_amount=300.0
+                name="C",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=300.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
-                name="D", owner_id=other_grantee_id, funding_customer_id=donor_id, total_amount=50.0
+                name="D",
+                owner_id=other_grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=50.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
         ):
             session.add(budget)
@@ -246,17 +398,17 @@ class TestFundedBudgetsCrud:
 
         assert by_owner[grantee_id]["budgets_count"] == 3
         assert by_owner[grantee_id]["total_allocated_by_currency"] == [
-            {"currency": "GBP", "total_allocated": 600.0}
+            {"currency": "GBP", "total_allocated": pytest.approx(600.0)}
         ]
         assert by_owner[other_grantee_id]["budgets_count"] == 1
         assert by_owner[other_grantee_id]["total_allocated_by_currency"] == [
-            {"currency": "GBP", "total_allocated": 50.0}
+            {"currency": "GBP", "total_allocated": pytest.approx(50.0)}
         ]
 
     def test_grantees_keeps_currencies_separate_not_blended(self):
         """Same grantee funded via budgets in two different currencies must not
         be blended into one mislabeled sum (see #139 review)."""
-        from app.models.budget import BudgetModel
+        from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
         session = _sqlite_session()
@@ -268,15 +420,21 @@ class TestFundedBudgetsCrud:
                 name="A",
                 owner_id=grantee_id,
                 funding_customer_id=donor_id,
-                total_amount=3000.0,
-                local_currency="GBP",
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
             ),
             BudgetModel(
                 name="B",
                 owner_id=grantee_id,
                 funding_customer_id=donor_id,
+                local_currency="UGX",
                 total_amount=5000.0,
-                local_currency="USD",
+                actual_currency="USD",
+                estimated_exchange_rate=1.0,
+                status=BudgetStatus.confirmed,
             ),
         ):
             session.add(budget)
@@ -289,7 +447,96 @@ class TestFundedBudgetsCrud:
         by_currency = {
             c["currency"]: c["total_allocated"] for c in grantee["total_allocated_by_currency"]
         }
-        assert by_currency == {"GBP": 3000.0, "USD": 5000.0}
+        assert by_currency == {"GBP": pytest.approx(3000.0), "USD": pytest.approx(5000.0)}
+
+    def test_grantees_excludes_budget_missing_a_usable_rate_from_currency_total(self):
+        """Regression test: a confirmed budget with no actual_currency/
+        estimated_exchange_rate set (e.g. confirmed before those fields
+        existed — no backfill, see design.md's migration plan) still counts
+        toward budgets_count, but can't be converted, so it's excluded from
+        the currency-grouped total rather than silently dropping it or
+        folding it into another currency."""
+        from app.models.budget import BudgetModel, BudgetStatus
+        from app.crud.budget_crud import get_funded_grantees
+
+        session = _sqlite_session()
+        donor_id = uuid.uuid4()
+        grantee_id = uuid.uuid4()
+
+        for budget in (
+            BudgetModel(
+                name="Has a rate",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
+            ),
+            BudgetModel(
+                name="Legacy confirmed budget — no commitment fields set",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=3000.0,
+                status=BudgetStatus.confirmed,
+            ),
+        ):
+            session.add(budget)
+            session.commit()
+
+        grantees = get_funded_grantees(session, donor_id)
+        assert len(grantees) == 1
+        grantee = grantees[0]
+        assert grantee["budgets_count"] == 2
+        assert grantee["total_allocated_by_currency"] == [
+            {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
+        ]
+
+    def test_grantees_excludes_unconfirmed_budgets_from_currency_total(self):
+        """A grantee's draft budget with actual_currency/estimated_exchange_rate
+        already set still counts toward budgets_count, but doesn't contribute
+        to the currency-grouped total until it's confirmed."""
+        from app.models.budget import BudgetModel, BudgetStatus
+        from app.crud.budget_crud import get_funded_grantees
+
+        session = _sqlite_session()
+        donor_id = uuid.uuid4()
+        grantee_id = uuid.uuid4()
+
+        for budget in (
+            BudgetModel(
+                name="A — confirmed",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=2400.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.confirmed,
+            ),
+            BudgetModel(
+                name="B — still draft",
+                owner_id=grantee_id,
+                funding_customer_id=donor_id,
+                local_currency="KES",
+                total_amount=9000.0,
+                actual_currency="GBP",
+                estimated_exchange_rate=0.8,
+                status=BudgetStatus.draft,
+            ),
+        ):
+            session.add(budget)
+            session.commit()
+
+        grantees = get_funded_grantees(session, donor_id)
+        assert len(grantees) == 1
+        grantee = grantees[0]
+        assert grantee["budgets_count"] == 2
+        assert grantee["total_allocated_by_currency"] == [
+            {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
+        ]
 
     def test_list_budgets_funding_filter_excludes_other_donors(self):
         from app.models.budget import BudgetModel

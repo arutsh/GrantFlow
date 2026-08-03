@@ -112,12 +112,23 @@ export function BudgetViewSummary() {
                 ≈
               </div>
               <div className="flex flex-col">
+                {/* The ≈ pairs Total Amount (real, built from lines) against
+                    its OWN donor-currency equivalent — total_amount ÷
+                    estimated_exchange_rate — not the flat donor_total_amount
+                    promise (already shown in the header's "Donor Commitment"
+                    field). Showing the promise here would misrepresent what's
+                    actually been built as if it were the committed figure —
+                    same "exclude/derive, don't misrepresent" rule as the
+                    grantee dashboard's committed-by-currency aggregation. */}
                 <span className="text-base font-bold text-slate-700">
-                  {formatCurrency(budget!.donor_total_amount!, budget?.actual_currency)}
+                  {formatCurrency(
+                    totalAmountNumber / budget!.estimated_exchange_rate!,
+                    budget?.actual_currency,
+                  )}
                 </span>
                 <span className="text-xs text-slate-400">
-                  donor commitment @ {budget!.estimated_exchange_rate} est. →{" "}
-                  {formatCurrency(estimatedLocalCap!, budget?.local_currency)} local cap
+                  actual @ {budget!.estimated_exchange_rate} est. (
+                  {formatCurrency(budget!.donor_total_amount!, budget?.actual_currency)} committed)
                 </span>
               </div>
             </>

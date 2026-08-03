@@ -2,6 +2,7 @@ import gatewayApi from "@/api/gatewayApi";
 import {
   Report,
   ReportWithLines,
+  ReportWithBudgetInfo,
   ReportCreate,
   ReportUpdate,
   ReportReviewRequest,
@@ -22,6 +23,25 @@ export const listReportsByBudget = async (
   budgetId: string
 ): Promise<Report[]> => {
   const { data } = await gatewayApi.get(`/reports/by-budget/${budgetId}`);
+  return data;
+};
+
+// Owner's cross-budget reports directory — every report on a budget this
+// customer owns, joined with parent-budget name/status/funder. Unfiltered
+// (no args) so the directory page can derive its own filter dropdown
+// options and filter client-side, matching budgets.tsx's convention at this
+// data scale.
+export const listAllReports = async (): Promise<ReportWithBudgetInfo[]> => {
+  const { data } = await gatewayApi.get("/reports/");
+  return data;
+};
+
+// Donor's cross-budget reports directory — each grantee's reports against
+// the budgets this donor funds, joined with parent-budget name/status/
+// owner. The funder-side counterpart to listAllReports, same unfiltered/
+// client-filtered convention.
+export const listFundedReports = async (): Promise<ReportWithBudgetInfo[]> => {
+  const { data } = await gatewayApi.get("/reports/funded/");
   return data;
 };
 

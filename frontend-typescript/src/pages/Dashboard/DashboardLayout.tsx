@@ -17,6 +17,7 @@ import { useAiChat } from "@/context/AiChatContext";
 import { useAuth } from "@/context/AuthContext";
 import ogfIcon from "@/assets/logos/ogf-icon.svg";
 import { Link, NavLink } from "react-router-dom";
+import { TopBar } from "./TopBar";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -64,7 +65,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <Home size={20} />
-                {isOpen && <span>Home</span>}
+                {isOpen && <span>Dashboard</span>}
               </Link>
             </li>
             <li>
@@ -106,14 +107,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 </button>
                 {isOpen && isGranteesExpanded && (
                   <ul className="mt-1 space-y-1">
-                    <li>
-                      <Link
-                        to="/donor-dashboard"
-                        className="block px-4 py-2 pl-11 text-sm hover:bg-blue-600/60 rounded transition-colors"
-                      >
-                        Overview
-                      </Link>
-                    </li>
                     <li
                       className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
                       title="Coming soon"
@@ -126,11 +119,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                     >
                       Budgets
                     </li>
-                    <li
-                      className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
-                      title="Coming soon"
-                    >
-                      Reports
+                    <li>
+                      <Link
+                        to="/reports/funded"
+                        className="block px-4 py-2 pl-11 text-sm hover:bg-blue-600/60 rounded transition-colors"
+                      >
+                        Reports
+                      </Link>
                     </li>
                   </ul>
                 )}
@@ -175,11 +170,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         />
       )}
 
-      {/* Main content + AI panel */}
-      <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 p-8 overflow-auto bg-gray-50">{children}</main>
+      {/* Main content + AI panel, with a global top bar above both */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <TopBar />
+        <div className="flex flex-1 overflow-hidden">
+          <main className="flex-1 p-8 overflow-auto bg-gray-50">{children}</main>
 
-        {isAiOpen && <AIChatPanel />}
+          {isAiOpen && <AIChatPanel />}
+        </div>
       </div>
     </div>
   );
