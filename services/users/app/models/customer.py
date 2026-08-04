@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Boolean, String, ForeignKey
+from sqlalchemy import Boolean, String, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped, mapped_column, validates
 from app.models.base import Base
 from app.utils.db import GUID
@@ -26,15 +26,19 @@ class CustomerModel(Base):
 class DonorGranteeModel(Base, AuditMixin):
     __tablename__ = "donor_grantees"
 
+    __table_args__ = (
+        UniqueConstraint("donor_id", "grantee_id", name="uq_donor_grantees_donor_id_grantee_id"),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
         primary_key=True,
         index=True,
-        default=lambda: str(uuid.uuid4()),
+        default=lambda: uuid.uuid4(),
     )
-    donor_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"))
+    donor_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"), index=True)
 
-    grantee_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"))
+    grantee_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("customers.id"), index=True)
 
     donor = relationship("CustomerModel", foreign_keys=[donor_id])
     grantee = relationship("CustomerModel", foreign_keys=[grantee_id])
