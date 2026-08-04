@@ -10,6 +10,8 @@ context: |
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
 rules:
+  proposal:
+    - Keep proposals under 500 words
   tasks:
     - "Workflow rule: one task group = one GitHub ticket = one PR, merged before the next group starts. State this rule verbatim as the first line of tasks.md, above the first '## 1.' heading."
     - Structure task groups as independently mergeable vertical slices (not horizontal implementation layers), ordered by dependency, so each group's PR is real, reviewable, shippable work on its own.

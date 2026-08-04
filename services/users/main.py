@@ -3,10 +3,18 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
-from app.api import user_routes, customer_routes, auth_routes, ai_settings_routes
+from app.api import (
+    user_routes,
+    customer_routes,
+    auth_routes,
+    ai_settings_routes,
+    donor_grantee_routes,
+)
 from app.db.init_db import init_db
 from fastapi.openapi.utils import get_openapi
 from app.core.config import settings
+from app.core.exceptions import DomainError, PermissionDenied
+from app.core.error_handlers import domain_error_handler
 from app.core.logging import setup_logging, get_logger
 from app.services.event_publisher import init_publisher, close_publisher
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
@@ -68,7 +76,11 @@ app.include_router(user_routes.router, prefix="/api")
 app.include_router(customer_routes.router, prefix="/api")
 app.include_router(auth_routes.router, prefix="/api")
 app.include_router(ai_settings_routes.router, prefix="/api")
+app.include_router(donor_grantee_routes.router, prefix="/api")
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+
+app.add_exception_handler(DomainError, domain_error_handler)
+app.add_exception_handler(PermissionDenied, domain_error_handler)
 
 
 def custom_openapi():
