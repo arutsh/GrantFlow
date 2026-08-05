@@ -92,6 +92,10 @@ class TestConfirmRequiresStartDate:
                 return_value=None,
             ),
             patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
+            patch(
                 "app.services.budget_services.get_budget",
                 return_value=existing,
             ),
@@ -113,6 +117,10 @@ class TestConfirmRequiresStartDate:
         with (
             patch(
                 "app.services.budget_services.validate_customer_can_fund",
+                return_value=None,
+            ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
                 return_value=None,
             ),
             patch(
@@ -139,6 +147,10 @@ class TestConfirmRequiresStartDate:
         with (
             patch(
                 "app.services.budget_services.validate_customer_can_fund",
+                return_value=None,
+            ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
                 return_value=None,
             ),
             patch(
@@ -189,6 +201,10 @@ class TestConfirmRequiresStartDate:
         with (
             patch(
                 "app.services.budget_services.validate_customer_can_fund",
+                return_value=None,
+            ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
                 return_value=None,
             ),
             patch(

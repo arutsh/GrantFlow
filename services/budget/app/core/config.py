@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Service URLs
     customer_service_url: str
+    donor_grantee_service_url: str
     user_service_url: str
     user_all_services_url: str
     REDIS_URL: str

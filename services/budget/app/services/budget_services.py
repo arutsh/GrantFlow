@@ -24,6 +24,7 @@ from app.crud.dashboard_crud import (
 from app.core.exceptions import DomainError, PermissionDenied
 
 from app.services.customer_client import validate_customer_can_fund, validate_customer_can_own
+from app.services.donor_grantee_client import validate_donor_grantee_relationship
 from app.schemas.budget_schema import (
     BudgetCreate,
     BudgetStatus,
@@ -73,6 +74,11 @@ async def create_budget_service(
         # validate_customer_type(budget.owner_id, "ngo", raise_domain_error=True)
 
         owner_id = budget.owner_id
+
+    if budget.funding_customer_id:
+        validate_donor_grantee_relationship(
+            budget.funding_customer_id, owner_id, raise_domain_error=True
+        )
     new_budget = create_budget(
         session=db,
         user_id=valid_user["user_id"],
@@ -171,6 +177,11 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
     valid_budget, is_funder_confirm = _resolve_updatable_budget(
         budget_id, valid_user, is_confirm_attempt, db
     )
+
+    if budget.funding_customer_id:
+        validate_donor_grantee_relationship(
+            budget.funding_customer_id, valid_budget.owner_id, raise_domain_error=True
+        )
 
     if is_funder_confirm and _is_metadata_edit(budget):
         raise DomainError(
