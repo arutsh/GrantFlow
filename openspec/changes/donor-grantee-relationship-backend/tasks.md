@@ -32,4 +32,4 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 3.2 Add `Depends(get_current_user)` to `list_customers` and `get_customer_endpoint` in `customer_routes.py` (currently unauthenticated; hardening ahead of exposing these through the public gateway for the first time).
 - [x] 3.3 Add gateway routes for `/api/v1/donor-grantees/` and `/api/v1/customers/` in `nginx/nginx-dev.conf`, `nginx/nginx.conf`, and `Caddyfile`, mirroring the existing `/api/v1/users/` block.
 - [x] 3.4 Manually verify (per design.md's migration plan) end-to-end against the dev stack: donor approves a grantee, grantee's budget-funding attempt succeeds; donor revokes, a new funding attempt fails while the earlier budget is unaffected; non-donor/grantee-side write attempts are rejected.
-- [ ] 3.5 Run users-service tests and lint clean; PR merged (`Closes` the ticket for this group).
+- [x] 3.5 Run users-service tests and lint clean; PR merged (`Closes` the ticket for this group).
