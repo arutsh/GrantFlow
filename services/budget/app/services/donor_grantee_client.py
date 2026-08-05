@@ -44,6 +44,4 @@ def validate_donor_grantee_relationship(
         raise Error(str(e))
 
     if not exists:
-        raise Error(
-            f"Donor {donor_id} has not approved grantee {grantee_id} to fund their budgets"
-        )
+        raise Error(f"Donor {donor_id} has not approved grantee {grantee_id} to fund their budgets")

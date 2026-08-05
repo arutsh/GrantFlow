@@ -32,7 +32,7 @@ def create_donor_grantee_endpoint(
 
 @router.get("/donor-grantees/", response_model=list[DonorGrantee])
 def list_donor_grantees_endpoint(
-    role: str,
+    request_type: str | None = None,
     customer_id: UUID | None = None,
     db: Session = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
@@ -40,7 +40,9 @@ def list_donor_grantees_endpoint(
     # customer_id is only honored for a superuser caller (see
     # list_donor_grantees_service) — a regular caller is always scoped to
     # their own customer_id regardless of what they pass here.
-    return list_donor_grantees_service(db, valid_user, role=role, customer_id=customer_id)
+    return list_donor_grantees_service(
+        db, valid_user, request_type=request_type, customer_id=customer_id
+    )
 
 
 @router.delete("/donor-grantees/{donor_grantee_id}", status_code=204)

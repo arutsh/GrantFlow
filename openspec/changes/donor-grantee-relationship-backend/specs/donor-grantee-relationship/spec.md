@@ -50,7 +50,7 @@ The system SHALL allow a donor to list all `donor_grantees` records where they a
 - **THEN** the system rejects the request and the record is not removed
 
 #### Scenario: Superuser lists any customer's relationships
-- **WHEN** an authenticated user with the `superuser` role requests a relationship list with an explicit `customer_id` and `role`
+- **WHEN** an authenticated user with the `superuser` role requests a relationship list with an explicit `customer_id` and `request_type`
 - **THEN** the system returns the matching `donor_grantees` records for that `customer_id`, regardless of who the superuser is
 
 #### Scenario: Superuser deletes any relationship

@@ -111,7 +111,7 @@ class TestListDonorGrantees:
         create_donor_grantee(db, donor_id=other_donor.id, grantee_id=other_grantee.id)
         client = make_client(db=db, customer_id=str(donor.id), is_donor=True)
 
-        response = client.get("/api/donor-grantees/", params={"role": "donor"})
+        response = client.get("/api/donor-grantees/", params={"request_type": "donor"})
 
         assert response.status_code == 200
         body = response.json()
@@ -126,17 +126,24 @@ class TestListDonorGrantees:
         create_donor_grantee(db, donor_id=donor.id, grantee_id=other_grantee.id)
         client = make_client(db=db, customer_id=str(grantee.id), is_donor=False)
 
-        response = client.get("/api/donor-grantees/", params={"role": "grantee"})
+        response = client.get("/api/donor-grantees/", params={"request_type": "grantee"})
 
         assert response.status_code == 200
         body = response.json()
         assert len(body) == 1
         assert body[0]["grantee_id"] == str(grantee.id)
 
-    def test_invalid_role_is_rejected(self, make_client, db):
+    def test_invalid_request_type_is_rejected(self, make_client, db):
         client = make_client(db=db, is_donor=True)
 
-        response = client.get("/api/donor-grantees/", params={"role": "nope"})
+        response = client.get("/api/donor-grantees/", params={"request_type": "nope"})
+
+        assert response.status_code == 400
+
+    def test_missing_request_type_is_400_not_422(self, make_client, db):
+        client = make_client(db=db, is_donor=True)
+
+        response = client.get("/api/donor-grantees/")
 
         assert response.status_code == 400
 
@@ -150,7 +157,7 @@ class TestListDonorGrantees:
         client = make_client(db=db, role="superuser")
 
         response = client.get(
-            "/api/donor-grantees/", params={"role": "donor", "customer_id": str(donor.id)}
+            "/api/donor-grantees/", params={"request_type": "donor", "customer_id": str(donor.id)}
         )
 
         assert response.status_code == 200
@@ -161,7 +168,7 @@ class TestListDonorGrantees:
     def test_superuser_without_customer_id_is_rejected(self, make_client, db):
         client = make_client(db=db, role="superuser")
 
-        response = client.get("/api/donor-grantees/", params={"role": "donor"})
+        response = client.get("/api/donor-grantees/", params={"request_type": "donor"})
 
         assert response.status_code == 400
 

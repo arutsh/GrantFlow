@@ -15,6 +15,10 @@ from app.crud.donor_grantee_crud import (
 logger = get_logger(__name__)
 
 
+def is_superuser(valid_user: dict) -> bool:
+    return valid_user.get("role") == "superuser"
+
+
 def require_donor(valid_user: dict) -> None:
     """Assert the caller's customer has is_donor=True.
 
@@ -26,39 +30,48 @@ def require_donor(valid_user: dict) -> None:
         raise DomainError("Customer is not a donor", status.HTTP_403_FORBIDDEN)
 
 
+def _resolve_scoped_customer_id(
+    valid_user: dict,
+    explicit_id: UUID | None,
+    *,
+    field_name: str,
+    require_donor_role: bool = False,
+) -> UUID:
+    """Resolve which customer_id a request acts as/on.
+
+    A superuser has no donor/grantee customer of their own to derive from,
+    so they must supply `explicit_id` (rejected if omitted). A regular
+    caller is always scoped to their own `customer_id` JWT claim — anything
+    they submit for `explicit_id` is ignored.
+    """
+    if is_superuser(valid_user):
+        if explicit_id is None:
+            raise DomainError(f"Superuser must specify {field_name}", status.HTTP_400_BAD_REQUEST)
+        return explicit_id
+    if require_donor_role:
+        require_donor(valid_user)
+    return UUID(str(valid_user["customer_id"]))
+
+
 def create_donor_grantee_service(
     session: Session, valid_user: dict, grantee_id: UUID, donor_id: UUID | None = None
 ):
-    if valid_user.get("role") == "superuser":
-        # Superusers aren't necessarily attached to a donor customer
-        # themselves (see the analogous owner_id override in
-        # budget_services.create_budget_service), so there's no JWT claim to
-        # derive donor_id from — the caller must say which donor they mean.
-        if donor_id is None:
-            raise DomainError("Superuser must specify donor_id", status.HTTP_400_BAD_REQUEST)
-    else:
-        require_donor(valid_user)
-        donor_id = UUID(str(valid_user["customer_id"]))
-
+    donor_id = _resolve_scoped_customer_id(
+        valid_user, donor_id, field_name="donor_id", require_donor_role=True
+    )
     return create_donor_grantee(session, donor_id=donor_id, grantee_id=grantee_id)
 
 
 def list_donor_grantees_service(
-    session: Session, valid_user: dict, role: str, customer_id: UUID | None = None
+    session: Session, valid_user: dict, request_type: str | None, customer_id: UUID | None = None
 ):
-    if valid_user.get("role") == "superuser":
-        # A superuser has no customer_id claim of their own to scope by —
-        # they're asking on behalf of whichever customer they specify.
-        if customer_id is None:
-            raise DomainError("Superuser must specify customer_id", status.HTTP_400_BAD_REQUEST)
-    else:
-        customer_id = UUID(str(valid_user["customer_id"]))
+    customer_id = _resolve_scoped_customer_id(valid_user, customer_id, field_name="customer_id")
 
-    if role == "donor":
+    if request_type == "donor":
         return list_donor_grantees(session, donor_id=customer_id)
-    if role == "grantee":
+    if request_type == "grantee":
         return list_donor_grantees(session, grantee_id=customer_id)
-    raise DomainError("role must be 'donor' or 'grantee'", status.HTTP_400_BAD_REQUEST)
+    raise DomainError("request_type must be 'donor' or 'grantee'", status.HTTP_400_BAD_REQUEST)
 
 
 def delete_donor_grantee_service(session: Session, valid_user: dict, donor_grantee_id: UUID):
@@ -68,7 +81,7 @@ def delete_donor_grantee_service(session: Session, valid_user: dict, donor_grant
 
     # A superuser may delete any relationship; a regular caller must be the
     # donor on the row itself (checked below), not merely *a* donor.
-    if valid_user.get("role") != "superuser":
+    if not is_superuser(valid_user):
         require_donor(valid_user)
         if str(donor_grantee.donor_id) != str(valid_user["customer_id"]):
             raise DomainError(

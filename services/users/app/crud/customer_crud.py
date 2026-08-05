@@ -8,8 +8,21 @@ def get_customer(session: Session, customer_id: UUID):
     return session.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
 
 
-def get_customers(session: Session, limit: int = 100):
-    return session.query(CustomerModel).limit(limit).all()
+def get_customers(
+    session: Session,
+    limit: int = 100,
+    is_ngo: bool | None = None,
+    search: str | None = None,
+):
+    query = session.query(CustomerModel)
+    if is_ngo is not None:
+        query = query.filter(CustomerModel.is_ngo == is_ngo)
+    if search:
+        # Escape ilike wildcards (% and _) in user input so they're matched
+        # literally rather than acting as pattern metacharacters.
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(CustomerModel.name.ilike(f"%{escaped}%", escape="\\"))
+    return query.limit(limit).all()
 
 
 def create_customer(
