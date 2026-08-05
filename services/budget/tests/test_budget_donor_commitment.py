@@ -104,6 +104,10 @@ class TestMetadataLockOnConfirmed:
                 "app.services.budget_services.validate_customer_can_fund",
                 return_value=None,
             ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
             patch("app.services.budget_services.get_budget", return_value=existing),
             patch(
                 "app.services.budget_services.update_budget", return_value=existing
@@ -134,6 +138,10 @@ class TestMetadataLockOnConfirmed:
                 "app.services.budget_services.validate_customer_can_fund",
                 return_value=None,
             ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
             patch("app.services.budget_services.get_budget", return_value=existing),
         ):
             with pytest.raises((DomainError, HTTPException)):
@@ -153,6 +161,10 @@ class TestMetadataLockOnConfirmed:
         with (
             patch(
                 "app.services.budget_services.validate_customer_can_fund",
+                return_value=None,
+            ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
                 return_value=None,
             ),
             patch("app.services.budget_services.get_budget", return_value=existing),
@@ -239,6 +251,10 @@ class TestConfirmedAtTransition:
                 "app.services.budget_services.validate_customer_can_fund",
                 return_value=None,
             ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
             patch("app.services.budget_services.get_budget", return_value=existing),
             patch(
                 "app.services.budget_services.update_budget", return_value=existing
@@ -268,6 +284,10 @@ class TestConfirmedAtTransition:
                 "app.services.budget_services.validate_customer_can_fund",
                 return_value=None,
             ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
             patch("app.services.budget_services.get_budget", return_value=existing),
             patch(
                 "app.services.budget_services.update_budget", return_value=existing
@@ -288,6 +308,10 @@ class TestConfirmedAtTransition:
         with (
             patch(
                 "app.services.budget_services.validate_customer_can_fund",
+                return_value=None,
+            ),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
                 return_value=None,
             ),
             patch("app.services.budget_services.get_budget", return_value=existing),
