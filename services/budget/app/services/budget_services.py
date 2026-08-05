@@ -178,11 +178,6 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         budget_id, valid_user, is_confirm_attempt, db
     )
 
-    if budget.funding_customer_id:
-        validate_donor_grantee_relationship(
-            budget.funding_customer_id, valid_budget.owner_id, raise_domain_error=True
-        )
-
     if is_funder_confirm and _is_metadata_edit(budget):
         raise DomainError(
             "A funder can only confirm a budget, not edit its metadata",
@@ -223,6 +218,16 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
             str(valid_user["customer_id"]) != str(valid_budget.owner_id)
         ):
             raise PermissionDenied()
+
+    if budget.funding_customer_id:
+        # Checked against the *final* owner (post-reassignment), not
+        # valid_budget.owner_id — a superuser changing owner_id and
+        # funding_customer_id in the same request must be validated against
+        # the new owner, otherwise the gate could be bypassed by reassigning
+        # to an unapproved grantee after the check.
+        validate_donor_grantee_relationship(
+            budget.funding_customer_id, owner_id or valid_budget.owner_id, raise_domain_error=True
+        )
 
     if budget.status == BudgetStatus.confirmed:
         effective_start_date = budget.start_date or valid_budget.start_date

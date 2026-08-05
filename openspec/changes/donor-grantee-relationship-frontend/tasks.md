@@ -2,7 +2,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 1. API client layer
 
-- [ ] 1.1 Add `frontend-typescript/src/api/donorGranteeApi.ts`: `listDonorGrantees(role: "donor" | "grantee")`, `createDonorGrantee(granteeId: string)`, `deleteDonorGrantee(id: string)`, typed response interfaces, wrapping `gatewayApi` against `/api/v1/donor-grantees/`, mirroring `donorDashboardApi.ts`'s style.
+- [ ] 1.1 Add `frontend-typescript/src/api/donorGranteeApi.ts`: `listDonorGrantees(requestType: "donor" | "grantee")`, `createDonorGrantee(granteeId: string)`, `deleteDonorGrantee(id: string)`, typed response interfaces, wrapping `gatewayApi` against `/api/v1/donor-grantees/`, mirroring `donorDashboardApi.ts`'s style.
 - [ ] 1.2 Extend the customer-facing API client with `searchCustomers({ is_ngo, search })` against `/api/v1/customers/` (new file `customerApi.ts`, or extend an existing users-api client if one already wraps `/api/v1/customers/` or `/api/v1/users/` — check `frontend-typescript/src/api/` before adding a new file).
 - [ ] 1.3 Manually verify both clients against the live dev stack once `donor-grantee-relationship-backend` is merged (list/create/delete relationship; search customers by name and `is_ngo`).
 - [ ] 1.4 Run frontend lint/typecheck clean; PR merged (`Closes` the ticket for this group).

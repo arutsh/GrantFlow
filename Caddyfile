@@ -48,6 +48,18 @@ api.opengrantflow.com {
 		reverse_proxy users:8000
 	}
 
+	# ---- DONOR-GRANTEE RELATIONSHIPS ----
+	handle_path /api/v1/donor-grantees/* {
+		rewrite * /api/donor-grantees{uri}
+		reverse_proxy users:8000
+	}
+
+	# ---- CUSTOMERS ----
+	handle_path /api/v1/customers/* {
+		rewrite * /api/customers{uri}
+		reverse_proxy users:8000
+	}
+
 	# ---- BUDGET SERVICE ----
 	handle /api/v1/budgets/* {
 		reverse_proxy budget:8000

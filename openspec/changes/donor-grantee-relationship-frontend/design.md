@@ -19,7 +19,7 @@ This depends entirely on `donor-grantee-relationship-backend`: the `/api/v1/dono
 
 ## Decisions
 
-**1. Grantee's donor picker is a plain `<select>`, not a search box.** A grantee's own approved-donor list (`GET /donor-grantees/?role=grantee`) is expected to be small (a handful of donors at most), fetched once via `useQuery`, no search needed. This matches `AddBudgetModal`'s existing plain-input style — no new component.
+**1. Grantee's donor picker is a plain `<select>`, not a search box.** A grantee's own approved-donor list (`GET /donor-grantees/?request_type=grantee`) is expected to be small (a handful of donors at most), fetched once via `useQuery`, no search needed. This matches `AddBudgetModal`'s existing plain-input style — no new component.
 
 **2. Donor's "add grantee" is a manual-trigger search, not live filtering.** Text input for an NGO name + a search action (button or Enter-to-submit) fires `useQuery` with the search string as part of the query key (or a `useMutation`/manual `refetch`), calling `GET /customers/?is_ngo=true&search=...`. Chosen over live-as-you-type to avoid needing a debounce utility that doesn't exist in this codebase, for a low-frequency action.
 

@@ -13,12 +13,19 @@ class CustomerServiceError(Exception):
 
 
 def get_customer(customer_id: str | uuid.UUID) -> dict:
+    """Uses the no-auth by_ids/ internal endpoint (not GET /customers/{id},
+    which now requires a JWT) since this is a service-to-service call with
+    no user token to forward."""
     try:
-        resp = requests.get(f"{CUSTOMER_SERVICE_URL}{customer_id}")
+        resp = requests.post(f"{CUSTOMER_SERVICE_URL}by_ids/", json=[str(customer_id)])
         resp.raise_for_status()
-        return resp.json()
+        items = resp.json()
     except requests.RequestException as e:
         raise CustomerServiceError(f"Failed to fetch customer {customer_id}") from e
+
+    if not items:
+        raise CustomerServiceError(f"Failed to fetch customer {customer_id}")
+    return items[0]
 
 
 @lru_cache(maxsize=128)
