@@ -76,6 +76,11 @@ async def create_budget_service(
         owner_id = budget.owner_id
 
     if budget.funding_customer_id:
+        # owner_id is always set by this point: either the caller's own
+        # customer_id claim (always present in a valid JWT) or, for a
+        # superuser, budget.owner_id (either client-supplied or the
+        # FIXME fallback above) — never None in practice.
+        assert owner_id is not None
         validate_donor_grantee_relationship(
             budget.funding_customer_id, owner_id, raise_domain_error=True
         )
