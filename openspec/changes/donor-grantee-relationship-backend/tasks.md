@@ -24,7 +24,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 2.3 Wire the check into `create_budget_service` (`services/budget/app/services/budget_services.py`): call `validate_donor_grantee_relationship(funding_customer_id, owner_id)` after `owner_id` is fully resolved (including the superuser-override branch), only when `funding_customer_id` is set.
 - [x] 2.4 Wire the same check into `update_budget_service`: call it after `_resolve_updatable_budget` resolves `valid_budget.owner_id`, whenever the update sets/changes `funding_customer_id`.
 - [x] 2.5 Add `services/budget/tests/test_donor_grantee_gate.py` (mirroring `test_customer_validation.py`'s style, patching `donor_grantee_client.check_donor_grantee_relationship`) plus cases in the existing create/update budget-service tests asserting `DomainError` when the relationship check fails, covering both `create_budget_service` and `update_budget_service` (including the "attach funder via PATCH" bypass scenario).
-- [ ] 2.6 Run budget-service tests and lint clean; PR merged (`Closes` the ticket for this group).
+- [x] 2.6 Run budget-service tests and lint clean; PR merged (`Closes` the ticket for this group).
 
 ## 3. Customer discovery + gateway routes — depends on 1 — ticket #191 (`Platform/Issue-191/customer-discovery-gateway-routes`)
 
