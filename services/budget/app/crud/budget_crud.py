@@ -102,10 +102,18 @@ def update_budget(
         budget.start_date = start_date
     if owner_id is not None:
         budget.owner_id = owner_id
-    if funding_customer_id is not None:
-        budget.funding_customer_id = funding_customer_id
+    # The two funder fields are either/or, so external_funder_name being
+    # explicitly sent (even "") is what signals a funder edit — and it
+    # always carries the correct funding_customer_id alongside it (None to
+    # clear, a UUID to link), letting a grantee switch between a donor-linked
+    # and a free-text funder in one save. A funding_customer_id sent on its
+    # own (no external_funder_name) is still applied directly, e.g. a future
+    # donor-only linking flow that never touches the name field.
     if external_funder_name is not None:
         budget.external_funder_name = external_funder_name
+        budget.funding_customer_id = funding_customer_id
+    elif funding_customer_id is not None:
+        budget.funding_customer_id = funding_customer_id
     # Unlike the "None means don't touch" fields above, these two need to be
     # explicitly clearable (an owner blanking the input to undo a mistaken
     # entry) — so the caller signals presence via the _set flags instead of

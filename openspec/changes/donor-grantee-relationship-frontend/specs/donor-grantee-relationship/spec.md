@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
-### Requirement: Donor manages their grantee list from the dashboard
-The system SHALL provide a UI on the donor dashboard where a donor can view their currently approved grantees, search for an NGO customer by name to approve as a new grantee, and revoke an existing approval, without leaving the dashboard.
+### Requirement: Donor manages their grantee list from Settings
+The system SHALL provide a UI on the Settings page, visible only to donor customers, where a donor can view their currently approved grantees, search for an NGO customer by name to approve as a new grantee, and revoke an existing approval, without leaving Settings.
 
 #### Scenario: Donor views their approved grantees
-- **WHEN** a donor customer opens their dashboard
+- **WHEN** a donor customer opens their Settings page
 - **THEN** the UI displays their current list of approved grantees, fetched from their own donor-side relationship list
 
 #### Scenario: Donor searches for a grantee to add
@@ -20,7 +20,7 @@ The system SHALL provide a UI on the donor dashboard where a donor can view thei
 - **THEN** the UI removes the relationship and the entry disappears from the approved list without a page reload
 
 #### Scenario: No approved grantees yet
-- **WHEN** a donor with zero approved grantees opens their dashboard
+- **WHEN** a donor with zero approved grantees opens Settings
 - **THEN** the UI shows an explicit empty state rather than a blank section
 
 ### Requirement: Grantee selects a donor when creating a budget
@@ -41,3 +41,22 @@ The system SHALL let a grantee, when creating a budget, choose a funding donor f
 #### Scenario: Budget creation without any funder is still possible
 - **WHEN** a grantee submits the add-budget form with neither a donor selected nor a free-text funder name entered
 - **THEN** the budget is created with neither `funding_customer_id` nor `external_funder_name` set, unaffected by this change
+
+### Requirement: Grantee edits an existing budget's funder between an approved donor and a custom name
+The system SHALL let a grantee editing an already-created budget choose the funder from their own approved-donor list or enter a custom name, in either direction, with the same mutual-exclusivity rule as budget creation.
+
+#### Scenario: Editing pre-selects the donor for a donor-linked budget
+- **WHEN** a grantee opens the edit form for a budget whose funder is one of their approved donors
+- **THEN** the donor picker shows that donor selected, and the free-text field is empty and disabled
+
+#### Scenario: Editing pre-fills the custom name for a free-text-funded budget
+- **WHEN** a grantee opens the edit form for a budget whose funder is a free-text name (no linked donor)
+- **THEN** the free-text field shows that name, and no donor is selected in the picker
+
+#### Scenario: Switching a donor-linked budget to a custom funder clears the donor link
+- **WHEN** a grantee clears the donor selection and enters a custom funder name, then saves
+- **THEN** the budget's `funding_customer_id` is explicitly cleared and `external_funder_name` is set to the entered name
+
+#### Scenario: Switching a custom-funded budget to an approved donor clears the custom name
+- **WHEN** a grantee selects an approved donor on a budget that previously had a free-text funder, then saves
+- **THEN** the budget's `funding_customer_id` is set to that donor's id and `external_funder_name` is cleared

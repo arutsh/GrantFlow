@@ -7,6 +7,8 @@ import {
   ProviderStatus,
 } from "@/api/aiSettingsApi";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import { ManageGrantees } from "./components/ManageGrantees";
 
 // Mirrors AIModelName enum from the backend — models the platform officially supports
 const SUPPORTED_MODELS = [
@@ -198,8 +200,8 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
 
       {saveMutation.isError && (
         <p className="text-sm text-red-600 mt-3">
-          {(saveMutation.error as any)?.response?.data?.detail ??
-            "Failed to save"}
+          {(saveMutation.error as { response?: { data?: { detail?: string } } })
+            ?.response?.data?.detail ?? "Failed to save"}
         </p>
       )}
     </section>
@@ -207,6 +209,7 @@ function ProviderCard({ provider }: { provider: ProviderStatus }) {
 }
 
 export default function SettingsPage() {
+  const { isDonor } = useAuth();
   const { data, isLoading } = useQuery({
     queryKey: ["ai-settings"],
     queryFn: getAiSettings,
@@ -222,6 +225,7 @@ export default function SettingsPage() {
         {data?.providers.map((p) => (
           <ProviderCard key={p.name} provider={p} />
         ))}
+        {isDonor && <ManageGrantees />}
       </div>
     </div>
   );

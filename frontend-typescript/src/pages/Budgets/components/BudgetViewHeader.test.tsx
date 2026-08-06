@@ -1,10 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { vi, type Mock } from "vitest";
 import { BudgetViewHeader } from "./BudgetViewHeader";
 import { Budget } from "../types/budget";
 import * as budgetApi from "@/api/budgetApi";
 import * as roleAccess from "@/utils/roleAccess";
+import * as donorGranteeApi from "@/api/donorGranteeApi";
+import * as customerApi from "@/api/customerApi";
 
 vi.mock("@/api/budgetApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/budgetApi")>();
@@ -24,12 +27,54 @@ vi.mock("@/utils/roleAccess", async (importOriginal) => {
   };
 });
 
+// The funder picker (edit mode only) fetches the grantee's approved-donor
+// list — stubbed to empty by default so the rest of this file's tests (which
+// predate the picker) keep exercising the free-text-only path unaffected.
+vi.mock("@/api/donorGranteeApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/donorGranteeApi")>();
+  return {
+    ...actual,
+    listDonorGrantees: vi.fn(),
+  };
+});
+
+vi.mock("@/api/customerApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/customerApi")>();
+  return {
+    ...actual,
+    getCustomersByIds: vi.fn(),
+  };
+});
+
 const editBudgetMock = budgetApi.editBudget as unknown as ReturnType<typeof vi.fn>;
 const getCurrentCustomerIdMock = roleAccess.getCurrentCustomerId as unknown as ReturnType<
   typeof vi.fn
 >;
 const isBudgetOwnerMock = roleAccess.isBudgetOwner as unknown as ReturnType<typeof vi.fn>;
 const isBudgetFunderMock = roleAccess.isBudgetFunder as unknown as ReturnType<typeof vi.fn>;
+const listDonorGranteesMock = donorGranteeApi.listDonorGrantees as unknown as Mock;
+const getCustomersByIdsMock = customerApi.getCustomersByIds as unknown as Mock;
+
+// Set once, not inside a beforeEach — vi.clearAllMocks() (used throughout
+// this file) clears call history but not a mock's configured implementation,
+// so this default survives every describe block's own beforeEach and only
+// needs overriding in the tests that actually exercise the picker.
+listDonorGranteesMock.mockResolvedValue([]);
+
+function renderHeader(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const result = render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return {
+    ...result,
+    // Re-wraps in the same QueryClientProvider instance — a bare
+    // result.rerender(newUi) would replace the whole tree and drop the
+    // provider, breaking every test that rerenders with a new editTrigger.
+    rerender: (nextUi: React.ReactElement) =>
+      result.rerender(<QueryClientProvider client={queryClient}>{nextUi}</QueryClientProvider>),
+  };
+}
 
 function makeBudget(overrides: Partial<Budget> = {}): Budget {
   return {
@@ -52,7 +97,7 @@ describe("BudgetViewHeader confirm action", () => {
   });
 
   it("hides the Confirm Budget action once the budget is already confirmed", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader budget={makeBudget({ status: "confirmed" })} isLocked={false} />,
     );
 
@@ -65,7 +110,7 @@ describe("BudgetViewHeader confirm action", () => {
     isBudgetOwnerMock.mockReturnValue(false);
     isBudgetFunderMock.mockReturnValue(false);
 
-    render(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
 
     expect(
       screen.queryByRole("button", { name: /confirm budget/i }),
@@ -76,19 +121,19 @@ describe("BudgetViewHeader confirm action", () => {
     isBudgetOwnerMock.mockReturnValue(false);
     isBudgetFunderMock.mockReturnValue(true);
 
-    render(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
 
     expect(screen.getByRole("button", { name: /confirm budget/i })).toBeInTheDocument();
   });
 
   it("disables the Confirm Budget button until a start date is picked", () => {
-    render(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
 
     expect(screen.getByRole("button", { name: /confirm budget/i })).toBeDisabled();
   });
 
   it("prefills the start date from budget.start_date, so re-confirming after a cancel doesn't require retyping it", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ start_date: "2026-08-01" })}
         isLocked={false}
@@ -105,7 +150,7 @@ describe("BudgetViewHeader confirm action", () => {
     editBudgetMock.mockResolvedValue(updated);
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget()}
         isLocked={false}
@@ -134,7 +179,7 @@ describe("BudgetViewHeader confirm action", () => {
     editBudgetMock.mockRejectedValue(new Error("rejected"));
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget()}
         isLocked={false}
@@ -163,14 +208,14 @@ describe("BudgetViewHeader status and dates", () => {
   });
 
   it("shows the status badge and omits dates when start_date is unset", () => {
-    render(<BudgetViewHeader budget={makeBudget({ status: "draft" })} isLocked={false} />);
+    renderHeader(<BudgetViewHeader budget={makeBudget({ status: "draft" })} isLocked={false} />);
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2); // start + end date
   });
 
   it("shows start date, backend-computed end date, and status once confirmed", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({
           status: "confirmed",
@@ -197,7 +242,7 @@ describe("BudgetViewHeader edit lock", () => {
   });
 
   it("shows the Edit action when the budget is not locked", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader budget={makeBudget({ status: "draft" })} isLocked={false} />,
     );
 
@@ -205,7 +250,7 @@ describe("BudgetViewHeader edit lock", () => {
   });
 
   it("hides the Edit action once the budget is locked (confirmed)", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader budget={makeBudget({ status: "confirmed" })} isLocked={true} />,
     );
 
@@ -228,7 +273,7 @@ describe("BudgetViewHeader currency-only edit via editTrigger", () => {
     editBudgetMock.mockResolvedValue(makeBudget({ status: "confirmed", actual_currency: "USD" }));
     const onBudgetUpdated = vi.fn();
 
-    const { rerender } = render(
+    const { rerender } = renderHeader(
       <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={onBudgetUpdated} />,
     );
     rerender(
@@ -258,7 +303,7 @@ describe("BudgetViewHeader currency-only edit via editTrigger", () => {
   it("still opens the full edit form via editTrigger when the budget is not locked", async () => {
     const budget = makeBudget({ status: "draft" });
 
-    const { rerender } = render(<BudgetViewHeader budget={budget} isLocked={false} />);
+    const { rerender } = renderHeader(<BudgetViewHeader budget={budget} isLocked={false} />);
     rerender(<BudgetViewHeader budget={budget} isLocked={false} editTrigger={1} />);
 
     expect(screen.getByDisplayValue("Clean Water Phase 1")).toBeInTheDocument();
@@ -274,7 +319,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
   });
 
   it("is hidden on a draft budget", () => {
-    render(<BudgetViewHeader budget={makeBudget({ status: "draft" })} isLocked={false} />);
+    renderHeader(<BudgetViewHeader budget={makeBudget({ status: "draft" })} isLocked={false} />);
 
     expect(
       screen.queryByRole("button", { name: /cancel confirmation/i }),
@@ -284,7 +329,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
   it("is hidden from a non-owner (e.g. the matching funder) on a confirmed budget", () => {
     isBudgetOwnerMock.mockReturnValue(false);
 
-    render(
+    renderHeader(
       <BudgetViewHeader budget={makeBudget({ status: "confirmed" })} isLocked={false} />,
     );
 
@@ -297,7 +342,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     const user = userEvent.setup();
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ status: "confirmed" })}
         isLocked={false}
@@ -319,7 +364,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     const user = userEvent.setup();
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ status: "confirmed" })}
         isLocked={false}
@@ -340,7 +385,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     editBudgetMock.mockResolvedValue(reverted);
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ status: "confirmed" })}
         isLocked={false}
@@ -369,7 +414,7 @@ describe("BudgetViewHeader cancel confirmation", () => {
     });
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ status: "confirmed" })}
         isLocked={true}
@@ -398,7 +443,7 @@ describe("BudgetViewHeader metadata edit", () => {
   });
 
   it("opens ai_draft budgets straight into edit mode", () => {
-    render(
+    renderHeader(
       <BudgetViewHeader budget={makeBudget({ status: "ai_draft" })} isLocked={false} />,
     );
 
@@ -411,7 +456,7 @@ describe("BudgetViewHeader metadata edit", () => {
     editBudgetMock.mockResolvedValue(updated);
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget()}
         isLocked={false}
@@ -428,7 +473,12 @@ describe("BudgetViewHeader metadata edit", () => {
     await waitFor(() =>
       expect(editBudgetMock).toHaveBeenCalledWith("b1", {
         name: "Renamed",
-        external_funder_name: "Donor 7",
+        // makeBudget()'s default funder is donor-linked ({ id: "funder-1" }),
+        // so entering edit mode preselects that donor rather than the
+        // free-text field — external_funder_name stays cleared and
+        // funding_customer_id carries the (unchanged) donor id.
+        external_funder_name: "",
+        funding_customer_id: "funder-1",
         duration_months: 24,
         // Sent as explicit null (not omitted) since the budget never had
         // these set — same as the user clearing them — so the backend
@@ -446,7 +496,7 @@ describe("BudgetViewHeader metadata edit", () => {
     editBudgetMock.mockResolvedValue(updated);
     const onBudgetUpdated = vi.fn();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ actual_currency: "EUR" })}
         isLocked={false}
@@ -481,7 +531,7 @@ describe("BudgetViewHeader metadata edit", () => {
     const updated = makeBudget({ donor_total_amount: null, estimated_exchange_rate: null });
     editBudgetMock.mockResolvedValue(updated);
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({
           actual_currency: "EUR",
@@ -517,7 +567,7 @@ describe("BudgetViewHeader metadata edit", () => {
   it("disables Save and shows an error when the estimated rate is zero or negative", async () => {
     const user = userEvent.setup();
 
-    render(
+    renderHeader(
       <BudgetViewHeader
         budget={makeBudget({ actual_currency: "EUR" })}
         isLocked={false}
@@ -543,7 +593,7 @@ describe("BudgetViewHeader metadata edit", () => {
       actual_currency: "EUR",
     });
 
-    const { rerender } = render(
+    const { rerender } = renderHeader(
       <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={vi.fn()} />,
     );
     rerender(
@@ -552,5 +602,171 @@ describe("BudgetViewHeader metadata edit", () => {
 
     expect(screen.getByText("10000 EUR")).toBeInTheDocument();
     expect(screen.getByText("0.8")).toBeInTheDocument();
+  });
+});
+
+describe("BudgetViewHeader funder picker", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentCustomerIdMock.mockReturnValue("owner-1");
+    isBudgetOwnerMock.mockReturnValue(true);
+    isBudgetFunderMock.mockReturnValue(false);
+    listDonorGranteesMock.mockResolvedValue([]);
+  });
+
+  it("does not render a donor select when the grantee has no approved donors and no existing donor-linked funder", async () => {
+    // A free-text-only funder (no id) — unlike makeBudget()'s default
+    // donor-linked funder, there's no current selection to fall back to, so
+    // this exercises the true "zero options" path.
+    renderHeader(
+      <BudgetViewHeader
+        budget={makeBudget({ funder: { name: "External Co" } })}
+        isLocked={false}
+      />,
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Edit" }));
+
+    await waitFor(() => expect(listDonorGranteesMock).toHaveBeenCalled());
+    // Only the (unrelated) actual-currency select remains — no donor picker.
+    expect(screen.queryByRole("combobox", { name: "Donor" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Custom funder name")).toBeInTheDocument();
+  });
+
+  it("still offers the current donor as an option even when they're no longer in the live approved-donor list", async () => {
+    // Regression test: the donor picker used to be seeded once from
+    // budget.funder.id and never reconciled against the live donors query —
+    // if that donor had since revoked the relationship (so the live list
+    // came back without them), the <select> would silently show blank while
+    // state still held the stale id, and Save would resubmit it.
+    listDonorGranteesMock.mockResolvedValue([]);
+
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Edit" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Donor" })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("option", { name: "Donor 7" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Donor" })).toHaveValue("funder-1");
+  });
+
+  it("preselects the donor option matching a donor-linked funder, with the free-text field cleared and disabled", async () => {
+    const user = userEvent.setup();
+    listDonorGranteesMock.mockResolvedValue([
+      { id: "dg1", donor_id: "funder-1", grantee_id: "owner-1" },
+    ]);
+    getCustomersByIdsMock.mockResolvedValue([
+      { id: "funder-1", name: "Donor 7", country: "GB", is_ngo: false, is_donor: true, currency: "GBP" },
+    ]);
+
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const select = await screen.findByDisplayValue("Donor 7");
+    expect(select.tagName).toBe("SELECT");
+    expect(screen.getByPlaceholderText("Custom funder name")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Custom funder name")).toBeDisabled();
+  });
+
+  it("prefills the free-text field (not the picker) for a free-text-only funder", async () => {
+    const user = userEvent.setup();
+    listDonorGranteesMock.mockResolvedValue([
+      { id: "dg1", donor_id: "d2", grantee_id: "owner-1" },
+    ]);
+    getCustomersByIdsMock.mockResolvedValue([
+      { id: "d2", name: "Other Donor", country: "GB", is_ngo: false, is_donor: true, currency: "GBP" },
+    ]);
+
+    renderHeader(
+      <BudgetViewHeader
+        budget={makeBudget({ funder: { name: "External Co" } })}
+        isLocked={false}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Donor" })).toBeInTheDocument(),
+    );
+    expect(screen.getByPlaceholderText("Custom funder name")).toHaveValue("External Co");
+    expect(screen.getByRole("combobox", { name: "Donor" })).toHaveValue("");
+  });
+
+  it("switching from a donor-linked funder to a custom name sends explicit null for funding_customer_id", async () => {
+    const user = userEvent.setup();
+    const updated = makeBudget({ funder: { name: "New Custom Funder" } });
+    editBudgetMock.mockResolvedValue(updated);
+    listDonorGranteesMock.mockResolvedValue([
+      { id: "dg1", donor_id: "funder-1", grantee_id: "owner-1" },
+    ]);
+    getCustomersByIdsMock.mockResolvedValue([
+      { id: "funder-1", name: "Donor 7", country: "GB", is_ngo: false, is_donor: true, currency: "GBP" },
+    ]);
+
+    renderHeader(
+      <BudgetViewHeader budget={makeBudget()} isLocked={false} onBudgetUpdated={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByDisplayValue("Donor 7");
+
+    // Free text starts disabled (a donor is selected) — clear the donor
+    // first, the only path a real user can take to switch.
+    await user.selectOptions(screen.getByRole("combobox", { name: "Donor" }), "");
+    await user.type(screen.getByPlaceholderText("Custom funder name"), "New Custom Funder");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith(
+        "b1",
+        expect.objectContaining({
+          external_funder_name: "New Custom Funder",
+          funding_customer_id: null,
+        }),
+      ),
+    );
+  });
+
+  it("switching from a free-text funder to a donor sends the donor id and clears external_funder_name", async () => {
+    const user = userEvent.setup();
+    const updated = makeBudget({ funder: { id: "d2", name: "Other Donor" } });
+    editBudgetMock.mockResolvedValue(updated);
+    listDonorGranteesMock.mockResolvedValue([
+      { id: "dg1", donor_id: "d2", grantee_id: "owner-1" },
+    ]);
+    getCustomersByIdsMock.mockResolvedValue([
+      { id: "d2", name: "Other Donor", country: "GB", is_ngo: false, is_donor: true, currency: "GBP" },
+    ]);
+
+    renderHeader(
+      <BudgetViewHeader
+        budget={makeBudget({ funder: { name: "External Co" } })}
+        isLocked={false}
+        onBudgetUpdated={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Donor" })).toBeInTheDocument(),
+    );
+    expect(screen.getByPlaceholderText("Custom funder name")).toHaveValue("External Co");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Donor" }), "d2");
+
+    // Mutual exclusivity: selecting a donor clears the free-text value.
+    expect(screen.getByPlaceholderText("Custom funder name")).toHaveValue("");
+    expect(screen.getByPlaceholderText("Custom funder name")).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith(
+        "b1",
+        expect.objectContaining({
+          external_funder_name: "",
+          funding_customer_id: "d2",
+        }),
+      ),
+    );
   });
 });

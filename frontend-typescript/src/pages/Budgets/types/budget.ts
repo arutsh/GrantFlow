@@ -70,7 +70,11 @@ export interface Budget {
 export interface BudgetUpdate {
   name?: string;
   owner_id?: string;
-  funding_customer_id?: string;
+  // Explicit `null` clears the field on save (switching to a free-text
+  // funder); `undefined` (the key omitted entirely) leaves it unchanged —
+  // same convention as donor_total_amount/estimated_exchange_rate below,
+  // see BudgetViewHeader's saveEdit.
+  funding_customer_id?: string | null;
   external_funder_name?: string;
   duration_months?: number;
   status?: string;
@@ -86,7 +90,7 @@ export interface BudgetPatched {
   id: string;
   name?: string;
   owner_id?: string;
-  funding_customer_id?: string;
+  funding_customer_id?: string | null;
   external_funder_name?: string;
   status?: string;
   duration_months?: number;
