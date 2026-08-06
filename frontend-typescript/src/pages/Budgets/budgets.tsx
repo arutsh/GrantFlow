@@ -82,7 +82,7 @@ const BudgetsPage: React.FC = () => {
             b.name = updatedBudget.name;
             b.funder = {};
             b.funder.name = updatedBudget?.external_funder_name;
-            b.funder.id = updatedBudget?.funding_customer_id;
+            b.funder.id = updatedBudget?.funding_customer_id ?? undefined;
           }
           return b;
         });

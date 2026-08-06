@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { editBudget } from "@/api/budgetApi";
+import { useFunderPicker } from "@/hooks/useFunderPicker";
 import {
   getCurrentCustomerId,
   isBudgetFunder,
@@ -57,9 +58,6 @@ export function BudgetViewHeader({
 }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [name, setName] = useState(budget.name ?? "");
-  const [funderName, setFunderName] = useState(
-    (budget.funder as { name?: string } | null)?.name ?? "",
-  );
   const [durationMonths, setDurationMonths] = useState<number | "">(
     budget.duration_months ?? "",
   );
@@ -96,9 +94,27 @@ export function BudgetViewHeader({
   const currentCustomerId = getCurrentCustomerId();
   const owner = isBudgetOwner(budget, currentCustomerId);
 
+  // Grantee's own approved-donor list, for the funder picker below — only
+  // fetched while actually editing (not the currency-only form, which never
+  // touches funder), same enabled-gating convention as AddBudgetModal.
+  const {
+    donors,
+    isPending: donorsPending,
+    isError: donorsError,
+    selectedDonorId,
+    funderName,
+    handleDonorChange,
+    handleFunderNameChange,
+    reset: resetFunderPicker,
+    hasFunder,
+  } = useFunderPicker(isEditMode && !isCurrencyOnlyEdit, {
+    donorId: budget.funder?.id,
+    donorName: budget.funder?.name,
+  });
+
   const enterEdit = () => {
     setName(budget.name ?? "");
-    setFunderName((budget.funder as { name?: string } | null)?.name ?? "");
+    resetFunderPicker({ donorId: budget.funder?.id, donorName: budget.funder?.name });
     setDurationMonths(budget.duration_months ?? "");
     setActualCurrency(budget.actual_currency ?? "");
     setDonorTotalAmount(budget.donor_total_amount ?? "");
@@ -153,8 +169,14 @@ export function BudgetViewHeader({
               // Always sent (even blank) — this form always carries the
               // budget's full current metadata, so an empty value here
               // means the user intentionally cleared it, not "leave
-              // unchanged".
-              external_funder_name: funderName.trim(),
+              // unchanged". Cleared to "" whenever a donor is selected,
+              // since the two are mutually exclusive.
+              external_funder_name: selectedDonorId ? "" : funderName.trim(),
+              // Also always sent, as explicit `null` when unset — same
+              // "full metadata every save" convention as external_funder_name
+              // above, so switching away from a donor-linked funder actually
+              // clears funding_customer_id instead of leaving it stale.
+              funding_customer_id: selectedDonorId || null,
               duration_months:
                 durationMonths !== "" ? Number(durationMonths) : undefined,
               actual_currency: actualCurrency.trim() || undefined,
@@ -215,6 +237,7 @@ export function BudgetViewHeader({
                       isSaving ||
                       (!isCurrencyOnlyEdit &&
                         (!name.trim() ||
+                          !hasFunder ||
                           (durationMonths !== "" && durationMonths < 1) ||
                           donorAmountInvalid ||
                           estimatedRateInvalid))
@@ -251,13 +274,44 @@ export function BudgetViewHeader({
               </span>
               {ownerTypeLabel(budget.owner)}
               <span className="text-slate-300">→</span>
+              {donors.length > 0 && (
+                <select
+                  aria-label="Donor"
+                  value={selectedDonorId}
+                  onChange={(e) => handleDonorChange(e.target.value)}
+                  disabled={isSaving}
+                  className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  <option value="">— choose an approved donor —</option>
+                  {donors.map((donor) => (
+                    <option key={donor.id} value={donor.id}>
+                      {donor.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {donors.length > 0 && <span className="text-slate-300 text-xs">or</span>}
               <input
                 type="text"
                 value={funderName}
-                onChange={(e) => setFunderName(e.target.value)}
-                disabled={isSaving}
-                className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                onChange={(e) => handleFunderNameChange(e.target.value)}
+                disabled={isSaving || !!selectedDonorId}
+                placeholder="Custom funder name"
+                className="border border-slate-300 rounded-lg px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-100"
               />
+              {donors.length === 0 && donorsError && (
+                <span className="text-xs text-red-500">
+                  Failed to load your approved donors.
+                </span>
+              )}
+              {donors.length === 0 && !donorsError && !donorsPending && (
+                <span className="text-xs text-slate-400">No approved donors yet.</span>
+              )}
+              {!hasFunder && (
+                <span className="text-xs text-red-500">
+                  Select a donor or enter a funder name.
+                </span>
+              )}
             </div>
           ) : (
             <p className="text-sm text-slate-500 mt-1">

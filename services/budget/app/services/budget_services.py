@@ -117,7 +117,22 @@ def _is_metadata_edit(budget: BudgetCreate) -> bool:
     ever appears on an already-confirmed budget (see budget-report-frontend
     tasks.md 6.7), so locking it the same as name/duration would make that
     flow permanently unreachable. A payload that also touches any other
-    metadata field alongside actual_currency is still blocked as usual."""
+    metadata field alongside actual_currency is still blocked as usual.
+
+    funding_customer_id/donor_total_amount/estimated_exchange_rate are
+    checked via model_fields_set, not `is not None` — those three support an
+    explicit-null clear (see their _set kwargs on update_budget), and an
+    `is not None` check would miss a clear-only payload entirely, letting a
+    confirmed budget's funder/commitment be cleared without tripping this
+    lock. The rest can't be meaningfully cleared to null in this domain, so
+    `is not None` still correctly reflects whether they were touched.
+    """
+    if budget.model_fields_set & {
+        "funding_customer_id",
+        "donor_total_amount",
+        "estimated_exchange_rate",
+    }:
+        return True
     return any(
         value is not None
         for value in (
@@ -125,12 +140,24 @@ def _is_metadata_edit(budget: BudgetCreate) -> bool:
             budget.duration_months,
             budget.local_currency,
             budget.external_funder_name,
-            budget.funding_customer_id,
             budget.owner_id,
-            budget.donor_total_amount,
-            budget.estimated_exchange_rate,
         )
     )
+
+
+def _effective_funder_after_update(
+    budget: BudgetCreate, existing: BudgetModel
+) -> tuple[UUID | None, str | None]:
+    """Mirrors update_budget's own funding_customer_id/external_funder_name
+    combination rule (funding_customer_id is only replaced/cleared when
+    external_funder_name is explicitly sent alongside it — see the crud
+    layer) so the either/or check below reflects what would actually persist,
+    not just the raw payload."""
+    if budget.external_funder_name is not None:
+        return budget.funding_customer_id, budget.external_funder_name
+    if budget.funding_customer_id is not None:
+        return budget.funding_customer_id, existing.external_funder_name
+    return existing.funding_customer_id, existing.external_funder_name
 
 
 def _resolve_updatable_budget(
@@ -233,6 +260,17 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         validate_donor_grantee_relationship(
             budget.funding_customer_id, owner_id or valid_budget.owner_id, raise_domain_error=True
         )
+
+    funder_touched = budget.model_fields_set & {"external_funder_name", "funding_customer_id"}
+    if funder_touched:
+        eff_funding_customer_id, eff_external_funder_name = _effective_funder_after_update(
+            budget, valid_budget
+        )
+        if not eff_funding_customer_id and not eff_external_funder_name:
+            raise DomainError(
+                "Budget must have either an approved donor or a funder name",
+                status.HTTP_400_BAD_REQUEST,
+            )
 
     if budget.status == BudgetStatus.confirmed:
         effective_start_date = budget.start_date or valid_budget.start_date
