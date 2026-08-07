@@ -1,12 +1,10 @@
 # GrantFlow
 
-**Version:** 0.1.0 · **Last updated:** 2026-07-19
+**Version:** 0.1.0 · **Last updated:** 2026-08-07
 
 GrantFlow is an open-source platform for budget management and financial reporting in NGOs and donor organizations. It was born from 20 years of watching organizations manage grant budgets in incompatible Excel files — and a belief that modern software engineering can fix that.
 
 > **Status:** Active development — not yet production-ready.
-
-> **In-progress migration:** the AI chat stack is moving to a dedicated `chat-service` ("agent host") that owns conversation history and tool dispatch, so `ai-service` becomes pure stateless reasoning. This document describes the target architecture. Merged so far: #87–#90 (safety-net tests, frontend URL context, `shared/ai_client`, ai's `POST /ai/decide`). Next up: **#95 — retire ai's legacy chat stack** (`chat_routes.py`, `chat_orchestrator.py`, `chat_agent.py`, session tables). See [`openspec/changes/ai-chat-agent-host-migration/`](openspec/changes/ai-chat-agent-host-migration/) for the full proposal, design, and live task status.
 
 → **[Product Overview](docs/PRODUCT.md)** — what GrantFlow does, who it's for, and why it exists.
 
@@ -279,10 +277,13 @@ GrantFlow/
 ├── shared/                 # Shared Python library
 │   ├── ai_client/          # In-process client for ai-service's /ai/decide (retries, timeouts, decision parsing)
 │   ├── db/                 # Audit mixin, custom column types
+│   ├── exceptions/         # Shared exception types
 │   ├── observability/      # OpenTelemetry setup
 │   ├── schemas/            # Pydantic schemas (cross-service)
 │   ├── security/           # JWT utils, FastAPI auth dependencies
-│   └── utils/              # HTTP client wrapper, currency service
+│   ├── services/           # Currency service
+│   ├── storage/            # S3-compatible storage service (report attachments)
+│   └── utils/              # HTTP client wrapper
 └── services/
     ├── users/              # FastAPI: users, customers, auth
     ├── budget/             # FastAPI: budgets, budget lines
@@ -322,6 +323,8 @@ GitHub Actions runs on every push/PR touching a service or `shared/`:
 | `worker.yml` | `services/worker/**` | black · flake8 · pytest |
 | `shared.yml` | `shared/**` | black · flake8 · pytest (`shared/ai_client`, `shared/tests`) |
 | `frontend.yml` | `frontend-typescript/**` | vitest (with coverage) |
+| `compose.yml` | compose files, `.env*` (changed paths) | Docker Compose Validation — config lint |
+| `deploy.yml` | push to `main` | Deploy to VPS over SSH (`workflow_dispatch` also) |
 
 ---
 

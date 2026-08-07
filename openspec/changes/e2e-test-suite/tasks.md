@@ -10,10 +10,10 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 2. Playwright API-chain suite (Phase 1)
 
-- [ ] 2.1 Add `@playwright/test` to `frontend-typescript/devDependencies`; scaffold `frontend-typescript/e2e/playwright.config.ts` with two `projects`: `api` (no browser, `request` fixture, `baseURL` pointed at the nginx gateway) and `browser` (chromium, `baseURL: 'http://localhost:4000'`)
-- [ ] 2.2 Create `frontend-typescript/e2e/specs/api/auth-budget-chain.spec.ts` with the chain: register → login (capture JWT from the response body) → create budget → add budget line → update budget line → get budget (assert totals reflect lines) → delete budget line → delete budget, using an authenticated `request` context for each authenticated step
-- [ ] 2.3 Add unique-fixture-data generation (e.g. `crypto.randomUUID()` in the register step) so repeated runs never collide
-- [ ] 2.4 Run the `api` project locally against a `local.sh up` stack and confirm all assertions pass twice in a row with no manual cleanup between runs
+- [x] 2.1 Add `@playwright/test` to `frontend-typescript/devDependencies`; scaffold `frontend-typescript/e2e/playwright.config.ts` with two `projects`: `api` (no browser, `request` fixture, `baseURL` pointed at the nginx gateway) and `browser` (chromium, `baseURL: 'http://localhost:4000'`)
+- [x] 2.2 Create `frontend-typescript/e2e/specs/api/auth-budget-chain.spec.ts` with the chain: register → login (capture JWT from the response body) → create budget → add budget line → update budget line → get budget (assert totals reflect lines) → delete budget line → delete budget, using an authenticated `request` context for each authenticated step *(chain also inserts an onboarding step between register and login — `PATCH /api/v1/users/{id}/` with `new_customer_name` — discovered to be required: `BudgetModel.owner_id` is `NOT NULL` and is set from the JWT's `customer_id` claim, which a freshly-registered user doesn't have until an org/customer is attached; the immediately-following login re-issues a token whose claims carry the new `customer_id`, matching the real Register→Onboarding→Dashboard frontend flow (`src/pages/OnBoarding.tsx`))*
+- [x] 2.3 Add unique-fixture-data generation (e.g. `crypto.randomUUID()` in the register step) so repeated runs never collide
+- [x] 2.4 Run the `api` project locally against a `local.sh up` stack and confirm all assertions pass twice in a row with no manual cleanup between runs *(ran 3x consecutively against the already-running `local.sh up` stack, all green, zero manual cleanup)*
 
 ## 3. Playwright browser suite (Phase 2)
 
