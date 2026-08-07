@@ -257,6 +257,18 @@ Everything runs in Docker — intended for demos, integration testing, or sharin
 ./local.sh shell [SERVICE] # Open a shell in a container (default: users)
 ```
 
+### Running e2e tests locally
+
+The Playwright suite (`frontend-typescript/e2e/`) covers the auth + budget CRUD journey — both at the API layer (`api` project, no browser) and through the real browser UI (`browser` project, chromium) — against the local-mode stack:
+
+```bash
+./local.sh up
+# once containers are healthy:
+npx playwright test --config=frontend-typescript/e2e/playwright.config.ts
+```
+
+Scope is deliberately narrow for this first suite: auth + budget CRUD only. AI chat and donor-dashboard/donor-grantee-relationship flows are excluded for now — a fast-follow, not a technical blocker; see `frontend-typescript/e2e/README.md` and `openspec/changes/e2e-test-suite/` for the full rationale and local-run details (cleanup convention, `local` vs `dev` port notes).
+
 ---
 
 ## Project Structure
@@ -324,6 +336,7 @@ GitHub Actions runs on every push/PR touching a service or `shared/`:
 | `shared.yml` | `shared/**` | black · flake8 · pytest (`shared/ai_client`, `shared/tests`) |
 | `frontend.yml` | `frontend-typescript/**` | vitest (with coverage) |
 | `compose.yml` | compose files, `.env*` (changed paths) | Docker Compose Validation — config lint |
+| `e2e.yml` | `services/users/**`, `services/budget/**`, `shared/**`, `frontend-typescript/**` (also `workflow_dispatch`) | Boots the local-mode stack · Playwright `api` + `browser` projects · teardown |
 | `deploy.yml` | push to `main` | Deploy to VPS over SSH (`workflow_dispatch` also) |
 
 ---

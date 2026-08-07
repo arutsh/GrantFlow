@@ -216,11 +216,15 @@ services:
     build:
       context: ./frontend-typescript
       dockerfile: Dockerfile
+      # Vite inlines import.meta.env.* at `npm run build` time, inside this
+      # build stage — a runtime `environment:` entry never reaches it (the
+      # served output is a static bundle with no process to read env from).
+      # Must be a build arg, not a runtime env var.
+      args:
+        - VITE_API_GATEWAY=${FRONTEND_API_GATEWAY}
     container_name: frontend-local
     ports:
       - "4000:80"
-    environment:
-      - VITE_API_BASE=${FRONTEND_API_BASE}
     depends_on:
       - users
       - budget

@@ -1,0 +1,77 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            relevant:
+              - "services/users/**"
+              - "services/budget/**"
+              - "shared/**"
+              - "frontend-typescript/**"
+              - ".github/workflows/e2e.yml"
+
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright and browsers
+        working-directory: ./frontend-typescript
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Excludes ai/chat/worker/beat — out of scope for this suite (see
+      # design.md Decision 1) and some require provider API keys/RabbitMQ
+      # consumers not needed for the auth+budget CRUD journey.
+      - name: Boot the local stack
+        run: |
+          docker compose -f docker-compose.local.yml --env-file .env.local \
+            up -d --build grandflow-db redis rabbitmq users budget frontend nginx
+
+      - name: Wait for services to be healthy
+        run: |
+          for path in api/v1/users/health api/v1/budgets/health; do
+            echo "Waiting for $path..."
+            for i in $(seq 1 30); do
+              if curl -sf "http://localhost:9082/$path" > /dev/null; then
+                echo "$path is healthy"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "$path did not become healthy in time"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+
+      - name: Run Playwright e2e suite
+        working-directory: ./frontend-typescript
+        run: npx playwright test --config=e2e/playwright.config.ts
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose -f docker-compose.local.yml --env-file .env.local down -v

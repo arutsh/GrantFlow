@@ -17,20 +17,20 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 
 ## 3. Playwright browser suite (Phase 2)
 
-- [ ] 3.1 Add the `browser` project's spec directory under `e2e/specs/browser/`
-- [ ] 3.2 Add a thin page-object layer: `e2e/pages/LoginPage.ts`, `e2e/pages/BudgetListPage.ts`, `e2e/pages/BudgetDetailPage.ts`
-- [ ] 3.3 Write `e2e/specs/browser/auth-budget-crud.spec.ts`: register/login through the real form, create a budget, add and edit a budget line, verify totals in the UI, delete the budget — using Playwright's auto-waiting assertions only (no manual sleeps)
-- [ ] 3.4 Run the spec locally against a `local.sh up` stack and confirm it passes twice in a row with no manual cleanup between runs
+- [x] 3.1 Add the `browser` project's spec directory under `e2e/specs/browser/`
+- [x] 3.2 Add a thin page-object layer: `e2e/pages/LoginPage.ts`, `e2e/pages/BudgetListPage.ts`, `e2e/pages/BudgetDetailPage.ts`
+- [x] 3.3 Write `e2e/specs/browser/auth-budget-crud.spec.ts`: register/login through the real form, create a budget, add and edit a budget line, verify totals in the UI, delete the budget — using Playwright's auto-waiting assertions only (no manual sleeps) *(register → onboard → logout → log back in through the login form → budget CRUD, all via UI. The budget-lines table groups rows by category and starts collapsed with no accessible name on the expand toggle — added a `title` to `Table.tsx`'s expander button so the suite (and screen readers) can target it.)*
+- [x] 3.4 Run the spec locally against a `local.sh up` stack and confirm it passes twice in a row with no manual cleanup between runs *(passed 2x consecutively, plus a combined `api`+`browser` run. Three real, pre-existing bugs found and fixed along the way: (1) the `frontend` container's bare nginx image had no SPA fallback, so any direct/deep-link navigation — `/register`, `/login`, a browser refresh on any nested route — 404'd; added `frontend-typescript/nginx.frontend.conf` with `try_files ... /index.html` and wired it into the Dockerfile. (2) `docker-compose.local.yml` set a `VITE_API_BASE` runtime env var the frontend code never reads (it reads `VITE_API_GATEWAY`) — and worse, Vite inlines `import.meta.env.*` at `npm run build` time inside the Dockerfile's build stage, so a runtime `environment:` entry can never reach it regardless of name. The local frontend was silently falling back to its `localhost:8082` default (the *dev* stack's gateway, not local's 9082) on every build. Fixed by renaming to `FRONTEND_API_GATEWAY` in `.env.local` and switching the compose service to pass it as a `build.args` entry, with `Dockerfile` declaring `ARG`/`ENV VITE_API_GATEWAY` before the build step. (3) `AddBudgetLineModal` (`AddBudgetLine.tsx`) sent `category_id: ""` instead of omitting it whenever a budget line was added without picking a category (the default, most common case) — the backend 422s on an empty-string UUID, so adding an uncategorized budget line was broken for every real user, not just this test. Fixed the ternary to treat a falsy `categoryName` the same as `"__new"`.)*
 
 ## 4. CI wiring
 
-- [ ] 4.1 Create `.github/workflows/e2e.yml` following the existing `dorny/paths-filter` pattern (see `budget.yml`), filtered on `services/users/**`, `services/budget/**`, `shared/**`, `frontend-typescript/**`, plus `workflow_dispatch`
-- [ ] 4.2 Add the boot step (`docker compose ... up -d --build` for the scoped service list) and a wait-for-healthy step using the endpoint(s) added in 1.2
-- [ ] 4.3 Add the `npx playwright test` step, running both the `api` and `browser` projects
-- [ ] 4.4 Add an `if: always()` teardown step (`docker compose down -v`) so failed runs don't leak containers/volumes on the runner
+- [x] 4.1 Create `.github/workflows/e2e.yml` following the existing `dorny/paths-filter` pattern (see `budget.yml`), filtered on `services/users/**`, `services/budget/**`, `shared/**`, `frontend-typescript/**`, plus `workflow_dispatch`
+- [x] 4.2 Add the boot step (`docker compose ... up -d --build` for the scoped service list) and a wait-for-healthy step using the endpoint(s) added in 1.2
+- [x] 4.3 Add the `npx playwright test` step, running both the `api` and `browser` projects
+- [x] 4.4 Add an `if: always()` teardown step (`docker compose down -v`) so failed runs don't leak containers/volumes on the runner
 - [ ] 4.5 Push a throwaway branch touching `services/budget/**` to confirm the workflow triggers, boots the stack, runs both projects, and tears down correctly; confirm a branch touching only `services/ai/**` does NOT trigger it
 
 ## 5. Documentation
 
-- [ ] 5.1 Update root `README.md` (or `docs/setup/`) with a short "Running e2e tests locally" section pointing at `local.sh up` and the Playwright suite (`api` + `browser` projects)
-- [ ] 5.2 Note the explicit scope boundary (auth + budget CRUD only; AI chat and donor-dashboard/donor-grantee-relationship deliberately deferred as a fast-follow even though both have since stabilized) so future contributors know where to extend coverage
+- [x] 5.1 Update root `README.md` (or `docs/setup/`) with a short "Running e2e tests locally" section pointing at `local.sh up` and the Playwright suite (`api` + `browser` projects)
+- [x] 5.2 Note the explicit scope boundary (auth + budget CRUD only; AI chat and donor-dashboard/donor-grantee-relationship deliberately deferred as a fast-follow even though both have since stabilized) so future contributors know where to extend coverage *(README's new section links to `frontend-typescript/e2e/README.md` and the openspec change for the full scope rationale; `e2e.yml`'s CI table row added alongside the other per-service workflows.)*
