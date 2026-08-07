@@ -67,27 +67,25 @@ function BudgetAmountCells({ budget }: { budget: FundedBudgetListItem }) {
   );
 }
 
-function BudgetAmountBlock({ budget }: { budget: FundedBudgetListItem }) {
+// Compact mobile-row counterpart to BudgetAmountCells — same three figures
+// (donor-currency total, real local total, rate), read as one right-aligned
+// stack instead of a labeled 3-column grid, so a budget reads as a single
+// scannable list row rather than a card.
+function BudgetAmountInline({ budget }: { budget: FundedBudgetListItem }) {
   const converted = donorCurrencyTotal(budget);
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <div>
-        <div className="text-[10px] uppercase tracking-wide text-slate-400">Total Amount</div>
-        <div className="font-semibold text-slate-900 tabular-nums">
-          {converted != null ? formatCurrency(converted, budget.actual_currency) : "—"}
-        </div>
+    <div className="text-right flex-shrink-0">
+      <div className="text-sm font-semibold text-slate-900 tabular-nums">
+        {converted != null ? formatCurrency(converted, budget.actual_currency) : "—"}
       </div>
-      <div>
-        <div className="text-[10px] uppercase tracking-wide text-slate-400">Total in Local</div>
-        <div className="text-slate-600 tabular-nums">
+      <div className="text-[10px] text-slate-400 tabular-nums">
+        <span>
           {budget.total_amount != null
             ? formatCurrency(budget.total_amount, budget.local_currency)
             : "—"}
-        </div>
-      </div>
-      <div>
-        <div className="text-[10px] uppercase tracking-wide text-slate-400">Est. Rate</div>
-        <div className="text-slate-500 tabular-nums">{budget.estimated_exchange_rate ?? "—"}</div>
+        </span>
+        {" · rate "}
+        <span>{budget.estimated_exchange_rate ?? "—"}</span>
       </div>
     </div>
   );
@@ -95,7 +93,7 @@ function BudgetAmountBlock({ budget }: { budget: FundedBudgetListItem }) {
 
 function GranteeCard({ grantee, colorClass }: { grantee: GranteeSummary; colorClass: string }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
+    <div className="w-64 flex-shrink-0 snap-start sm:w-auto sm:flex-shrink sm:snap-align-none bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-3">
       <div className="flex items-center gap-3">
         <div
           className={`w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0 ${colorClass}`}
@@ -260,7 +258,7 @@ export default function DonorDashboard() {
               title="Grantees"
               hint={`${grantees.length} ${grantees.length === 1 ? "organisation" : "organisations"} funded`}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible sm:snap-none sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
               {grantees.map((grantee, i) => (
                 <GranteeCard
                   key={grantee.id ?? grantee.name ?? i}
@@ -330,23 +328,27 @@ export default function DonorDashboard() {
                   </table>
                 </div>
 
-                {/* Mobile: stacked cards instead of a table */}
-                <div className="sm:hidden flex flex-col gap-3">
+                {/* Mobile: compact list rows instead of a table */}
+                <div className="sm:hidden flex flex-col gap-2">
                   {confirmedBudgets.map((budget) => (
                     <div
                       key={budget.id}
-                      className="bg-white shadow rounded p-4 flex flex-col gap-2"
+                      className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="text-sm font-semibold text-slate-900">
-                          {budget.name}
-                        </span>
-                        <StatusBadge status={budget.status} />
+                      <div className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-900 truncate">
+                              {budget.name}
+                            </span>
+                            <StatusBadge status={budget.status} />
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5 truncate">
+                            {budget.owner?.name ?? "—"}
+                          </div>
+                        </div>
+                        <BudgetAmountInline budget={budget} />
                       </div>
-                      <span className="text-xs text-slate-500">
-                        {budget.owner?.name ?? "—"}
-                      </span>
-                      <BudgetAmountBlock budget={budget} />
                       <div className="flex gap-2">
                         <BudgetActions budgetId={budget.id} />
                       </div>

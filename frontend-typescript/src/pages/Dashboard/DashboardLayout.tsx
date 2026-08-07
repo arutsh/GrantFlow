@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Menu,
   X,
   Home,
   FileText,
@@ -11,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import Button from "../../components/ui/Button";
 import { AIChatPanel } from "@/pages/Budgets/components/AIChatPanel";
 import { useAiChat } from "@/context/AiChatContext";
 import { useAuth } from "@/context/AuthContext";
@@ -24,7 +22,14 @@ interface DashboardLayoutProps {
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  // Below `md:` the sidebar is an off-canvas drawer, closed by default —
+  // there used to be a shared `isOpen` boolean defaulting to `true` that
+  // was meant to also drive a desktop collapse-to-icons mode, but its only
+  // toggle button was `md:hidden`, so that mode was never reachable and the
+  // `true` default just leaked into mobile as a permanently-visible rail.
+  // At `md:`+ the sidebar is simply always expanded, same as it always
+  // rendered in practice.
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isGranteesExpanded, setIsGranteesExpanded] = useState(false);
   const { isAiOpen, toggleAi } = useAiChat();
   const { isDonor } = useAuth();
@@ -34,27 +39,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed md:static top-0 left-0 h-full z-20
-          bg-slate-700 text-white transition-all duration-300 flex flex-col
-          ${isOpen ? "w-64" : "w-16"}
+          fixed md:static top-0 left-0 h-full z-20 w-[78%] max-w-[270px] md:max-w-none md:w-64
+          bg-slate-700 text-white transition-transform duration-300 flex flex-col
+          ${isMobileDrawerOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
         `}
       >
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-2 overflow-hidden">
             <img src={ogfIcon} alt="" className="h-7 w-auto flex-shrink-0" />
-            {isOpen && (
-              <span className="font-bold text-base whitespace-nowrap">
-                Open Grant <span className="text-teal-400">Flow</span>
-              </span>
-            )}
+            <span className="font-bold text-base whitespace-nowrap">
+              Open Grant <span className="text-teal-400">Flow</span>
+            </span>
           </div>
-          <Button
-            variant="icon"
-            onClick={() => setIsOpen(!isOpen)}
-            className="text-white md:hidden"
+          <button
+            type="button"
+            onClick={() => setIsMobileDrawerOpen(false)}
+            aria-label="Close navigation menu"
+            className="p-2 rounded-lg text-white hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400 md:hidden"
           >
-            {isOpen ? <X size={24} /> : <Menu size={24} />}
-          </Button>
+            <X size={24} />
+          </button>
         </div>
 
         <nav className="flex-1">
@@ -65,7 +69,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <Home size={20} />
-                {isOpen && <span>Dashboard</span>}
+                <span>Dashboard</span>
               </Link>
             </li>
             <li>
@@ -74,7 +78,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <FileText size={20} />
-                {isOpen && <span>Budgets</span>}
+                <span>Budgets</span>
               </Link>
             </li>
             <li>
@@ -83,7 +87,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
               >
                 <BarChart3 size={20} />
-                {isOpen && <span>Reports</span>}
+                <span>Reports</span>
               </Link>
             </li>
             {isDonor && <li className="my-2 border-t border-slate-600" />}
@@ -94,18 +98,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   className="w-full flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
                 >
                   <HeartHandshake size={20} />
-                  {isOpen && (
-                    <>
-                      <span className="flex-1 text-left">Grantees</span>
-                      {isGranteesExpanded ? (
-                        <ChevronDown size={16} />
-                      ) : (
-                        <ChevronRight size={16} />
-                      )}
-                    </>
+                  <span className="flex-1 text-left">Grantees</span>
+                  {isGranteesExpanded ? (
+                    <ChevronDown size={16} />
+                  ) : (
+                    <ChevronRight size={16} />
                   )}
                 </button>
-                {isOpen && isGranteesExpanded && (
+                {isGranteesExpanded && (
                   <ul className="mt-1 space-y-1">
                     <li
                       className="px-4 py-2 pl-11 text-sm text-slate-400 cursor-default"
@@ -141,7 +141,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
           >
             <Settings size={20} className="flex-shrink-0" />
-            {isOpen && <span className="text-sm font-medium">Settings</span>}
+            <span className="text-sm font-medium">Settings</span>
           </NavLink>
         </div>
 
@@ -157,24 +157,25 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             }`}
           >
             <Sparkles size={20} className="flex-shrink-0" />
-            {isOpen && <span className="text-sm font-medium">AI Mode</span>}
+            <span className="text-sm font-medium">AI Mode</span>
           </button>
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
-      {isOpen && (
+      {/* Scrim — mounted only while the mobile drawer is open, so it never
+          outlives the drawer it's dimming for. */}
+      {isMobileDrawerOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-10 md:hidden"
-          onClick={() => setIsOpen(false)}
+          onClick={() => setIsMobileDrawerOpen(false)}
         />
       )}
 
       {/* Main content + AI panel, with a global top bar above both */}
       <div className="flex flex-col flex-1 overflow-hidden">
-        <TopBar />
+        <TopBar onOpenMenu={() => setIsMobileDrawerOpen(true)} />
         <div className="flex flex-1 overflow-hidden">
-          <main className="flex-1 p-8 overflow-auto bg-gray-50">{children}</main>
+          <main className="flex-1 p-4 sm:p-8 overflow-auto bg-gray-50">{children}</main>
 
           {isAiOpen && <AIChatPanel />}
         </div>

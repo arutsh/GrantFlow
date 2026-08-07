@@ -1,14 +1,14 @@
 ## ADDED Requirements
 
 ### Requirement: Verification email on registration
-The system SHALL generate a single-use, expiring email verification token when a new user registers, and SHALL enqueue delivery of a confirmation email containing a verification link to the registrant's email address via Mailtrap, without blocking the registration response on delivery.
+The system SHALL generate a single-use, expiring email verification token when a new user registers, and SHALL enqueue delivery of a confirmation email containing a verification link to the registrant's email address via MailerSend, without blocking the registration response on delivery.
 
 #### Scenario: Successful registration enqueues a verification email
 - **WHEN** a new user completes `POST /register` with a valid, unique email
 - **THEN** the account is created with `email_verified = false`, a hashed verification token and expiry are stored, and a task to send the confirmation email is enqueued on the users worker queue
 
 #### Scenario: Registration response does not wait on email delivery
-- **WHEN** the Mailtrap send takes longer than the request lifecycle, or temporarily fails
+- **WHEN** the MailerSend send takes longer than the request lifecycle, or temporarily fails
 - **THEN** `POST /register` still returns success to the client based on account creation alone, not on email delivery completing
 
 ### Requirement: Email verification endpoint

@@ -4,8 +4,8 @@ Today `POST /register` in the users service creates an account in `UserStatus.pe
 
 ## What Changes
 
-- Add a transactional email client wrapping the Mailtrap Sending API (token/config driven, no provider code exists in the repo today).
-- On registration, generate a single-use, expiring verification token and send a confirmation email via Mailtrap **asynchronously** through the existing (currently unused) `tasks.users.*` Celery queue in `services/worker`, instead of blocking the request thread.
+- Add a transactional email client wrapping the MailerSend Email API (EU-based provider; token/config driven, no provider code exists in the repo today).
+- On registration, generate a single-use, expiring verification token and send a confirmation email via MailerSend **asynchronously** through the existing (currently unused) `tasks.users.*` Celery queue in `services/worker`, instead of blocking the request thread.
 - Add `POST /auth/verify-email` (consumes the token) and `POST /auth/resend-verification` endpoints to the users service.
 - Add an `email_verified` flag to the `User` model/schema, distinct from the existing `status` (active/pending/disabled) enum, and include it as a JWT claim alongside the existing `is_ngo`/`is_donor` role flags.
 - **BREAKING**: Gate the onboarding flow — a user whose token does not carry `email_verified: true` is redirected to a "confirm your email" screen instead of `/onboarding`, until they click the link or complete verification.
@@ -14,17 +14,17 @@ Today `POST /register` in the users service creates an account in `UserStatus.pe
 ## Capabilities
 
 ### New Capabilities
-- `email-verification`: registration-time confirmation emails (via Mailtrap), token verification/resend endpoints, the `email_verified` user state and JWT claim, and the onboarding gate that depends on it.
+- `email-verification`: registration-time confirmation emails (via MailerSend), token verification/resend endpoints, the `email_verified` user state and JWT claim, and the onboarding gate that depends on it.
 
 ### Modified Capabilities
 - None — `openspec/specs/` has no existing capability specs yet, so there is nothing to modify; this change establishes the first one.
 
 ## Impact
 
-- **services/users**: `app/models/user.py` (new `email_verified` field + verification token storage), `app/crud/user_crud.py`, `app/api/auth_routes.py` (new endpoints, updated claims helper, registration flow), config for `MAILTRAP_API_TOKEN`/sender address.
+- **services/users**: `app/models/user.py` (new `email_verified` field + verification token storage), `app/crud/user_crud.py`, `app/api/auth_routes.py` (new endpoints, updated claims helper, registration flow), config for `MAILERSEND_API_TOKEN`/sender address.
 - **shared/schemas/user_schema.py**: schema updates for the new field.
 - **shared/security/jwt_utils.py** / claims helpers in `auth_routes.py`: add `email_verified` to the token payload alongside `is_ngo`/`is_donor`.
-- **services/worker**: new Celery task under the existing `tasks.users` queue to send the verification email via Mailtrap; new dependency on a Mailtrap SDK/HTTP client.
+- **services/worker**: new Celery task under the existing `tasks.users` queue to send the verification email via MailerSend; new dependency on a MailerSend SDK/HTTP client.
 - **frontend-typescript**: `Register.tsx`, `Login.tsx`, `OnBoarding.tsx`/`App.tsx` routing, new verify-email page and "check your email" screen, corresponding API calls.
-- **New environment variables**: Mailtrap API token and sender identity, added to service env config (values themselves are not committed).
+- **New environment variables**: MailerSend API token and sender identity, added to service env config (values themselves are not committed).
 - **Database**: migration for the new `email_verified` column (and verification token/expiry storage) on the users table.

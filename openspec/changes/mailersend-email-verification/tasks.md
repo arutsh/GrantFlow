@@ -5,10 +5,10 @@
 - [ ] 1.3 Write Alembic migration adding the new columns, with a data migration step that sets `email_verified = true` for all pre-existing rows
 - [ ] 1.4 Apply migration locally and confirm existing seeded/test users come back as verified
 
-## 2. Mailtrap client & async send
+## 2. MailerSend client & async send
 
-- [ ] 2.1 Add `MAILTRAP_API_TOKEN`, `MAILTRAP_MODE` (sandbox|live), and sender address to service env config (do not commit real token values)
-- [ ] 2.2 Build a small Mailtrap HTTP client wrapper (sending API) shared by the users service and worker
+- [ ] 2.1 Add `MAILERSEND_API_TOKEN` and `MAILERSEND_SENDER_DOMAIN` (trial domain in dev/staging, verified domain in prod) to service env config (do not commit real token values)
+- [ ] 2.2 Build a small MailerSend HTTP client wrapper (Email API) shared by the users service and worker
 - [ ] 2.3 Add `tasks.users.send_verification_email` Celery task in `services/worker`, wired to the existing `tasks.users` queue, with retry/backoff on failure
 - [ ] 2.4 Add a verification email template (subject/body with the verification link)
 
@@ -30,7 +30,7 @@
 
 ## 5. Tests
 
-- [ ] 5.1 Backend: registration enqueues the send task and stores a hashed token (mock/assert on the Celery task call, not a real Mailtrap send)
+- [ ] 5.1 Backend: registration enqueues the send task and stores a hashed token (mock/assert on the Celery task call, not a real MailerSend send)
 - [ ] 5.2 Backend: verify-email endpoint — valid token, expired token, already-used token cases
 - [ ] 5.3 Backend: resend-verification — unverified vs already-verified account behavior
 - [ ] 5.4 Backend: JWT claims include `email_verified` and reflect DB state at register/login/refresh
@@ -40,5 +40,5 @@
 
 ## 6. Docs
 
-- [ ] 6.1 Document the new env vars (`MAILTRAP_API_TOKEN`, `MAILTRAP_MODE`, sender address) in the relevant service README/deployment docs
+- [ ] 6.1 Document the new env vars (`MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, sender address) in the relevant service README/deployment docs
 - [ ] 6.2 Note the onboarding-gate behavior change in user-facing/API docs if any exist for the registration flow
