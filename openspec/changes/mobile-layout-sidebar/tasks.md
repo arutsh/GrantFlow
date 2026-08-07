@@ -10,7 +10,7 @@ Note: per explicit user request, both groups below shipped together as one ticke
 - [x] 1.4 Rework the `<aside>`'s below-`md` rendering to be `fixed` + `translate-x`-based (off-canvas by default, sliding in over content when `isMobileDrawerOpen`), always showing full nav-item labels; `md:`+ renders static and fully expanded (matching its only-ever-reachable prior state)
 - [x] 1.5 Make the scrim conditionally rendered on `isMobileDrawerOpen` only, and close on scrim tap or the drawer's close control, dismissing drawer and scrim together
 - [x] 1.6 Add/update tests for `DashboardLayout.tsx` covering: drawer closed and no scrim present by default below `md`, drawer opens on menu press, drawer and scrim both dismiss on backdrop tap and on close control, desktop `md:`+ sidebar behavior unchanged
-- [ ] 1.7 Run `npm run lint` and `npm test` (frontend-typescript) clean; PR merged (`Closes #203`)
+- [ ] 1.7 Run `npm run lint` and `npm test` (frontend-typescript) clean (done — 205/205 tests, tsc clean); PR #204 open, not yet merged (`Closes #203`)
 
 ## 2. Donor Dashboard Mobile Content — independent of group 1
 
