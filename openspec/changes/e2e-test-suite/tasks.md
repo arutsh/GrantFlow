@@ -28,7 +28,7 @@ Workflow rule: **one group = one GitHub ticket = one PR, merged before the next 
 - [x] 4.2 Add the boot step (`docker compose ... up -d --build` for the scoped service list) and a wait-for-healthy step using the endpoint(s) added in 1.2
 - [x] 4.3 Add the `npx playwright test` step, running both the `api` and `browser` projects
 - [x] 4.4 Add an `if: always()` teardown step (`docker compose down -v`) so failed runs don't leak containers/volumes on the runner
-- [ ] 4.5 Push a throwaway branch touching `services/budget/**` to confirm the workflow triggers, boots the stack, runs both projects, and tears down correctly; confirm a branch touching only `services/ai/**` does NOT trigger it
+- [ ] 4.5 Push a throwaway branch touching `services/budget/**` to confirm the workflow triggers, boots the stack, runs both projects, and tears down correctly; confirm a branch touching only `services/ai/**` does NOT trigger it *(blocked until this PR merges — GitHub Actions won't register/trigger a brand-new workflow file via `pull_request` on the same branch that introduces it; confirmed via `gh workflow view e2e.yml` returning 404 "not found on the default branch" while this PR is open. Once merged to `main`, do a real throwaway-branch check: one touching `services/budget/**` should trigger `e2e.yml` and pass end-to-end; one touching only `services/ai/**` should not trigger it at all.)*
 
 ## 5. Documentation
 
