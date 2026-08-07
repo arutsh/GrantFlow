@@ -11,6 +11,7 @@ from app.api import (
     attachment_routes,
     funding_receipt_routes,
     currency_conversion_routes,
+    health_routes,
 )
 from fastapi.openapi.utils import get_openapi
 from app.core.exceptions import DomainError, PermissionDenied
@@ -77,6 +78,7 @@ app = FastAPI(title="Budget Service", lifespan=lifespan)
 # Instrument FastAPI AFTER app creation
 instrument_fastapi(app)
 
+app.include_router(health_routes.router)
 app.include_router(budget_routes.router, prefix="/api/v1")
 app.include_router(budget_routes.private_router, prefix="/api/private/v1")
 app.include_router(budget_line_routes.router, prefix="/api/v1")

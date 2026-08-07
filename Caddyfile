@@ -42,6 +42,14 @@ api.opengrantflow.com {
 		reverse_proxy users:8000
 	}
 
+	# ---- USERS SERVICE (health) ----
+	# Most specific path first — same reasoning as the ai-settings rule above:
+	# a single fixed endpoint, not a path prefix.
+	handle_path /api/v1/users/health* {
+		rewrite * /health
+		reverse_proxy users:8000
+	}
+
 	# ---- USERS SERVICE ----
 	handle_path /api/v1/users/* {
 		rewrite * /api/users{uri}
@@ -58,6 +66,14 @@ api.opengrantflow.com {
 	handle_path /api/v1/customers/* {
 		rewrite * /api/customers{uri}
 		reverse_proxy users:8000
+	}
+
+	# ---- BUDGET SERVICE (health) ----
+	# Most specific path first — same reasoning as the ai-settings rule above:
+	# a single fixed endpoint, not a path prefix.
+	handle_path /api/v1/budgets/health* {
+		rewrite * /health
+		reverse_proxy budget:8000
 	}
 
 	# ---- BUDGET SERVICE ----
