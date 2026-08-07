@@ -10,7 +10,7 @@ Note: per explicit user request, both groups below shipped together as one ticke
 - [x] 1.4 Rework the `<aside>`'s below-`md` rendering to be `fixed` + `translate-x`-based (off-canvas by default, sliding in over content when `isMobileDrawerOpen`), always showing full nav-item labels; `md:`+ renders static and fully expanded (matching its only-ever-reachable prior state)
 - [x] 1.5 Make the scrim conditionally rendered on `isMobileDrawerOpen` only, and close on scrim tap or the drawer's close control, dismissing drawer and scrim together
 - [x] 1.6 Add/update tests for `DashboardLayout.tsx` covering: drawer closed and no scrim present by default below `md`, drawer opens on menu press, drawer and scrim both dismiss on backdrop tap and on close control, desktop `md:`+ sidebar behavior unchanged
-- [ ] 1.7 Run `npm run lint` and `npm test` (frontend-typescript) clean (done — 205/205 tests, tsc clean); PR #204 open, not yet merged (`Closes #203`)
+- [x] 1.7 Run `npm run lint` and `npm test` (frontend-typescript) clean (205/205 tests, tsc clean); PR #204 merged (`Closes #203`)
 
 ## 2. Donor Dashboard Mobile Content — independent of group 1
 
@@ -19,4 +19,4 @@ Note: per explicit user request, both groups below shipped together as one ticke
 - [x] 2.3 Restyle the existing `sm:hidden` funded-budgets mobile block into compact list rows (budget name, grantee name, amount, status chip) per the approved mockup, replacing the current stacked card block; leave the `sm:`+ table unchanged
 - [x] 2.4 Update `DonorDashboard.test.tsx` queries/assertions affected by the new mobile markup (none needed — new markup preserves the same text-node values the existing assertions check)
 - [x] 2.5 Manually verify at ~375px and ~414px viewport widths: no clipped text, grantee row scrolls smoothly, budget rows readable (verified by user)
-- [ ] 2.6 Run `npm run lint` and `npm test` (frontend-typescript) clean; PR merged (`Closes #203`)
+- [x] 2.6 Run `npm run lint` and `npm test` (frontend-typescript) clean; PR #204 merged (`Closes #203`)
