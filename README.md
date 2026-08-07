@@ -245,8 +245,8 @@ Everything runs in Docker — intended for demos, integration testing, or sharin
 |---|---|
 | Frontend | http://localhost:4000 |
 | Nginx gateway | http://localhost:9082 |
-| Users service | http://localhost:9000 |
-| Budget service | http://localhost:9001 |
+| Users service | http://localhost:9020 |
+| Budget service | http://localhost:9021 |
 
 **Other `local.sh` commands:**
 

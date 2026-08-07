@@ -90,7 +90,7 @@ services:
       dockerfile: services/users/Dockerfile
     container_name: users-service-local
     ports:
-      - "9000:8000"
+      - "9020:8000"
     volumes:
       - ./shared:/app/shared:ro
       - ./services/users:/app
@@ -111,7 +111,7 @@ services:
       dockerfile: services/budget/Dockerfile
     container_name: budget-service-local
     ports:
-      - "9001:8000"
+      - "9021:8000"
     volumes:
       - ./shared:/app/shared:ro
       - ./services/budget:/app

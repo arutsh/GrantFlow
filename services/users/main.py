@@ -9,6 +9,7 @@ from app.api import (
     auth_routes,
     ai_settings_routes,
     donor_grantee_routes,
+    health_routes,
 )
 from app.db.init_db import init_db
 from fastapi.openapi.utils import get_openapi
@@ -72,6 +73,7 @@ app = FastAPI(lifespan=lifespan)
 # Instrument FastAPI AFTER app creation
 instrument_fastapi(app)
 
+app.include_router(health_routes.router)
 app.include_router(user_routes.router, prefix="/api")
 app.include_router(customer_routes.router, prefix="/api")
 app.include_router(auth_routes.router, prefix="/api")
