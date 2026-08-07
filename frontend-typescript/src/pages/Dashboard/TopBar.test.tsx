@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { TopBar } from "./TopBar";
 import { AuthProvider } from "@/context/AuthContext";
@@ -10,13 +11,13 @@ function makeFakeJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.signature`;
 }
 
-function renderTopBar() {
+function renderTopBar(onOpenMenu: () => void = () => {}) {
   localStorage.setItem("token", makeFakeJwt({ is_ngo: true }));
   localStorage.setItem("username", "Jane Doe");
   return render(
     <MemoryRouter>
       <AuthProvider>
-        <TopBar />
+        <TopBar onOpenMenu={onOpenMenu} />
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -66,5 +67,15 @@ describe("TopBar", () => {
     await user.click(screen.getByRole("menuitem", { name: "Logout" }));
 
     expect(localStorage.getItem("token")).toBeNull();
+  });
+
+  it("calls onOpenMenu when the mobile menu button is pressed", async () => {
+    const user = userEvent.setup();
+    const onOpenMenu = vi.fn();
+    renderTopBar(onOpenMenu);
+
+    await user.click(screen.getByRole("button", { name: "Open navigation menu" }));
+
+    expect(onOpenMenu).toHaveBeenCalledTimes(1);
   });
 });

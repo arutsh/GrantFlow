@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Settings } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Settings } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 function initialsFor(name?: string | null): string {
@@ -11,8 +11,10 @@ function initialsFor(name?: string | null): string {
 
 // Global user menu, rendered once by DashboardLayout so it's present on
 // every authenticated page — the single place to log out or (later) reach
-// account settings, rather than each page rolling its own.
-export function TopBar() {
+// account settings, rather than each page rolling its own. Below `md:` it
+// also carries the button that opens the off-canvas nav drawer, since the
+// drawer itself is off-screen and can't host its own opener while closed.
+export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const { username, logout } = useAuth();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,8 +36,16 @@ export function TopBar() {
   };
 
   return (
-    <header className="h-16 flex-shrink-0 flex items-center justify-end px-6 bg-white border-b border-slate-200">
-      <div className="relative" ref={menuRef}>
+    <header className="h-16 flex-shrink-0 flex items-center justify-between px-4 sm:px-6 bg-white border-b border-slate-200">
+      <button
+        type="button"
+        onClick={onOpenMenu}
+        aria-label="Open navigation menu"
+        className="md:hidden flex items-center justify-center w-9 h-9 -ml-1 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+      >
+        <Menu size={22} />
+      </button>
+      <div className="relative ml-auto" ref={menuRef}>
         <button
           type="button"
           onClick={() => setIsMenuOpen((open) => !open)}
