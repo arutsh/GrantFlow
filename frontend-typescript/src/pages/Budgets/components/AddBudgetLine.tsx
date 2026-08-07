@@ -181,7 +181,11 @@ export function AddBudgetLineModal({
       amount: amount,
       extra_fields: extraFieldsObj,
       category_name: newCategory,
-      category_id: categoryName !== "__new" ? categoryName : undefined,
+      // Empty string when no category is picked (the Select's default,
+      // unselected state) must become undefined, not "" — the backend
+      // validates this as a UUID and 422s on an empty string.
+      category_id:
+        categoryName && categoryName !== "__new" ? categoryName : undefined,
     };
 
     if (budgetLine) {

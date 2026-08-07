@@ -155,6 +155,7 @@ export function TableCommon({
                       variant="expander"
                       onClick={row.getToggleExpandedHandler()}
                       className="mr-2 align-middle"
+                      title={row.getIsExpanded() ? "Collapse group" : "Expand group"}
                     >
                       {row.getIsExpanded() ? (
                         <ChevronDown size={15} className="text-slate-400" />

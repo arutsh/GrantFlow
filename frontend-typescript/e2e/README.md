@@ -25,3 +25,7 @@ This is a manual step, not automated — local iteration benefits from being abl
 ## A note on `local` vs `dev`
 
 `docker-compose.local.yml` and `docker-compose.dev.yml` are separate environments with separate container names, ports, and volumes, so they can run side by side without colliding — you don't need to stop your `dev` stack to run the `local` stack for an e2e run. (`local`'s `users`/`budget` host ports used to collide with `dev`'s MinIO on 9000/9001; they've since been remapped to 9020/9021 to fix that.)
+
+## A note on the frontend's API base URL
+
+The `frontend` service's Vite build inlines `import.meta.env.VITE_API_GATEWAY` at `npm run build` time, inside the Dockerfile's build stage — a `docker-compose environment:` entry never reaches it, since the served output is a static bundle with no process left to read env from at runtime. It has to be passed as a `build.args` entry (`FRONTEND_API_GATEWAY` in `.env.local`, see `docker-compose.local.yml`'s `frontend.build.args`). If you change that value, `docker compose ... up -d --build frontend` (or `./local.sh up`, which always rebuilds) is required — restarting the container alone won't pick it up.
