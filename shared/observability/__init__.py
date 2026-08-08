@@ -25,8 +25,9 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
         otlp_endpoint: Base OTLP/HTTP endpoint (e.g. "http://localhost:4318" or
                       "https://otlp-gateway-<region>.grafana.net/otlp"). Each
                       exporter appends its own "/v1/traces" or "/v1/metrics"
-                      suffix. Defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var
-                      or "http://localhost:4318".
+                      suffix. Defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var,
+                      falling back to each exporter's own default
+                      ("http://localhost:4318") when that's unset or blank.
 
     Uses OTLP/HTTP (protobuf), not gRPC: Grafana Cloud's OTLP gateway does not
     accept gRPC on any region/hostname (its fronting proxy never negotiates
@@ -42,12 +43,13 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
         return
 
     if otlp_endpoint is None:
-        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-
-    # The exporters only auto-append "/v1/traces" / "/v1/metrics" when they
-    # fall back to reading OTEL_EXPORTER_OTLP_ENDPOINT themselves; passing an
-    # explicit endpoint= (as we do here) bypasses that, so it's done by hand.
-    base_endpoint = otlp_endpoint.rstrip("/")
+        # envsubst turns an unset GitHub Actions secret into an empty string,
+        # not an absent variable, so os.getenv's own default never fires here
+        # — normalize "" to "unset" ourselves instead of leaking it to the
+        # exporters below (they have the same "" vs. unset blind spot).
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip() or None
+        if not otlp_endpoint:
+            os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
 
     resource = Resource.create(
         {
@@ -56,28 +58,33 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
         }
     )
 
+    # Only build an explicit endpoint when one was actually given (arg or
+    # non-empty env var). Otherwise pass endpoint=None so each exporter
+    # resolves and suffixes its own endpoint from env, honoring the
+    # per-signal OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / _METRICS_ENDPOINT
+    # overrides and its own "http://localhost:4318" default.
+    if otlp_endpoint:
+        base_endpoint = otlp_endpoint.rstrip("/")
+        trace_endpoint = f"{base_endpoint}/v1/traces"
+        metric_endpoint = f"{base_endpoint}/v1/metrics"
+    else:
+        trace_endpoint = None
+        metric_endpoint = None
+
     # Configure OTLP span exporter
-    span_exporter = OTLPSpanExporter(endpoint=f"{base_endpoint}/v1/traces")
+    span_exporter = OTLPSpanExporter(endpoint=trace_endpoint)
     trace_provider = TracerProvider(resource=resource)
     trace_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(trace_provider)
 
     # Configure OTLP metric exporter
-    metric_exporter = OTLPMetricExporter(endpoint=f"{base_endpoint}/v1/metrics")
+    metric_exporter = OTLPMetricExporter(endpoint=metric_endpoint)
     metric_reader = PeriodicExportingMetricReader(metric_exporter)
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
 
     # Auto-instrument SQLAlchemy globally
     SQLAlchemyInstrumentor().instrument()
-
-
-def init_tracer_provider(
-    service_name: str, jaeger_host: str = "localhost", jaeger_port: int = 6831
-):
-    """Deprecated: Use init_observability instead. Kept for backward compatibility."""
-    otlp_endpoint = f"{jaeger_host}:{jaeger_port}"
-    init_observability(service_name, otlp_endpoint)
 
 
 def instrument_fastapi(app):
@@ -112,7 +119,6 @@ async def metrics_endpoint(_request):
 
 __all__ = [
     "init_observability",
-    "init_tracer_provider",
     "instrument_fastapi",
     "traced",
     "get_tracer",

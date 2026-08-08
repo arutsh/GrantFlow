@@ -59,7 +59,9 @@ repo (Grafana Cloud console + `gh secret set` / repo Settings → Secrets).
 Log into the Grafana Cloud stack and use:
 
 - **Explore → Tempo** (or the trace search view) — filter by `service.name`
-  (`users`, `budget`, `ai`, `chat`) to find traces for a given service.
+  (`users-service`, `budget-service`, `ai-service`, `chat-service` — the
+  argument each `main.py` passes to `init_observability`) to find traces for
+  a given service.
 - **Explore → Prometheus/Mimir** — query the auto-instrumented FastAPI/SQLAlchemy
   metrics (request rate, duration histograms, DB query spans).
 - **Dashboards** — the starter dashboard (request rate, error rate, p95/p99

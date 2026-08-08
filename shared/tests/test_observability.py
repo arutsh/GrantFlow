@@ -12,6 +12,7 @@ they fall back to reading OTEL_EXPORTER_OTLP_ENDPOINT themselves, which
 doesn't happen when we pass an explicit endpoint= as done here).
 """
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -45,7 +46,7 @@ class TestInitObservability:
         span_exporter.assert_not_called()
         metric_exporter.assert_not_called()
 
-    def test_local_dev_defaults_to_the_http_otel_collector_port(
+    def test_local_dev_lets_the_exporter_resolve_its_own_default(
         self, monkeypatch, mocked_observability
     ):
         monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
@@ -54,8 +55,25 @@ class TestInitObservability:
 
         init_observability("test-service")
 
-        span_exporter.assert_called_once_with(endpoint="http://localhost:4318/v1/traces")
-        metric_exporter.assert_called_once_with(endpoint="http://localhost:4318/v1/metrics")
+        # No override given, so endpoint=None is passed through — the real
+        # exporter resolves this to its own "http://localhost:4318/..."
+        # default (or per-signal OTEL_EXPORTER_OTLP_*_ENDPOINT, if set).
+        span_exporter.assert_called_once_with(endpoint=None)
+        metric_exporter.assert_called_once_with(endpoint=None)
+
+    def test_blank_endpoint_env_var_is_treated_as_unset(self, monkeypatch, mocked_observability):
+        # deploy.yml's envsubst turns an unset GitHub Actions secret into an
+        # empty string, not an absent variable — this must not be forwarded
+        # to the exporters as a schemeless "" endpoint.
+        monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        span_exporter, metric_exporter = mocked_observability
+
+        init_observability("test-service")
+
+        span_exporter.assert_called_once_with(endpoint=None)
+        metric_exporter.assert_called_once_with(endpoint=None)
+        assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ
 
     def test_grafana_cloud_endpoint_env_var_is_forwarded_as_is(
         self, monkeypatch, mocked_observability
