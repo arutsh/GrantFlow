@@ -94,9 +94,7 @@ class TestInitObservability:
             endpoint="https://otlp-gateway-prod-us-central-0.grafana.net/otlp/v1/metrics"
         )
 
-    def test_explicit_endpoint_argument_overrides_env_var(
-        self, monkeypatch, mocked_observability
-    ):
+    def test_explicit_endpoint_argument_overrides_env_var(self, monkeypatch, mocked_observability):
         monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
         monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://should-not-be-used:4318")
         span_exporter, metric_exporter = mocked_observability
@@ -106,9 +104,7 @@ class TestInitObservability:
         span_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/traces")
         metric_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/metrics")
 
-    def test_trailing_slash_on_endpoint_does_not_double_up(
-        self, monkeypatch, mocked_observability
-    ):
+    def test_trailing_slash_on_endpoint_does_not_double_up(self, monkeypatch, mocked_observability):
         monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
         span_exporter, metric_exporter = mocked_observability
 
