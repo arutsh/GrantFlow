@@ -17,14 +17,20 @@ export const STATUS = {
 interface TokenClaims {
   is_ngo?: boolean;
   is_donor?: boolean;
+  email_verified?: boolean;
 }
 
 function decodeRoleFlags(token: string | null): {
   isNgo: boolean;
   isDonor: boolean;
+  emailVerified: boolean;
 } {
   const claims = safeDecodeToken<TokenClaims>(token);
-  return { isNgo: !!claims?.is_ngo, isDonor: !!claims?.is_donor };
+  return {
+    isNgo: !!claims?.is_ngo,
+    isDonor: !!claims?.is_donor,
+    emailVerified: !!claims?.email_verified,
+  };
 }
 
 interface AuthContextType {
@@ -34,6 +40,7 @@ interface AuthContextType {
   isRegistering: boolean;
   isNgo: boolean;
   isDonor: boolean;
+  emailVerified: boolean;
   login: (
     token: string,
     username: string,
@@ -59,7 +66,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const { isNgo, isDonor } = useMemo(() => decodeRoleFlags(token), [token]);
+  const { isNgo, isDonor, emailVerified } = useMemo(
+    () => decodeRoleFlags(token),
+    [token]
+  );
 
   useEffect(() => {
     return onTokenRefreshed((newToken) => setToken(newToken));
@@ -133,6 +143,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isAuthenticated: !!token,
         isNgo,
         isDonor,
+        emailVerified,
         login,
         logout,
         isRegistering,

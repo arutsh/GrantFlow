@@ -3,7 +3,14 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.schemas.auth_schema import RegisterRequest, LoginRequest, TokenResponse
+from app.schemas.auth_schema import (
+    RegisterRequest,
+    LoginRequest,
+    TokenResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
+    ResendVerificationResponse,
+)
 
 from app.db.session import SessionLocal
 from app.utils.security import (
@@ -14,9 +21,18 @@ from app.utils.security import (
     verify_token_hash,
 )
 from app.crud.sessions_curd import create_session, get_session_by_id
-from app.crud.user_crud import get_user_by_email, create_user
+from app.crud.user_crud import (
+    get_user,
+    get_user_by_email,
+    create_user,
+    set_email_verification_token,
+    get_user_by_verification_token,
+    mark_email_verified,
+)
 from app.crud.customer_crud import get_customer
 from app.utils.redis import _cache_get, _delete_key
+from app.services.celery_client import enqueue_verification_email
+from shared.security.dependencies import get_validated_user
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,6 +53,11 @@ def _role_flags(customer) -> dict:
     if not customer:
         return {"is_ngo": False, "is_donor": False}
     return {"is_ngo": customer.is_ngo, "is_donor": customer.is_donor}
+
+
+def _email_verified_claim(user) -> dict:
+    """email_verified for the JWT, alongside the is_ngo/is_donor role flags."""
+    return {"email_verified": bool(user.email_verified)}
 
 
 def _customer_role_claims(db: Session, customer_id) -> dict:
@@ -76,6 +97,16 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    raw_token = set_email_verification_token(db, user)
+    try:
+        enqueue_verification_email(user.email, raw_token, user.first_name)
+    except Exception:
+        # Registration already succeeded and was committed — a broker blip
+        # shouldn't turn that into a failed registration response. The user
+        # can self-serve via /auth/resend-verification either way.
+        logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
+
     refresh_token = create_refresh_token()
     session = create_session(
         session=db,
@@ -90,6 +121,7 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
             "role": user.role,
             "customer_id": user.customer_id,
             **_customer_role_claims(db, user.customer_id),
+            **_email_verified_claim(user),
         }
     )
 
@@ -117,6 +149,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             "role": user.role,
             "customer_id": user.customer_id,
             **_role_flags(user.customer),
+            **_email_verified_claim(user),
         }
     )
 
@@ -152,6 +185,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
                 "role": s.user.role,
                 "customer_id": s.user.customer_id,
                 **_role_flags(s.user.customer),
+                **_email_verified_claim(s.user),
             }
         )
 
@@ -160,3 +194,37 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         )
 
     raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+
+@router.post("/auth/verify-email", response_model=VerifyEmailResponse)
+def verify_email(req: VerifyEmailRequest, db: Session = Depends(get_db)):
+    user = get_user_by_verification_token(db, req.email, req.token)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+
+    expires_at = user.email_verification_expires_at
+    if not expires_at or expires_at.replace(tzinfo=ZoneInfo("UTC")) < datetime.now(ZoneInfo("UTC")):
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+
+    mark_email_verified(db, user)
+    return VerifyEmailResponse(email_verified=True)
+
+
+@router.post("/auth/resend-verification", response_model=ResendVerificationResponse)
+def resend_verification(
+    current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)
+):
+    user = get_user(db, current_user["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.email_verified:
+        return ResendVerificationResponse(sent=False)
+
+    raw_token = set_email_verification_token(db, user)
+    try:
+        enqueue_verification_email(user.email, raw_token, user.first_name)
+    except Exception:
+        logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
+
+    return ResendVerificationResponse(sent=True)

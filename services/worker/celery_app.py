@@ -9,6 +9,7 @@ app = Celery(
     include=[
         "tasks.ai.cleanup_sessions",
         "tasks.debug.ping",
+        "tasks.users.send_verification_email",
     ],
 )
 

@@ -13,6 +13,16 @@ export const registerUser = async (email: string, password: string) => {
   return data;
 };
 
+export const verifyEmail = async (email: string, token: string) => {
+  const { data } = await gatewayApi.post("/auth/verify-email", { email, token });
+  return data;
+};
+
+export const resendVerification = async () => {
+  const { data } = await gatewayApi.post("/auth/resend-verification", {});
+  return data;
+};
+
 export const userOnboarding = async (
   first_name: string,
   last_name: string,

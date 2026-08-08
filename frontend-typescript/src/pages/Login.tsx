@@ -4,6 +4,7 @@ import { loginUser } from "@/api/usersApi";
 import { useNavigate } from "react-router-dom";
 import Button from "@/components/ui/Button";
 import { LogIn } from "lucide-react";
+import { safeDecodeToken } from "@/utils/token";
 
 export default function Login() {
   const { isAuthenticated, isRegistering, login } = useAuth();
@@ -26,7 +27,12 @@ export default function Login() {
         res.status,
         res.refresh_token,
       );
-      if (res.status === STATUS.PENDING) {
+      const claims = safeDecodeToken<{ email_verified?: boolean }>(
+        res.access_token,
+      );
+      if (!claims?.email_verified) {
+        navigate("/confirm-email");
+      } else if (res.status === STATUS.PENDING) {
         navigate("/onboarding");
       } else {
         navigate("/dashboard");
