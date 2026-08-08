@@ -201,7 +201,15 @@ Add an A record at your registrar: `api.opengrantflow.com` → the `server_ipv4`
 
 ### GitHub Actions secrets required
 
-All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair — the same keypair Terraform registers as `hcloud_ssh_key`, reused rather than regenerated). `VPS_HOST` needs updating any time the server is recreated (`terraform destroy && terraform apply` would produce a new IP) — set it to the current `server_ipv4` output.
+All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair — the same keypair Terraform registers as `hcloud_ssh_key`, reused rather than regenerated), `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_HEADERS` (see Observability below). `VPS_HOST` needs updating any time the server is recreated (`terraform destroy && terraform apply` would produce a new IP) — set it to the current `server_ipv4` output.
+
+### Observability
+
+Traces and metrics from all four services export via OTLP straight to a
+hosted Grafana Cloud free-tier stack — no monitoring containers on the prod
+box. See [`docs/observability/GRAFANA_CLOUD_PRODUCTION.md`](../observability/GRAFANA_CLOUD_PRODUCTION.md)
+for how it's wired, where to view traces/dashboards, and the
+`OTEL_SDK_DISABLED=true` rollback flag.
 
 **Not yet set — needed for email verification (`services/worker`):** `MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, `MAILERSEND_SENDER_EMAIL`, `FRONTEND_BASE_URL`. See the "Email verification (MailerSend)" section below for what each one is. Without these, `deploy.yml`'s `envsubst` step leaves the `${VAR}` placeholders in `services/worker/.env.worker.prod` unexpanded, so the worker sends with an empty API token.
 
