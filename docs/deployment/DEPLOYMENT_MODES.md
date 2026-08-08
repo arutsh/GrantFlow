@@ -203,6 +203,8 @@ Add an A record at your registrar: `api.opengrantflow.com` → the `server_ipv4`
 
 All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair — the same keypair Terraform registers as `hcloud_ssh_key`, reused rather than regenerated). `VPS_HOST` needs updating any time the server is recreated (`terraform destroy && terraform apply` would produce a new IP) — set it to the current `server_ipv4` output.
 
+**Not yet set — needed for email verification (`services/worker`):** `MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, `MAILERSEND_SENDER_EMAIL`, `FRONTEND_BASE_URL`. See the "Email verification (MailerSend)" section below for what each one is. Without these, `deploy.yml`'s `envsubst` step leaves the `${VAR}` placeholders in `services/worker/.env.worker.prod` unexpanded, so the worker sends with an empty API token.
+
 ### Ongoing deploys
 
 Every push to `main` triggers `.github/workflows/deploy.yml`, which SSHes in, resets the checkout to `origin/main`, regenerates the real `.env.prod` / `services/*/.env.*.prod` files in place from the secrets above (the committed versions are `${VAR}` templates, never real values), and runs:
@@ -319,6 +321,23 @@ Example:
 ./services/budget/.env.budget.private.dev
 ./api-gateway/.env.gateway.dev
 ```
+
+### Email verification (MailerSend)
+
+`services/worker` sends the registration confirmation email via [MailerSend's Email API](https://developers.mailersend.com/api/v1/email.html), configured through `services/worker/.env.worker.*`:
+
+| Var | Purpose |
+|-----|---------|
+| `MAILERSEND_API_TOKEN` | MailerSend account API token (Email API). |
+| `MAILERSEND_SENDER_DOMAIN` | Trial domain in dev/local (capped at 100 sends, only delivers to recipients verified on the account); a verified sending domain in production. |
+| `MAILERSEND_SENDER_EMAIL` | The `from` address on outgoing mail — must belong to `MAILERSEND_SENDER_DOMAIN`. |
+| `MAILERSEND_SENDER_NAME` | Display name on outgoing mail. Defaults to `GrandFlow`. |
+| `MAILERSEND_API_URL` | Optional override for the Email API endpoint. Leave blank to use the real MailerSend API — only set this to redirect sends at a local mock server instead. |
+| `FRONTEND_BASE_URL` | Origin used to build the `/verify-email?token=...` link in the email (e.g. `http://localhost:3000` in dev, the deployed frontend origin in prod). |
+
+`MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, and `MAILERSEND_SENDER_EMAIL` are left blank in the committed `.env.worker.dev`/`.env.worker.local` templates (no real token is committed) — fill them in locally with a MailerSend trial-account token to actually send mail; without one, registration still succeeds but the confirmation email enqueue will fail at send time (retried with backoff, self-serviceable via `POST /auth/resend-verification`).
+
+**Trial-domain recipient allowlist:** on a free-tier account, `POST /v1/email` only delivers to recipient addresses explicitly added and verified in the MailerSend dashboard (Domains → trial domain → recipients), capped at 100 sends total. Sending to any other address — real or made-up — is rejected at the API level, not silently dropped. In practice: either register with your own verified address while testing, or pre-verify a small set of test addresses in the dashboard.
 
 ---
 

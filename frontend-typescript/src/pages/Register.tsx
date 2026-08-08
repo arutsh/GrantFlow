@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { registerUser } from "@/api/usersApi";
 import { useAuth } from "@/context/AuthContext";
-import { UserPlus } from "lucide-react";
+import { Eye, EyeOff, UserPlus } from "lucide-react";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -12,6 +12,8 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
 
@@ -26,7 +28,9 @@ export default function Register() {
         data.status,
         data.refresh_token || "",
       );
-      navigate("/onboarding");
+      // A brand-new account is never email-verified yet — go straight to
+      // the confirm-email screen instead of onboarding.
+      navigate("/confirm-email");
     },
     onError: (error: any) => {
       setError("Registration failed. Please try again.");
@@ -96,14 +100,23 @@ export default function Register() {
           <label className="block text-sm font-medium text-slate-900 mb-2">
             Password
           </label>
-          <input
-            type="password"
-            placeholder="Create a password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg input-focus bg-white"
-            required
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Create a password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg input-focus bg-white"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
           <p className="text-xs text-gray-500 mt-1">At least 6 characters</p>
         </div>
 
@@ -112,14 +125,23 @@ export default function Register() {
           <label className="block text-sm font-medium text-slate-900 mb-2">
             Confirm Password
           </label>
-          <input
-            type="password"
-            placeholder="Confirm your password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg input-focus bg-white"
-            required
-          />
+          <div className="relative">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Confirm your password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg input-focus bg-white"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </div>
 
         {/* Sign Up Button */}

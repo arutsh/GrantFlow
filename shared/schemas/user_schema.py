@@ -43,5 +43,6 @@ class UserUpdate(BaseModel):
 class User(UserBase):
     id: UUID
     customer: Customer | None = None
+    email_verified: bool = False
 
     model_config = {"from_attributes": True}

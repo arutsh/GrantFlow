@@ -1,14 +1,18 @@
+import secrets
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.user import UserModel
-from app.utils.security import hash_password
+from app.utils.security import hash_password, hash_token, verify_token_hash
 from app.services.event_publisher import get_publisher
 
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+EMAIL_VERIFICATION_TOKEN_TTL_HOURS = 24
 
 
 def _user_event_payload(user: UserModel) -> dict:
@@ -117,3 +121,42 @@ def get_user_customer_id(session: Session, user_id: UUID) -> UUID | None:
     if user:
         return user.customer_id
     return None
+
+
+def set_email_verification_token(session: Session, user: UserModel) -> str:
+    """Generate a new single-use verification token, store its hash +
+    expiry on the user, and return the raw token — the raw value is only
+    ever placed in the emailed link, never persisted itself. Overwrites any
+    prior token, invalidating it (used for both initial send and resend)."""
+    raw_token = secrets.token_urlsafe(32)
+    user.email_verification_token_hash = hash_token(raw_token)
+    user.email_verification_expires_at = datetime.now(timezone.utc).replace(
+        tzinfo=None
+    ) + timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS)
+    session.commit()
+    session.refresh(user)
+    return raw_token
+
+
+def get_user_by_verification_token(
+    session: Session, email: str, raw_token: str
+) -> UserModel | None:
+    """The stored hash is bcrypt (salted), so equality can't be pushed into
+    a WHERE clause — the caller supplies the email (round-tripped through
+    the verification link) so lookup is a single indexed query + one
+    hash-verify, rather than scanning every account with a pending token."""
+    user = get_user_by_email(session, email)
+    if not user or not user.email_verification_token_hash:
+        return None
+    if not verify_token_hash(raw_token, user.email_verification_token_hash):
+        return None
+    return user
+
+
+def mark_email_verified(session: Session, user: UserModel) -> UserModel:
+    user.email_verified = True
+    user.email_verification_token_hash = None
+    user.email_verification_expires_at = None
+    session.commit()
+    session.refresh(user)
+    return user

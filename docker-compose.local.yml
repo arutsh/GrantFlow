@@ -181,6 +181,14 @@ services:
       - ./services/worker/.env.worker.local
     environment:
       - PYTHONPATH=/app
+      # services/worker/.env.worker.local is committed to git (safe
+      # placeholder values only) — the real MailerSend credentials can't
+      # live there. These pull from the shell that ran `./local.sh up`
+      # instead (export them in .devrc, which is gitignored); `:-` defaults
+      # to blank when unset, matching the committed file's placeholder.
+      - MAILERSEND_API_TOKEN=${MAILERSEND_API_TOKEN:-}
+      - MAILERSEND_SENDER_DOMAIN=${MAILERSEND_SENDER_DOMAIN:-}
+      - MAILERSEND_SENDER_EMAIL=${MAILERSEND_SENDER_EMAIL:-}
     depends_on:
       rabbitmq:
         condition: service_healthy

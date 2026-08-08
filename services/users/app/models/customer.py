@@ -17,7 +17,7 @@ class CustomerModel(Base):
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     country: Mapped[str] = mapped_column(String, nullable=False)
-    is_ngo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_ngo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_donor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     currency = mapped_column(String, nullable=False)
     users = relationship("UserModel", back_populates="customer")

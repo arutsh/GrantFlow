@@ -19,6 +19,7 @@ jobs:
           filters: |
             relevant:
               - "services/worker/**"
+              - "shared/**"
 
   worker-test:
     needs: changes
@@ -29,7 +30,7 @@ jobs:
       RABBITMQ_URL: amqp://guest:guest@localhost:5672//
       REDIS_URL: redis://localhost:6379/0
       ENV: test
-      PYTHONPATH: ${{ github.workspace }}/services/worker
+      PYTHONPATH: ${{ github.workspace }}/services/worker:${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
