@@ -15,7 +15,7 @@ Each production FastAPI service (`users`, `budget`, `ai`, `chat`) SHALL export O
 Local development SHALL continue to export traces and metrics insecurely to the local OTel Collector without requiring any Grafana Cloud credentials, and without any developer-facing configuration change.
 
 #### Scenario: Developer runs services locally with no Grafana Cloud env vars set
-- **WHEN** a service starts locally with `OTEL_EXPORTER_OTLP_ENDPOINT` unset or pointed at `localhost:4317`, and no `OTEL_EXPORTER_OTLP_HEADERS` set
+- **WHEN** a service starts locally with `OTEL_EXPORTER_OTLP_ENDPOINT` unset or pointed at `localhost:4318`, and no `OTEL_EXPORTER_OTLP_HEADERS` set
 - **THEN** the service exports traces and metrics insecurely to the local OTel Collector exactly as it did before this change
 
 ### Requirement: Telemetry export can be fully disabled via a single flag

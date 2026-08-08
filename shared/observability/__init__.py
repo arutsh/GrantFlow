@@ -4,8 +4,8 @@ import os
 from functools import wraps
 
 from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -22,14 +22,32 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
 
     Args:
         service_name: Name of the service
-        otlp_endpoint: OTLP collector endpoint (e.g., "localhost:4317")
-                      Defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var or "localhost:4317"
+        otlp_endpoint: Base OTLP/HTTP endpoint (e.g. "http://localhost:4318" or
+                      "https://otlp-gateway-<region>.grafana.net/otlp"). Each
+                      exporter appends its own "/v1/traces" or "/v1/metrics"
+                      suffix. Defaults to OTEL_EXPORTER_OTLP_ENDPOINT env var
+                      or "http://localhost:4318".
+
+    Uses OTLP/HTTP (protobuf), not gRPC: Grafana Cloud's OTLP gateway does not
+    accept gRPC on any region/hostname (its fronting proxy never negotiates
+    ALPN for h2, so grpc-core refuses the TLS handshake before any request is
+    sent — confirmed against the production gateway, not a local library
+    issue). TLS and headers are entirely env-driven by the exporters
+    themselves: TLS follows the endpoint's http/https scheme, and
+    OTEL_EXPORTER_OTLP_HEADERS (e.g. "authorization=Basic <base64>") is read
+    directly by each exporter when headers isn't passed explicitly. Local dev,
+    which sets neither, is unaffected.
     """
     if os.getenv("OTEL_SDK_DISABLED", "").strip().lower() in ("true", "1"):
         return
 
     if otlp_endpoint is None:
-        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
+        otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+
+    # The exporters only auto-append "/v1/traces" / "/v1/metrics" when they
+    # fall back to reading OTEL_EXPORTER_OTLP_ENDPOINT themselves; passing an
+    # explicit endpoint= (as we do here) bypasses that, so it's done by hand.
+    base_endpoint = otlp_endpoint.rstrip("/")
 
     resource = Resource.create(
         {
@@ -39,13 +57,13 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
     )
 
     # Configure OTLP span exporter
-    span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
+    span_exporter = OTLPSpanExporter(endpoint=f"{base_endpoint}/v1/traces")
     trace_provider = TracerProvider(resource=resource)
     trace_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(trace_provider)
 
     # Configure OTLP metric exporter
-    metric_exporter = OTLPMetricExporter(endpoint=otlp_endpoint, insecure=True)
+    metric_exporter = OTLPMetricExporter(endpoint=f"{base_endpoint}/v1/metrics")
     metric_reader = PeriodicExportingMetricReader(metric_exporter)
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
