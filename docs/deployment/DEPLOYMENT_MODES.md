@@ -211,7 +211,7 @@ box. See [`docs/observability/GRAFANA_CLOUD_PRODUCTION.md`](../observability/GRA
 for how it's wired, where to view traces/dashboards, and the
 `OTEL_SDK_DISABLED=true` rollback flag.
 
-**Not yet set — needed for email verification (`services/worker`):** `MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, `MAILERSEND_SENDER_EMAIL`, `FRONTEND_BASE_URL`. See the "Email verification (MailerSend)" section below for what each one is. Without these, `deploy.yml`'s `envsubst` step leaves the `${VAR}` placeholders in `services/worker/.env.worker.prod` unexpanded, so the worker sends with an empty API token.
+**Not yet set — needed for email verification (`services/worker`):** `MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, `MAILERSEND_SENDER_EMAIL`, `FRONTEND_BASE_URL`. `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_SENDER_EMAIL` are also plumbed through but not required until `EMAIL_PROVIDER` is flipped to `mailjet` in prod. See the "Email verification (MailerSend / Mailjet)" section below for what each one is. Without the active provider's vars set, `deploy.yml`'s `envsubst` step leaves the `${VAR}` placeholders in `services/worker/.env.worker.prod` unexpanded, so the worker sends with empty credentials.
 
 ### Ongoing deploys
 
@@ -330,9 +330,18 @@ Example:
 ./api-gateway/.env.gateway.dev
 ```
 
-### Email verification (MailerSend)
+### Email verification (MailerSend / Mailjet)
 
-`services/worker` sends the registration confirmation email via [MailerSend's Email API](https://developers.mailersend.com/api/v1/email.html), configured through `services/worker/.env.worker.*`:
+`services/worker` sends the registration confirmation email through a provider-agnostic interface (`shared/services/email_provider.py`); which vendor actually sends it is a runtime config choice, not a code change. `EMAIL_PROVIDER` (in `services/worker/.env.worker.*`) selects the active client:
+
+| Value | Behavior |
+|-------|----------|
+| `mailersend` (default, or unset) | Sends via [MailerSend's Email API](https://developers.mailersend.com/api/v1/email.html). |
+| `mailjet` | Sends via [Mailjet's Send API v3.1](https://dev.mailjet.com/email/guides/send-api-v31/). |
+
+Any other value raises a configuration error at worker startup rather than silently falling back — a typo in `EMAIL_PROVIDER` fails loud instead of reverting to whichever provider was previously active.
+
+**MailerSend config:**
 
 | Var | Purpose |
 |-----|---------|
@@ -340,12 +349,28 @@ Example:
 | `MAILERSEND_SENDER_DOMAIN` | Trial domain in dev/local (capped at 100 sends, only delivers to recipients verified on the account); a verified sending domain in production. |
 | `MAILERSEND_SENDER_EMAIL` | The `from` address on outgoing mail — must belong to `MAILERSEND_SENDER_DOMAIN`. |
 | `MAILERSEND_SENDER_NAME` | Display name on outgoing mail. Defaults to `GrandFlow`. |
+| `MAILERSEND_VERIFICATION_TEMPLATE_ID` | MailerSend dashboard template ID for the verification email. |
 | `MAILERSEND_API_URL` | Optional override for the Email API endpoint. Leave blank to use the real MailerSend API — only set this to redirect sends at a local mock server instead. |
-| `FRONTEND_BASE_URL` | Origin used to build the `/verify-email?token=...` link in the email (e.g. `http://localhost:3000` in dev, the deployed frontend origin in prod). |
 
-`MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, and `MAILERSEND_SENDER_EMAIL` are left blank in the committed `.env.worker.dev`/`.env.worker.local` templates (no real token is committed) — fill them in locally with a MailerSend trial-account token to actually send mail; without one, registration still succeeds but the confirmation email enqueue will fail at send time (retried with backoff, self-serviceable via `POST /auth/resend-verification`).
+**Mailjet config:**
 
-**Trial-domain recipient allowlist:** on a free-tier account, `POST /v1/email` only delivers to recipient addresses explicitly added and verified in the MailerSend dashboard (Domains → trial domain → recipients), capped at 100 sends total. Sending to any other address — real or made-up — is rejected at the API level, not silently dropped. In practice: either register with your own verified address while testing, or pre-verify a small set of test addresses in the dashboard.
+| Var | Purpose |
+|-----|---------|
+| `MAILJET_API_KEY` / `MAILJET_SECRET_KEY` | Mailjet Send API v3.1 credentials — HTTP Basic Auth (key + secret), not a bearer token. |
+| `MAILJET_SENDER_EMAIL` | The `from` address on outgoing mail — must belong to a verified Mailjet sender. |
+| `MAILJET_SENDER_NAME` | Display name on outgoing mail. Defaults to `GrandFlow`. |
+| `MAILJET_VERIFICATION_TEMPLATE_ID` | Mailjet dashboard template ID for the verification email. |
+| `MAILJET_API_URL` | Optional override for the Send API endpoint. Leave blank to use the real Mailjet API — only set this to redirect sends at a local mock server instead. |
+
+Shared across both: `FRONTEND_BASE_URL` — origin used to build the `/verify-email?token=...` link in the email (e.g. `http://localhost:3000` in dev, the deployed frontend origin in prod).
+
+Real credentials are never committed — `MAILERSEND_API_TOKEN`/`MAILERSEND_SENDER_DOMAIN`/`MAILERSEND_SENDER_EMAIL` and `MAILJET_API_KEY`/`MAILJET_SECRET_KEY`/`MAILJET_SENDER_EMAIL` are left blank in the committed `.env.worker.dev`/`.env.worker.local` templates; fill them in locally to actually send mail. Without them, registration still succeeds but the confirmation email enqueue will fail at send time (retried with backoff, self-serviceable via `POST /auth/resend-verification`).
+
+`.env.worker.dev`/`.env.worker.local` ship with `EMAIL_PROVIDER=mailjet` so local/dev testing isn't blocked by MailerSend's trial-recipient cap (see below). Prod stays on `mailersend` (or unset) until Mailjet is validated in dev.
+
+**Trial-domain recipient allowlist (MailerSend):** on a free-tier account, `POST /v1/email` only delivers to recipient addresses explicitly added and verified in the MailerSend dashboard (Domains → trial domain → recipients), capped at 100 sends total. Sending to any other address — real or made-up — is rejected at the API level, not silently dropped. In practice: either register with your own verified address while testing, or pre-verify a small set of test addresses in the dashboard. This cap is the reason Mailjet was added as a second provider and is the default in dev/local.
+
+**Rolling back:** unset `EMAIL_PROVIDER`, or set it back to `mailersend`, in the relevant `.env.worker.*` file (and, in prod, the corresponding GitHub Actions secret substitution). No data migration is involved — the switch is config-only and fully reversible.
 
 ---
 
