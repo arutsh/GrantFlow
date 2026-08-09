@@ -1,10 +1,12 @@
 # /shared/services/mailersend_client.py
 import httpx
 
+from shared.services.email_provider import EmailProviderError
+
 DEFAULT_MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 
 
-class MailerSendError(Exception):
+class MailerSendError(EmailProviderError):
     """Raised when the MailerSend Email API can't be reached or rejects a send."""
 
 
@@ -45,10 +47,10 @@ class MailerSendClient:
     def send_template_email(
         self,
         to_email: str,
+        to_name: str,
         subject: str,
         template_id: str,
         personalization: dict,
-        to_name: str = "",
     ) -> None:
         """Send via a MailerSend-hosted template (dashboard-managed body)
         instead of inlining HTML/text in this codebase — variable
@@ -64,7 +66,11 @@ class MailerSendClient:
         try:
             resp = self.http.post(self.api_url, json=payload)
         except httpx.RequestError as exc:
-            raise MailerSendError(f"Could not reach MailerSend: {exc}") from exc
+            raise MailerSendError(f"Could not reach MailerSend: {exc}", retryable=True) from exc
 
         if resp.status_code >= 400:
-            raise MailerSendError(f"MailerSend returned {resp.status_code}: {resp.text[:300]}")
+            raise MailerSendError(
+                f"MailerSend returned {resp.status_code}: {resp.text[:300]}",
+                status_code=resp.status_code,
+                retryable=resp.status_code >= 500 or resp.status_code == 429,
+            )
