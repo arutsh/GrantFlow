@@ -49,5 +49,23 @@ class UserModel(Base):
     email_verification_token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Rectification (data-subject-rights): a changed email is stored here,
+    # unverified, until the verification link is followed — the old `email`
+    # stays the account's active/login address until then (reuses the same
+    # email_verification_token_hash/expires_at pair above).
+    pending_email: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Consent (consent-management): nullable timestamp — presence = granted,
+    # null = not granted/withdrawn. Current/last-known state only, no
+    # separate history table (design.md decision 1).
+    consent_data_processing_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consent_marketing_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Erasure (data-subject-rights): soft-delete + anonymization, not a hard
+    # delete (design.md decision 2) — financial records' created_by/
+    # updated_by references must not dangle.
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     customer = relationship("CustomerModel", lazy="joined")
     sessions = relationship("SessionModel", back_populates="user", cascade="all, delete-orphan")

@@ -8,6 +8,8 @@ import {
 } from "react";
 import { safeDecodeToken } from "@/utils/token";
 import { onTokenRefreshed } from "@/utils/tokenRefreshBridge";
+import gatewayApi from "@/api/gatewayApi";
+import { getAuthToken } from "@/api/axiosConfig";
 
 export const STATUS = {
   PENDING: "pending",
@@ -123,6 +125,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    // Best-effort: revokes the session server-side so the token can't be
+    // replayed, but a failed/slow request must never block clearing local
+    // state — the user expects to be logged out immediately either way.
+    // The token must be read and attached *before* storage is cleared below —
+    // the request interceptor reads storage too, but only once axios actually
+    // dispatches the request (a microtask after this synchronous block), by
+    // which point storage would already be empty otherwise.
+    const token = getAuthToken();
+    gatewayApi
+      .post(
+        "/auth/logout",
+        {},
+        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+      )
+      .catch(() => {});
     setToken(null);
     setUsername(null);
     localStorage.clear();

@@ -30,6 +30,14 @@ def create_budget(
     return budget
 
 
+def get_budgets_by_creator(session: Session, user_id: UUID) -> list[BudgetModel]:
+    """Data-subject-rights export (GET /users/me/export on the users
+    service) — a listing of financial records the requesting user created,
+    called cross-service via the no-auth internal
+    GET /budgets/by-creator/{user_id} endpoint."""
+    return session.query(BudgetModel).filter(BudgetModel.created_by == user_id).all()
+
+
 def get_budget(
     session: Session, budget_id: UUID, customer_id: UUID | None = None
 ) -> BudgetModel | None:

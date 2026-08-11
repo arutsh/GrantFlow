@@ -17,7 +17,10 @@ def _load_secret_key() -> str:
 
 SECRET_KEY = _load_secret_key()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 7200
+# Short-lived by design (design.md decision 3): a stolen access token's
+# exposure window is bounded to this TTL, with the refresh-token flow
+# renewing access transparently. Env-configurable for ops flexibility.
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "20"))
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -53,7 +56,7 @@ def decode_access_token(token: str):
         return payload
     except jwt.ExpiredSignatureError:
         raise ValueError("Token expired")
-    except jwt.PyJWTError:
+    except jwt.JWTError:
         raise ValueError("Invalid token")
 
 

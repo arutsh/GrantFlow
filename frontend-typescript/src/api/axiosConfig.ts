@@ -1,13 +1,29 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import { notifyTokenRefreshed } from "@/utils/tokenRefreshBridge";
 
+// sessionStorage first: it's per-tab, so a hit there is unambiguously this tab's session.
 export const getAuthToken = (): string | null => {
-  return localStorage.getItem("token") || sessionStorage.getItem("token");
+  return sessionStorage.getItem("token") || localStorage.getItem("token");
 };
 
-export const getRefreshToken = () =>
-  localStorage.getItem("refreshToken") ||
-  sessionStorage.getItem("refreshToken");
+// Also reports which store the token came from, so a refresh can write back to that store.
+const getRefreshTokenSource = (): { token: string | null; store: Storage } => {
+  const sessionToken = sessionStorage.getItem("refreshToken");
+  if (sessionToken) return { token: sessionToken, store: sessionStorage };
+  return { token: localStorage.getItem("refreshToken"), store: localStorage };
+};
+
+export const getRefreshToken = () => getRefreshTokenSource().token;
+
+// Endpoints that can legitimately 401 on their own terms (bad credentials,
+// no session yet) — a 401 from these must surface to the caller as-is, not
+// trigger a silent-refresh attempt (there's nothing to refresh here) or the
+// hard redirect that follows a failed refresh.
+const AUTH_EXEMPT_PATHS = ["/auth/login", "/register", "/auth/refresh"];
+
+function isAuthExempt(url?: string): boolean {
+  return !!url && AUTH_EXEMPT_PATHS.some((path) => url.includes(path));
+}
 
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
@@ -27,14 +43,10 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
 
   // Request interceptor
   instance.interceptors.request.use((config) => {
-    // const token = localStorage.getItem("access_token"); // or use context
-    console.log("Getting auth token for request...");
     const token = getAuthToken();
-    console.log("Auth token:", token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log("Request config:", config);
     return config;
   });
 
@@ -44,7 +56,19 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
     async (error: AxiosError) => {
       const originalRequest = error.config as any;
 
-      if (error.response?.status === 401 && !originalRequest?._retry) {
+      if (
+        error.response?.status === 401 &&
+        !originalRequest?._retry &&
+        !isAuthExempt(originalRequest?.url)
+      ) {
+        const { token: refreshToken, store: refreshStore } = getRefreshTokenSource();
+        if (!refreshToken) {
+          // No session to refresh — let the 401 surface as-is instead of
+          // firing a refresh call that can only fail (refresh_token=null)
+          // and end in the hard-redirect below.
+          return Promise.reject(error);
+        }
+
         originalRequest._retry = true;
 
         if (isRefreshing) {
@@ -61,7 +85,6 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
         isRefreshing = true;
 
         try {
-          const refreshToken = getRefreshToken();
           const response = await axios.post(
             `${baseURL}/auth/refresh?refresh_token=${refreshToken}`,
           );
@@ -69,8 +92,9 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
           const newAccess = response.data.access_token;
           const newRefresh = response.data.refresh_token;
 
-          localStorage.setItem("token", newAccess);
-          localStorage.setItem("refreshToken", newRefresh);
+          // Write back to the same store the refresh token came from.
+          refreshStore.setItem("token", newAccess);
+          refreshStore.setItem("refreshToken", newRefresh);
 
           instance.defaults.headers.common["Authorization"] =
             `Bearer ${newAccess}`;
@@ -85,7 +109,12 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
         } catch (err) {
           isRefreshing = false;
           localStorage.clear();
-          window.location.href = "/login";
+          sessionStorage.clear();
+          // Avoid reload-looping if some other in-flight request also
+          // 401s while we're already sitting on /login.
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
+          }
           return Promise.reject(err);
         }
       }

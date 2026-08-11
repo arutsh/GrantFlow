@@ -10,9 +10,9 @@ function initialsFor(name?: string | null): string {
 }
 
 // Global user menu, rendered once by DashboardLayout so it's present on
-// every authenticated page — the single place to log out or (later) reach
-// account settings, rather than each page rolling its own. Below `md:` it
-// also carries the button that opens the off-canvas nav drawer, since the
+// every authenticated page — the single place to log out or reach account
+// settings, rather than each page rolling its own. Below `md:` it also
+// carries the button that opens the off-canvas nav drawer, since the
 // drawer itself is off-screen and can't host its own opener while closed.
 export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const { username, logout } = useAuth();
@@ -76,9 +76,11 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
             <button
               type="button"
               role="menuitem"
-              disabled
-              title="Coming soon"
-              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-400 cursor-default"
+              onClick={() => {
+                setIsMenuOpen(false);
+                navigate("/settings");
+              }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <Settings size={16} />
               Account Settings

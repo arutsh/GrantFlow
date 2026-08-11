@@ -26,7 +26,13 @@ test("register, onboard, login, then drive the budget CRUD chain", async ({
   const password = "Passw0rd!23";
 
   const registerRes = await request.post("/api/v1/register", {
-    data: { email, password, first_name: "E2E", last_name: "Tester" },
+    data: {
+      email,
+      password,
+      first_name: "E2E",
+      last_name: "Tester",
+      consent_data_processing: true,
+    },
   });
   expect(registerRes.status()).toBe(200);
   const registerBody: TokenResponse = await registerRes.json();

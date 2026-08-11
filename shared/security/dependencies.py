@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from .jwt_utils import decode_access_token
+from .session_revocation import is_session_revoked
 from uuid import UUID
 from jose import JWTError
 
@@ -18,6 +19,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         payload = decode_access_token(token)
         user_id = payload.get("user_id")
         role = payload.get("role")
+        session_id = payload.get("session_id")
 
         if not user_id:
             raise ValueError("Missing user_id in token payload")
@@ -28,7 +30,14 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         except ValueError:
             raise ValueError("Invalid UUID format for user_id")
 
-        return {"user_id": user_uuid, "role": role, "token": token}
+        # Checked on every request, not only at issuance — a logged-out or
+        # admin-revoked session must stop working before its access token's
+        # natural expiry (session-security spec: "Session Revocation
+        # Enforced on Every Request").
+        if session_id and is_session_revoked(session_id):
+            raise ValueError("Session has been revoked")
+
+        return {"user_id": user_uuid, "role": role, "token": token, "session_id": session_id}
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

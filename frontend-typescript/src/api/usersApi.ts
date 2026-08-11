@@ -8,8 +8,18 @@ export const loginUser = async (email: string, password: string) => {
   return data;
 };
 
-export const registerUser = async (email: string, password: string) => {
-  const { data } = await gatewayApi.post("/register", { email, password });
+export const registerUser = async (
+  email: string,
+  password: string,
+  consentDataProcessing: boolean,
+  consentMarketing: boolean = false,
+) => {
+  const { data } = await gatewayApi.post("/register", {
+    email,
+    password,
+    consent_data_processing: consentDataProcessing,
+    consent_marketing: consentMarketing,
+  });
   return data;
 };
 
@@ -29,7 +39,7 @@ export const userOnboarding = async (
   customer_name: string,
   user_id: string | null
 ) => {
-  
+
     const { data } = await gatewayApi.patch(`/users/${user_id}/`, {
     first_name: first_name,
     last_name: last_name,
@@ -37,3 +47,72 @@ export const userOnboarding = async (
   });
   return data;
 }
+
+export const logoutSession = async () => {
+  const { data } = await gatewayApi.post("/auth/logout", {});
+  return data;
+};
+
+export const changePassword = async (
+  currentPassword: string,
+  newPassword: string,
+) => {
+  const { data } = await gatewayApi.post("/auth/change-password", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  return data;
+};
+
+export interface SessionSummary {
+  id: string;
+  issued_at: string;
+  expires_at: string;
+  current: boolean;
+}
+
+export const listSessions = async (): Promise<SessionSummary[]> => {
+  const { data } = await gatewayApi.get("/auth/sessions");
+  return data;
+};
+
+export const revokeSession = async (sessionId: string) => {
+  const { data } = await gatewayApi.delete(`/auth/sessions/${sessionId}`);
+  return data;
+};
+
+export interface ConsentState {
+  data_processing_granted: boolean;
+  data_processing_at: string | null;
+  marketing_granted: boolean;
+  marketing_at: string | null;
+}
+
+export const getConsent = async (): Promise<ConsentState> => {
+  const { data } = await gatewayApi.get("/users/me/consent");
+  return data;
+};
+
+export const updateMarketingConsent = async (
+  marketing: boolean,
+): Promise<ConsentState> => {
+  const { data } = await gatewayApi.patch("/users/me/consent", { marketing });
+  return data;
+};
+
+export const exportMyData = async () => {
+  const { data } = await gatewayApi.get("/users/me/export");
+  return data;
+};
+
+export const deleteMyAccount = async (userId: string) => {
+  const { data } = await gatewayApi.delete(`/users/${userId}`);
+  return data;
+};
+
+export const requestEmailChange = async (newEmail: string) => {
+  const { data } = await gatewayApi.post("/users/me/email", {
+    new_email: newEmail,
+  });
+  return data;
+};

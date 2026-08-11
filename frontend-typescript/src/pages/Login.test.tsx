@@ -1,0 +1,58 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { vi } from "vitest";
+import Login from "./Login";
+import * as usersApi from "@/api/usersApi";
+import * as authContext from "@/context/AuthContext";
+
+vi.mock("@/api/usersApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/usersApi")>();
+  return { ...actual, loginUser: vi.fn() };
+});
+
+vi.mock("@/context/AuthContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/context/AuthContext")>();
+  return { ...actual, useAuth: vi.fn() };
+});
+
+function renderLogin() {
+  vi.mocked(authContext.useAuth).mockReturnValue({
+    isAuthenticated: false,
+    isRegistering: false,
+    login: vi.fn(),
+  } as any);
+  return render(
+    <MemoryRouter>
+      <Login />
+    </MemoryRouter>,
+  );
+}
+
+async function submit() {
+  await userEvent.type(screen.getByPlaceholderText(/enter your username/i), "user@example.com");
+  await userEvent.type(screen.getByPlaceholderText(/enter your password/i), "whatever");
+  await userEvent.click(screen.getByRole("button", { name: /login/i }));
+}
+
+describe("Login error messages", () => {
+  it("shows the server's lockout message on a 429", async () => {
+    vi.mocked(usersApi.loginUser).mockRejectedValue({
+      response: { status: 429, data: { detail: "Too many failed login attempts. Try again later." } },
+    });
+    renderLogin();
+    await submit();
+    expect(
+      await screen.findByText("Too many failed login attempts. Try again later."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a generic invalid-credentials message on a 401", async () => {
+    vi.mocked(usersApi.loginUser).mockRejectedValue({
+      response: { status: 401, data: { detail: "Invalid credentials" } },
+    });
+    renderLogin();
+    await submit();
+    expect(await screen.findByText("Invalid username or password")).toBeInTheDocument();
+  });
+});

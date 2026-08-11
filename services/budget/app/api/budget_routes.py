@@ -30,7 +30,8 @@ from app.services.budget_services import (
     get_grantee_dashboard_summary_service,
 )
 from app.services.customer_client import require_donor
-from shared.security.dependencies import get_validated_user  # noqa: F401
+from app.crud.budget_crud import get_budgets_by_creator
+from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/budgets", tags=["Public Budgets"])
 private_router = APIRouter(prefix="/budgets", tags=["Private Budgets"])
@@ -147,3 +148,22 @@ async def delete_budget_endpoint(
     return {
         "success": await delete_budget_service(budget_id=budget_id, valid_user=valid_user, db=db)
     }
+
+
+@router.get("/by-creator/{user_id}")
+def get_budgets_by_creator_endpoint(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    # Called by the users service to build a data-subject data-export — the
+    # users service forwards the requesting user's own token, so this is
+    # self-service only, same as delete_my_account. Unlike /customers/by_ids/,
+    # this sits on the public router with no gateway-level path exclusion, so
+    # it must enforce this itself rather than trust the "internal" convention.
+    if str(valid_user["user_id"]) != str(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to view this user's budgets")
+    return [
+        {"id": str(b.id), "name": b.name, "type": "budget", "created_at": b.created_at}
+        for b in get_budgets_by_creator(db, user_id)
+    ]

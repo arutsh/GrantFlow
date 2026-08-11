@@ -5,6 +5,15 @@ import { MemoryRouter } from "react-router-dom";
 import { TopBar } from "./TopBar";
 import { AuthProvider } from "@/context/AuthContext";
 
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 function makeFakeJwt(payload: Record<string, unknown>): string {
   const header = btoa(JSON.stringify({ alg: "none", typ: "JWT" }));
   const body = btoa(JSON.stringify(payload));
@@ -26,6 +35,7 @@ function renderTopBar(onOpenMenu: () => void = () => {}) {
 describe("TopBar", () => {
   beforeEach(() => {
     localStorage.clear();
+    mockNavigate.mockClear();
   });
 
   it("shows the user's name and initials, menu closed by default", () => {
@@ -36,16 +46,26 @@ describe("TopBar", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("opens the menu on click, showing a disabled Account Settings item and an active Logout item", async () => {
+  it("opens the menu on click, showing active Account Settings and Logout items", async () => {
     const user = userEvent.setup();
     renderTopBar();
 
     await user.click(screen.getByRole("button", { name: /Jane Doe/i }));
 
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    const settingsItem = screen.getByRole("menuitem", { name: "Account Settings" });
-    expect(settingsItem).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Account Settings" })).toBeEnabled();
     expect(screen.getByRole("menuitem", { name: "Logout" })).toBeEnabled();
+  });
+
+  it("navigates to /settings and closes the menu when Account Settings is clicked", async () => {
+    const user = userEvent.setup();
+    renderTopBar();
+
+    await user.click(screen.getByRole("button", { name: /Jane Doe/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Account Settings" }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("/settings");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("closes the menu when clicking outside", async () => {

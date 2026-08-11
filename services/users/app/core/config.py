@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     RABBITMQ_EXCHANGE: str
     LOG_LEVEL: str
     AI_SERVICE_URL: str = "http://localhost:8082/api/v1"
+    BUDGET_SERVICE_URL: str = "http://localhost:8001/api/v1"
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_SECONDS: int = 900
+    # Only ever true in .env.users.local (local dev + e2e CI, both boot from
+    # docker-compose.local.yml) — never set in .env.users.dev/.env.users.prod.
+    # Lets e2e drive the real /auth/verify-email flow without a real inbox.
+    EXPOSE_VERIFICATION_TOKEN_FOR_TESTS: bool = False
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")
 
 
