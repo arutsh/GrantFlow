@@ -38,7 +38,15 @@ export default function Login() {
         navigate("/dashboard");
       }
     } catch (err: any) {
-      setError("Invalid username or password");
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 429) {
+        setError(detail || "Too many failed login attempts. Try again later.");
+      } else if (status === 401) {
+        setError("Invalid username or password");
+      } else {
+        setError(detail || "Something went wrong. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }

@@ -14,12 +14,14 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [consentDataProcessing, setConsentDataProcessing] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { login } = useAuth();
 
   const mutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
-      registerUser(email, password),
+      registerUser(email, password, consentDataProcessing, consentMarketing),
     onSuccess: (data) => {
       login(
         data.access_token,
@@ -33,7 +35,7 @@ export default function Register() {
       navigate("/confirm-email");
     },
     onError: (error: any) => {
-      setError("Registration failed. Please try again.");
+      setError(error?.response?.data?.detail || "Registration failed. Please try again.");
       console.error("Registration failed", error);
     },
   });
@@ -47,8 +49,14 @@ export default function Register() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 8) {
+      // Rest of the policy lives server-side (shared/security/password_policy.py).
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
+    if (!consentDataProcessing) {
+      setError("You must consent to data processing to create an account");
       return;
     }
 
@@ -117,7 +125,9 @@ export default function Register() {
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-1">At least 6 characters</p>
+          <p className="text-xs text-gray-500 mt-1">
+            At least 8 characters, not entirely numeric
+          </p>
         </div>
 
         {/* Confirm Password Input */}
@@ -142,6 +152,45 @@ export default function Register() {
               {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
+        </div>
+
+        {/* Consent */}
+        <div className="mb-4 flex items-start gap-2">
+          <input
+            type="checkbox"
+            id="consent-data-processing"
+            checked={consentDataProcessing}
+            onChange={(e) => setConsentDataProcessing(e.target.checked)}
+            className="mt-1 w-4 h-4 rounded border-gray-300 text-slate-800 focus:ring-2 focus:ring-slate-300 cursor-pointer"
+            required
+          />
+          <label
+            htmlFor="consent-data-processing"
+            className="text-sm text-gray-600 cursor-pointer"
+          >
+            I consent to my data being processed to provide this service.
+            Required to create an account. See our{" "}
+            <a href="/legal#privacy" className="underline hover:opacity-70">
+              Privacy Policy
+            </a>
+            .
+          </label>
+        </div>
+        <div className="mb-6 flex items-start gap-2">
+          <input
+            type="checkbox"
+            id="consent-marketing"
+            checked={consentMarketing}
+            onChange={(e) => setConsentMarketing(e.target.checked)}
+            className="mt-1 w-4 h-4 rounded border-gray-300 text-slate-800 focus:ring-2 focus:ring-slate-300 cursor-pointer"
+          />
+          <label
+            htmlFor="consent-marketing"
+            className="text-sm text-gray-600 cursor-pointer"
+          >
+            Send me occasional product updates by email (optional — you can
+            change this anytime in Settings).
+          </label>
         </div>
 
         {/* Sign Up Button */}

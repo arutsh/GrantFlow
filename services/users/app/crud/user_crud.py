@@ -1,6 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.user import UserModel
@@ -73,12 +74,15 @@ async def create_user(
     last_name: str | None = "",
     role: str | None = "user",
     customer_id: UUID | None = None,
+    consent_data_processing: bool = False,
+    consent_marketing: bool = False,
 ) -> UserModel:
     existing = session.query(UserModel).filter(UserModel.email == email).first()
     if existing:
         logger.warning("user_creation_rejected", email=email, reason="email_already_exists")
         raise ValueError("Email already registered")
 
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     user = UserModel(
         email=email,
         hashed_password=hash_password(password),
@@ -86,6 +90,11 @@ async def create_user(
         last_name=last_name,
         role=role,
         customer_id=customer_id,
+        # RegisterRequest already rejects consent_data_processing=False
+        # (consent-management spec), so this is always set at this point —
+        # still guarded here in case create_user is ever called directly.
+        consent_data_processing_at=now if consent_data_processing else None,
+        consent_marketing_at=now if consent_marketing else None,
     )
     session.add(user)
     session.commit()
@@ -144,8 +153,18 @@ def get_user_by_verification_token(
     """The stored hash is bcrypt (salted), so equality can't be pushed into
     a WHERE clause — the caller supplies the email (round-tripped through
     the verification link) so lookup is a single indexed query + one
-    hash-verify, rather than scanning every account with a pending token."""
-    user = get_user_by_email(session, email)
+    hash-verify, rather than scanning every account with a pending token.
+
+    Matches on `email` OR `pending_email` so this same lookup (and the same
+    /auth/verify-email endpoint) serves both initial account verification
+    and email-change rectification — the verification link always carries
+    whichever address the token was actually issued for.
+    """
+    user = (
+        session.query(UserModel)
+        .filter(or_(UserModel.email == email, UserModel.pending_email == email))
+        .first()
+    )
     if not user or not user.email_verification_token_hash:
         return None
     if not verify_token_hash(raw_token, user.email_verification_token_hash):
@@ -155,8 +174,84 @@ def get_user_by_verification_token(
 
 def mark_email_verified(session: Session, user: UserModel) -> UserModel:
     user.email_verified = True
+    if user.pending_email:
+        # Rectification confirmation: promote the pending address now that
+        # it's verified. The old address remained active/loginable up to
+        # this point (data-subject-rights spec: "old email remains active
+        # until confirmed").
+        user.email = user.pending_email
+        user.pending_email = None
     user.email_verification_token_hash = None
     user.email_verification_expires_at = None
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def set_pending_email_verification_token(session: Session, user: UserModel, new_email: str) -> str:
+    """Rectification: stores `new_email` as unverified and returns a raw
+    verification token for it (mirrors set_email_verification_token). The
+    account's active `email` is left untouched until the token is
+    confirmed via /auth/verify-email."""
+    existing = (
+        session.query(UserModel)
+        .filter(or_(UserModel.email == new_email, UserModel.pending_email == new_email))
+        .first()
+    )
+    if existing and existing.id != user.id:
+        # Covers both an already-active email and another user's in-flight
+        # pending change to the same address — without the latter check,
+        # both requests would succeed here and the second to actually
+        # verify would hit the `email` unique constraint as an unhandled
+        # 500 in /auth/verify-email instead of a clean error right here.
+        raise ValueError("Email already registered")
+
+    raw_token = secrets.token_urlsafe(32)
+    user.pending_email = new_email
+    user.email_verification_token_hash = hash_token(raw_token)
+    user.email_verification_expires_at = datetime.now(timezone.utc).replace(
+        tzinfo=None
+    ) + timedelta(hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS)
+    session.commit()
+    session.refresh(user)
+    return raw_token
+
+
+def get_consent_state(user: UserModel) -> dict:
+    return {
+        "data_processing_granted": user.consent_data_processing_at is not None,
+        "data_processing_at": user.consent_data_processing_at,
+        "marketing_granted": user.consent_marketing_at is not None,
+        "marketing_at": user.consent_marketing_at,
+    }
+
+
+def set_marketing_consent(session: Session, user: UserModel, granted: bool) -> UserModel:
+    user.consent_marketing_at = datetime.now(timezone.utc).replace(tzinfo=None) if granted else None
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def _tombstone_email(user_id: UUID) -> str:
+    return f"deleted-{user_id}@deleted.invalid"
+
+
+def soft_delete_user(session: Session, user: UserModel) -> UserModel:
+    """Right to erasure (data-subject-rights spec): scrub PII to a
+    tombstone value and block future login, but keep the row — financial
+    records' created_by/updated_by references must not dangle (design.md
+    decision 2). Session revocation is the caller's job (it also needs to
+    touch Redis — see app/api/auth_routes.py's _revoke_session_everywhere).
+    """
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    user.first_name = "Deleted"
+    user.last_name = "User"
+    user.email = _tombstone_email(user.id)
+    user.pending_email = None
+    user.hashed_password = None
+    user.deletion_requested_at = user.deletion_requested_at or now
+    user.deleted_at = now
     session.commit()
     session.refresh(user)
     return user

@@ -1,26 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from app.schemas.auth_schema import (
     RegisterRequest,
     LoginRequest,
     TokenResponse,
+    ChangePasswordRequest,
     VerifyEmailRequest,
     VerifyEmailResponse,
     ResendVerificationResponse,
 )
+from app.schemas.session_schema import SessionSummary
 
 from app.db.session import SessionLocal
 from app.utils.security import (
+    hash_password,
     verify_password,
     create_access_token,
     create_refresh_token,
     hash_token,
     verify_token_hash,
+    REFRESH_TOKEN_EXPIRE_DAYS,
 )
-from app.crud.sessions_curd import create_session, get_session_by_id
+from shared.security.password_policy import validate_password_strength
+from shared.security.session_revocation import mark_session_revoked
+from app.core.config import settings
+from app.crud.sessions_curd import (
+    create_session,
+    get_session_by_id,
+    get_non_revoked_sessions_for_user,
+    revoke_session,
+)
 from app.crud.user_crud import (
     get_user,
     get_user_by_email,
@@ -32,6 +45,11 @@ from app.crud.user_crud import (
 from app.crud.customer_crud import get_customer
 from app.utils.redis import _cache_get, _delete_key
 from app.services.celery_client import enqueue_verification_email
+from app.services.login_rate_limiter import (
+    is_locked_out,
+    record_failed_attempt,
+    clear_failed_attempts,
+)
 from shared.security.dependencies import get_validated_user
 from app.core.logging import get_logger
 
@@ -94,6 +112,8 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
             last_name=req.last_name,
             role=req.role,
             customer_id=req.customer_id,
+            consent_data_processing=req.consent_data_processing,
+            consent_marketing=req.consent_marketing,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -129,10 +149,30 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    req: LoginRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+
+    if is_locked_out(req.email, client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+        )
+
     user = get_user_by_email(db, req.email)
-    if not user or not verify_password(req.password, user.hashed_password):
+    if (
+        not user
+        or not user.hashed_password
+        or getattr(user, "deleted_at", None) is not None
+        or not verify_password(req.password, user.hashed_password)
+    ):
+        record_failed_attempt(req.email, client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    clear_failed_attempts(req.email)
 
     refresh_token = create_refresh_token()
 
@@ -165,7 +205,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     s = get_session_by_id(db, session_id)
-    if not s:
+    if not s or s.revoked:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     # Session model always has naive datetime, assume UTC
@@ -197,15 +237,32 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/verify-email", response_model=VerifyEmailResponse)
-def verify_email(req: VerifyEmailRequest, db: Session = Depends(get_db)):
+def verify_email(
+    req: VerifyEmailRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    # Same class of attacker-guessable input (email + token) that login-rate-
+    # limiting was added to defend — reuses that mechanism under a separate
+    # bucket rather than leaving this endpoint unguarded.
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(req.email, client_ip, bucket="verify_email"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many verification attempts. Try again later.",
+        )
+
     user = get_user_by_verification_token(db, req.email, req.token)
     if not user:
+        record_failed_attempt(req.email, client_ip, bucket="verify_email")
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
     expires_at = user.email_verification_expires_at
     if not expires_at or expires_at.replace(tzinfo=ZoneInfo("UTC")) < datetime.now(ZoneInfo("UTC")):
+        record_failed_attempt(req.email, client_ip, bucket="verify_email")
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
+    clear_failed_attempts(req.email, bucket="verify_email")
     mark_email_verified(db, user)
     return VerifyEmailResponse(email_verified=True)
 
@@ -227,4 +284,103 @@ def resend_verification(
     except Exception:
         logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
 
-    return ResendVerificationResponse(sent=True)
+    debug_token = raw_token if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS else None
+    return ResendVerificationResponse(sent=True, debug_token=debug_token)
+
+
+@router.post("/auth/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    request: Request = None,  # type: ignore[assignment]
+    current_user: dict = Depends(get_validated_user),
+    db: Session = Depends(get_db),
+):
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    # Keyed on user id, not email — always available from the token.
+    subject = str(current_user["user_id"])
+
+    if is_locked_out(subject, client_ip, bucket="change_password"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed attempts. Try again later.",
+        )
+
+    user = get_user(db, current_user["user_id"])
+    if (
+        not user
+        or not user.hashed_password
+        or not verify_password(req.current_password, user.hashed_password)
+    ):
+        record_failed_attempt(subject, client_ip, bucket="change_password")
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    clear_failed_attempts(subject, bucket="change_password")
+
+    try:
+        validate_password_strength(
+            req.new_password,
+            email=user.email,
+            name=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    user.hashed_password = hash_password(req.new_password)
+    db.commit()
+
+    # Revoke every other session, like logout()/delete_my_account() do; keep this one alive.
+    current_session_id = current_user.get("session_id")
+    for session in get_non_revoked_sessions_for_user(db, user.id):
+        if str(session.id) == str(current_session_id):
+            continue
+        _revoke_session_everywhere(db, session)
+
+    return {"changed": True}
+
+
+def _revoke_session_everywhere(db: Session, session) -> None:
+    """Revoke a session in both stores: Postgres (`SessionModel.revoked`,
+    the source of truth used by the active-sessions listing) and Redis
+    (the cross-service check every service's `get_current_user` consults —
+    see shared/security/session_revocation.py for why a DB lookup alone
+    can't be shared across services)."""
+    revoke_session(db, session)
+    mark_session_revoked(str(session.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+
+
+@router.post("/auth/logout")
+def logout(current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)):
+    session_id = current_user.get("session_id")
+    session = get_session_by_id(db, session_id) if session_id else None
+    if session and not session.revoked:
+        _revoke_session_everywhere(db, session)
+    return {"logged_out": True}
+
+
+@router.get("/auth/sessions", response_model=list[SessionSummary])
+def list_sessions(current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)):
+    sessions = get_non_revoked_sessions_for_user(db, current_user["user_id"])
+    current_session_id = str(current_user.get("session_id") or "")
+    return [
+        SessionSummary(
+            id=s.id,
+            issued_at=s.issued_at,
+            expires_at=s.expires_at,
+            current=str(s.id) == current_session_id,
+        )
+        for s in sessions
+    ]
+
+
+@router.delete("/auth/sessions/{session_id}")
+def revoke_one_session(
+    session_id: UUID,
+    current_user: dict = Depends(get_validated_user),
+    db: Session = Depends(get_db),
+):
+    session = get_session_by_id(db, session_id)
+    if not session or str(session.user_id) != str(current_user["user_id"]):
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session.revoked:
+        _revoke_session_everywhere(db, session)
+    return {"revoked": True}

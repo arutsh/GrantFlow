@@ -2,7 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { vi } from "vitest";
 import App from "@/App";
+import gatewayApi from "@/api/gatewayApi";
 
 function makeFakeJwt(payload: Record<string, unknown>): string {
   const header = btoa(JSON.stringify({ alg: "none", typ: "JWT" }));
@@ -127,6 +129,35 @@ describe("AuthProvider", () => {
       expect(screen.getByText(/Auth: no/i)).toBeInTheDocument();
     });
     expect(localStorage.getItem("token")).toBeNull();
+  });
+
+  it("sends /auth/logout with the token that was active, not a race against the storage clear", async () => {
+    // gatewayApi's request interceptor reads storage at dispatch time, which
+    // happens asynchronously (a microtask) — logout() clears storage
+    // synchronously right after firing this call, so relying on the
+    // interceptor alone would send the request unauthenticated. logout()
+    // must attach the token itself before that clear runs.
+    const postSpy = vi.spyOn(gatewayApi, "post").mockResolvedValue({ data: {} });
+
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("Login"));
+    await waitFor(() => screen.getByText("Auth: Yes"));
+
+    userEvent.click(screen.getByText("Logout"));
+    await waitFor(() => screen.getByText("Auth: No"));
+
+    expect(postSpy).toHaveBeenCalledWith(
+      "/auth/logout",
+      {},
+      { headers: { Authorization: "Bearer fake-token" } },
+    );
+
+    postSpy.mockRestore();
   });
 
   it("defaults isNgo/isDonor to false when unauthenticated", () => {

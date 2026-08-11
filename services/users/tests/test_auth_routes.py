@@ -94,6 +94,7 @@ class TestRefreshRoleClaims:
             user=user,
             refresh_token_hash="irrelevant",
             expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+            revoked=False,
         )
         with (
             patch("app.api.auth_routes._cache_get", return_value=str(session.id)),
@@ -146,8 +147,9 @@ class TestRegisterRoleClaims:
                 register_endpoint(
                     RegisterRequest(
                         email="new@example.com",
-                        password="pw",
+                        password="Correct-Horse-1",
                         customer_id=created_user.customer_id,
+                        consent_data_processing=True,
                     ),
                     db=db,
                 )
@@ -221,7 +223,12 @@ class TestEmailVerifiedClaim:
         ):
             resp = asyncio.run(
                 register_endpoint(
-                    RegisterRequest(email="new@example.com", password="pw"), db=object()
+                    RegisterRequest(
+                        email="new@example.com",
+                        password="Correct-Horse-1",
+                        consent_data_processing=True,
+                    ),
+                    db=object(),
                 )
             )
         assert _claims(resp)["email_verified"] is False
@@ -249,6 +256,7 @@ class TestEmailVerifiedClaim:
             user=user,
             refresh_token_hash="irrelevant",
             expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+            revoked=False,
         )
         with (
             patch("app.api.auth_routes._cache_get", return_value=str(session.id)),
@@ -277,7 +285,12 @@ class TestRegisterEnqueuesVerificationEmail:
         ):
             asyncio.run(
                 register_endpoint(
-                    RegisterRequest(email="new@example.com", password="pw"), db=object()
+                    RegisterRequest(
+                        email="new@example.com",
+                        password="Correct-Horse-1",
+                        consent_data_processing=True,
+                    ),
+                    db=object(),
                 )
             )
         assert mock_set_token.call_args[0][1] is created_user
@@ -304,7 +317,12 @@ class TestRegisterEnqueuesVerificationEmail:
         ):
             resp = asyncio.run(
                 register_endpoint(
-                    RegisterRequest(email="new@example.com", password="pw"), db=object()
+                    RegisterRequest(
+                        email="new@example.com",
+                        password="Correct-Horse-1",
+                        consent_data_processing=True,
+                    ),
+                    db=object(),
                 )
             )
         assert resp.access_token
@@ -381,3 +399,32 @@ class TestResendVerification:
         assert resp.sent is False
         mock_set_token.assert_not_called()
         mock_enqueue.assert_not_called()
+
+    def test_debug_token_included_when_flag_enabled(self):
+        """EXPOSE_VERIFICATION_TOKEN_FOR_TESTS lets e2e drive the real
+        verify-email flow without a real inbox — only ever true in
+        services/users/.env.users.local, never in prod."""
+        user = UserModelFactory.build(email_verified=False)
+        with (
+            patch("app.api.auth_routes.get_user", return_value=user),
+            patch(
+                "app.api.auth_routes.set_email_verification_token", return_value="raw-token"
+            ),
+            patch("app.api.auth_routes.enqueue_verification_email"),
+            patch("app.api.auth_routes.settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS", True),
+        ):
+            resp = resend_verification(current_user={"user_id": user.id}, db=object())
+        assert resp.debug_token == "raw-token"
+
+    def test_debug_token_absent_when_flag_disabled(self):
+        user = UserModelFactory.build(email_verified=False)
+        with (
+            patch("app.api.auth_routes.get_user", return_value=user),
+            patch(
+                "app.api.auth_routes.set_email_verification_token", return_value="raw-token"
+            ),
+            patch("app.api.auth_routes.enqueue_verification_email"),
+            patch("app.api.auth_routes.settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS", False),
+        ):
+            resp = resend_verification(current_user={"user_id": user.id}, db=object())
+        assert resp.debug_token is None

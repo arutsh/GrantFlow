@@ -23,6 +23,7 @@ email_validator==2.2.0
 executing==2.2.0
 factory_boy==3.3.3
 Faker==37.8.0
+fakeredis==2.28.1
 fastapi==0.139.2
 fastapi-cli==0.0.8
 fastapi-cloud-cli==0.1.4

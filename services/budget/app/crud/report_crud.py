@@ -34,6 +34,12 @@ def get_report(session: Session, report_id: UUID) -> ReportModel | None:
     return session.query(ReportModel).filter(ReportModel.id == report_id).first()
 
 
+def get_reports_by_creator(session: Session, user_id: UUID) -> list[ReportModel]:
+    """Data-subject-rights export — see get_budgets_by_creator in
+    budget_crud.py for the cross-service call this backs."""
+    return session.query(ReportModel).filter(ReportModel.created_by == user_id).all()
+
+
 def list_reports(session: Session, budget_id: UUID | None = None) -> list[ReportModel]:
     query = session.query(ReportModel)
     if budget_id:
