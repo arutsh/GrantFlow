@@ -215,6 +215,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# stray root-level node_modules (e.g. vitest cache from running npx outside frontend-typescript/)
+/node_modules/
 frontend-typescript/package-lock.json
 CODE_QUALITY_REPORT.md
 .devrc
