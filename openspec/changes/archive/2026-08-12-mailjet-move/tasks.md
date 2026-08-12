@@ -6,7 +6,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 1.2 Refactor `shared/services/mailersend_client.py` so `MailerSendClient` satisfies `EmailProvider` and `MailerSendError` subclasses `EmailProviderError`, populating `status_code`/`retryable` on raise; no change to its constructor args, wire payload, or the MailerSend API URL/behavior.
 - [x] 1.3 Flatten the `account: {name: ...}` personalization field to `account_name` in `services/worker/tasks/users/send_verification_email.py`, and update the corresponding variable reference in the MailerSend dashboard template.
 - [x] 1.4 Add unit tests for `MailerSendClient` (success, HTTP error, network error) — none exist today.
-- [ ] 1.5 Run `services/worker` and `shared` tests/lint clean; verify a real registration still delivers via MailerSend unchanged; PR merged (`Closes` the ticket for this group).
+- [x] 1.5 Run `services/worker` and `shared` tests/lint clean; verify a real registration still delivers via MailerSend unchanged; PR merged (`Closes` the ticket for this group).
 
 ## 2. Mailjet client and runtime provider selection — depends on 1
 
@@ -15,7 +15,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 2.3 Add a `get_email_client()` factory (replacing `_get_client()` in `send_verification_email.py`) that maps `EMAIL_PROVIDER` to `{"mailersend": MailerSendClient, "mailjet": MailjetClient}` and raises a clear configuration error on an unrecognized value instead of defaulting silently.
 - [x] 2.4 Wire `send_verification_email.py` to call `get_email_client()` instead of constructing `MailerSendClient` directly; confirm the `except MailerSendError` catch becomes `except EmailProviderError` so retry behavior is provider-agnostic.
 - [x] 2.5 Add unit tests for `MailjetClient` (success, HTTP error, network error) and for `get_email_client()` (each supported provider, plus the unsupported-value failure path).
-- [ ] 2.6 Run `services/worker` and `shared` tests/lint clean; with `EMAIL_PROVIDER` unset, confirm registration still sends via MailerSend with no behavior change; PR merged (`Closes` the ticket for this group).
+- [x] 2.6 Run `services/worker` and `shared` tests/lint clean; with `EMAIL_PROVIDER` unset, confirm registration still sends via MailerSend with no behavior change; PR merged (`Closes` the ticket for this group).
 
 ## 3. Mailjet dashboard template and dev/local rollout — depends on 2
 
@@ -25,4 +25,4 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 3.4 Add `MAILJET_*` secrets/env plumbing to `.github/workflows/deploy.yml` so prod can flip `EMAIL_PROVIDER=mailjet` later via a config-only change, without another PR; leave prod's actual `EMAIL_PROVIDER` on `mailersend` (or unset) for this change. GitHub repo secrets `MAILJET_API_KEY`/`MAILJET_SECRET_KEY`/`MAILJET_SENDER_EMAIL` still need to be added in repo settings.
 - [x] 3.5 Update `docs/deployment/DEPLOYMENT_MODES.md`'s email-verification section to document `EMAIL_PROVIDER`, both provider's config blocks, and the rollback path (reset to `mailersend`).
 - [x] 3.6 Register a real account in dev with `EMAIL_PROVIDER=mailjet` and confirm the verification email is delivered end-to-end via Mailjet. Confirmed: registered, received the email, clicked the link, "Email confirmed" page shown. Root cause of the initial `blocked` sends was two template issues on Mailjet's side — the verify-link button's `{{var:verify_url:...}}` tag missing quotes around its fallback, and the sender address (`hello@opengrantflow.com`) being stuck in `Pending` validation — both now fixed.
-- [ ] 3.7 Run full worker/shared test suite and lint clean (done, see 2.6); PR still needs to be opened and merged (`Closes` the ticket for this group).
+- [x] 3.7 Run full worker/shared test suite and lint clean (done, see 2.6); PR still needs to be opened and merged (`Closes` the ticket for this group).

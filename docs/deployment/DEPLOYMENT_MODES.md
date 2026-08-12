@@ -370,6 +370,8 @@ Real credentials are never committed — `MAILERSEND_API_TOKEN`/`MAILERSEND_SEND
 
 **Trial-domain recipient allowlist (MailerSend):** on a free-tier account, `POST /v1/email` only delivers to recipient addresses explicitly added and verified in the MailerSend dashboard (Domains → trial domain → recipients), capped at 100 sends total. Sending to any other address — real or made-up — is rejected at the API level, not silently dropped. In practice: either register with your own verified address while testing, or pre-verify a small set of test addresses in the dashboard. This cap is the reason Mailjet was added as a second provider and is the default in dev/local.
 
+**No sandbox mode (Mailjet):** unlike MailerSend, Mailjet has no separate sandbox/test API — dev, local, and prod all hit the same live Send API with real credentials, distinguished only by which `MAILJET_*` values and `EMAIL_PROVIDER` setting are active in each environment's env file. There's no trial-recipient cap to work around, but it also means dev/local sends via Mailjet are real emails through a real account, not a sandboxed no-op.
+
 **Rolling back:** unset `EMAIL_PROVIDER`, or set it back to `mailersend`, in the relevant `.env.worker.*` file (and, in prod, the corresponding GitHub Actions secret substitution). No data migration is involved — the switch is config-only and fully reversible.
 
 ---
