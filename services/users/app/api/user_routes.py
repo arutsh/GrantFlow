@@ -120,6 +120,7 @@ async def update_user_endpoint(
 
     update_data = user_update.model_dump(exclude_unset=True)
     customer = None
+    promote_founder_to_admin = False
     if (
         not is_current_user_superuser
         and user_update.new_customer_name
@@ -127,6 +128,7 @@ async def update_user_endpoint(
     ):
         customer = create_customer(db, user_update.new_customer_name)
         update_data["status"] = "active"
+        promote_founder_to_admin = True
 
     elif user_update.customer_id:
         customer = get_customer(session=db, customer_id=user_update.customer_id)
@@ -135,6 +137,8 @@ async def update_user_endpoint(
 
     filtered_update_data = filter_dict_keys(update_data, allowed_fields)
     filtered_update_data["customer_id"] = customer.id if customer else None
+    if promote_founder_to_admin:
+        filtered_update_data["role"] = "admin"
     await update_user(db, db_user, filtered_update_data)
 
     return db_user
