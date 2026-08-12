@@ -8,6 +8,9 @@ import { Edit2, Trash2 } from "lucide-react";
 
 const columnHelper = createColumnHelper<any>();
 
+const CONFIRMED_DELETE_DISABLED_TITLE =
+  "Confirmed budgets can't be deleted while they may have reports, funding receipts, or currency conversions attached.";
+
 export function TableView({
   data,
   onEdit,
@@ -77,7 +80,12 @@ export function TableView({
           <Button
             variant="icon-danger"
             onClick={() => onDelete(info.row.original.id)}
-            title="Delete budget"
+            disabled={info.row.original.status === "confirmed"}
+            title={
+              info.row.original.status === "confirmed"
+                ? CONFIRMED_DELETE_DISABLED_TITLE
+                : "Delete budget"
+            }
           >
             <Trash2 size={18} />
           </Button>

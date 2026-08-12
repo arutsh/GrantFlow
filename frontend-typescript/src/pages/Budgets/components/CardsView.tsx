@@ -1,30 +1,37 @@
-import Button from "@/components/ui/Button";
+import { useNavigate } from "react-router-dom";
+import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import { StatusBadge } from "@/pages/Budgets/components/BudgetViewHeader";
 import { utcToLocal } from "@/utils/datetime";
 import { formatCurrency } from "@/utils/currency";
 import { Budget } from "../types/budget";
 import { Edit2, Trash2, DollarSign, Calendar, User } from "lucide-react";
 
+const CONFIRMED_DELETE_DISABLED_TITLE =
+  "Confirmed budgets can't be deleted while they may have reports, funding receipts, or currency conversions attached.";
+
 export function CardsView({
   data,
-  onEdit,
   onDelete,
 }: {
   data: Budget[];
-  onEdit: (budget: Budget) => void;
   onDelete: (budget_id: string) => void;
 }) {
+  const navigate = useNavigate();
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
       {data.map((budget: Budget) => (
         <div
           key={budget.id}
-          className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group"
+          onClick={() => navigate(`/budgets/${budget.id}`)}
+          className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
         >
           {/* Card Header with Status */}
           <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
             <div className="flex items-start justify-between gap-3 mb-2">
-              <h2 className="text-lg font-bold text-slate-900 flex-1">
+              <h2
+                className="text-lg font-bold text-slate-900 flex-1 min-w-0 truncate"
+                title={budget.name}
+              >
                 {budget.name}
               </h2>
               <StatusBadge status={budget.status} />
@@ -84,21 +91,30 @@ export function CardsView({
           </div>
 
           {/* Card Actions */}
-          <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex gap-2 justify-end">
+          <div
+            className="grid grid-cols-2 border-t border-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Button
-              variant="secondary"
-              onClick={() => onEdit(budget)}
-              className="flex items-center justify-center gap-1 py-1 px-3 text-sm"
+              variant="ghost"
+              onClick={() => navigate(`/budgets/${budget.id}?edit=1`)}
+              className="flex items-center justify-center gap-1.5 min-h-[44px] rounded-none text-sm"
             >
-              <Edit2 size={14} /> Edit
+              <Edit2 size={16} /> Edit
             </Button>
-            <Button
-              variant="danger"
-              onClick={() => onDelete(budget.id)}
-              className="flex items-center justify-center gap-1 py-1 px-3 text-sm"
+            <ConfirmDeleteButton
+              variant="icon-danger"
+              onConfirm={() => onDelete(budget.id)}
+              disabled={budget.status === "confirmed"}
+              title={
+                budget.status === "confirmed"
+                  ? CONFIRMED_DELETE_DISABLED_TITLE
+                  : undefined
+              }
+              className="flex items-center justify-center gap-1.5 min-h-[44px] rounded-none text-sm border-l border-slate-100"
             >
-              <Trash2 size={14} /> Delete
-            </Button>
+              <Trash2 size={16} /> Delete
+            </ConfirmDeleteButton>
           </div>
         </div>
       ))}

@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useParams } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { BudgetViewHeader } from "./components/BudgetViewHeader";
 import { BudgetViewLinesTable } from "./components/BudgetViewLinesTable";
@@ -33,12 +33,26 @@ function SingleBudgetView({ id }: { id: string | undefined }) {
   const [isEditLineOpen, setIsEditLineOpen] = useState<BudgetLine | undefined>(
     undefined
   );
-  // Bumped by CurrencyLedgerPanel's "set actual currency first" prompt to
-  // open BudgetViewHeader's edit mode from outside it (see that prop's
-  // comment) — undefined until first bumped, so it never fires on mount.
+  // Bumped by CurrencyLedgerPanel's "set actual currency first" prompt (or
+  // the `?edit=1` URL param below) to open BudgetViewHeader's edit mode from
+  // outside it (see that prop's comment) — undefined until first bumped, so
+  // it never fires on mount by itself.
   const [headerEditTrigger, setHeaderEditTrigger] = useState<number>();
   const { budget, setBudget } = useDetailedBudget();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Landed here from the budgets list's Edit action (?edit=1) — open edit
+  // mode immediately, then strip the param so a refresh/back-nav doesn't
+  // re-trigger it.
+  useEffect(() => {
+    if (!searchParams.get("edit")) return;
+    setHeaderEditTrigger((v) => (v ?? 0) + 1);
+    const next = new URLSearchParams(searchParams);
+    next.delete("edit");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Metadata/lines lock as soon as the budget is confirmed — a report can
   // only ever be created against an already-confirmed budget, so this is a

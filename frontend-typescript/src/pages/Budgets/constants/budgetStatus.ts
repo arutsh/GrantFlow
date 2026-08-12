@@ -18,7 +18,7 @@ export const STATUS_STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600",
   ai_draft: "bg-amber-100 text-amber-700",
   confirmed: "bg-teal-100 text-teal-700",
-  archived: "bg-gray-200 text-gray-600",
+  archived: "bg-transparent text-gray-500 border border-dashed border-gray-400",
 };
 
 // Solid-fill counterpart of STATUS_STYLES's pill tints, for chart-like uses

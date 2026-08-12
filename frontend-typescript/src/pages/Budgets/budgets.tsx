@@ -10,7 +10,11 @@ import {
 import { fetchAllBudgets } from "@/api/gatewayApi";
 import { utcToLocal } from "@/utils/datetime";
 import { HiPlus } from "react-icons/hi";
-import { HiXMark, HiMagnifyingGlass } from "react-icons/hi2";
+import {
+  HiXMark,
+  HiMagnifyingGlass,
+  HiAdjustmentsHorizontal,
+} from "react-icons/hi2";
 import { TableView } from "./components/TableView";
 import { CardsView } from "./components/CardsView";
 
@@ -19,6 +23,7 @@ import { Budget, BudgetPatched } from "./types/budget";
 import { archiveBudget, deleteBudget } from "@/api/budgetApi";
 import { AddBudgetModal } from "./components/AddBudget";
 import { EditBudgetModal } from "./components/EditBudget";
+import { STATUS_STYLES } from "./constants/budgetStatus";
 
 const BudgetsPage: React.FC = () => {
   const [view, setView] = useState<"cards" | "table">();
@@ -35,6 +40,28 @@ const BudgetsPage: React.FC = () => {
   const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [filterDuration, setFilterDuration] = useState<string>("");
   const [showDurationDropdown, setShowDurationDropdown] = useState(false);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+
+  const toggleStatusFilter = (status: string, checked: boolean) => {
+    setFilterStatuses(
+      checked
+        ? [...filterStatuses, status]
+        : filterStatuses.filter((s) => s !== status),
+    );
+  };
+
+  const toggleCurrencyFilter = (currency: string, checked: boolean) => {
+    setFilterCurrencies(
+      checked
+        ? [...filterCurrencies, currency]
+        : filterCurrencies.filter((c) => c !== currency),
+    );
+  };
+
+  const activeFilterCount =
+    filterStatuses.length +
+    filterCurrencies.length +
+    (filterDuration ? 1 : 0);
 
   useEffect(() => {
     const handleResize = () => {
@@ -229,13 +256,7 @@ const BudgetsPage: React.FC = () => {
                   <div
                     key={`status-${status}`}
                     className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold capitalize ${
-                      status === "draft"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : status === "approved"
-                          ? "bg-green-100 text-green-800"
-                          : status === "rejected"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-slate-100 text-slate-800"
+                      STATUS_STYLES[status] ?? STATUS_STYLES.draft
                     }`}
                   >
                     {status}
@@ -301,6 +322,24 @@ const BudgetsPage: React.FC = () => {
                 />
               </div>
 
+              {/* Mobile: single Filters trigger replacing the three dropdowns below lg */}
+              <button
+                onClick={() => setShowFilterSheet(true)}
+                className="lg:hidden w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              >
+                <span className="flex items-center gap-2 text-slate-700">
+                  <HiAdjustmentsHorizontal size={16} />
+                  Filters
+                </span>
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-slate-700 text-white text-xs font-semibold">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Desktop (lg+): existing Status/Currency/Duration dropdowns + Clear, unchanged */}
+              <div className="hidden lg:contents">
               {/* Status Filter - Multi-select with Dropdown */}
               <div className="relative flex-shrink-0 w-full lg:w-auto">
                 <button
@@ -339,15 +378,9 @@ const BudgetsPage: React.FC = () => {
                           <input
                             type="checkbox"
                             checked={filterStatuses.includes(status)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterStatuses([...filterStatuses, status]);
-                              } else {
-                                setFilterStatuses(
-                                  filterStatuses.filter((s) => s !== status),
-                                );
-                              }
-                            }}
+                            onChange={(e) =>
+                              toggleStatusFilter(status, e.target.checked)
+                            }
                             className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
                           />
                           <span className="text-sm text-slate-700 capitalize">
@@ -398,20 +431,9 @@ const BudgetsPage: React.FC = () => {
                           <input
                             type="checkbox"
                             checked={filterCurrencies.includes(currency)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFilterCurrencies([
-                                  ...filterCurrencies,
-                                  currency,
-                                ]);
-                              } else {
-                                setFilterCurrencies(
-                                  filterCurrencies.filter(
-                                    (c) => c !== currency,
-                                  ),
-                                );
-                              }
-                            }}
+                            onChange={(e) =>
+                              toggleCurrencyFilter(currency, e.target.checked)
+                            }
                             className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
                           />
                           <span className="text-sm text-slate-700">
@@ -501,7 +523,135 @@ const BudgetsPage: React.FC = () => {
                   <HiXMark size={14} /> Clear All
                 </Button>
               )}
+              </div>
             </div>
+
+            {/* Mobile filter sheet */}
+            {showFilterSheet && (
+              <div className="lg:hidden fixed inset-0 z-50">
+                <div
+                  className="absolute inset-0 bg-black/40"
+                  onClick={() => setShowFilterSheet(false)}
+                />
+                <div className="absolute bottom-0 inset-x-0 max-h-[85vh] overflow-y-auto bg-white rounded-t-2xl p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-slate-900">
+                      Filters
+                    </h2>
+                    <button
+                      onClick={() => setShowFilterSheet(false)}
+                      className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded"
+                    >
+                      <HiXMark size={20} />
+                    </button>
+                  </div>
+
+                  {/* Status group */}
+                  <div className="mb-4">
+                    <p className="text-sm font-semibold text-slate-700 mb-2">
+                      Status
+                    </p>
+                    <div className="space-y-1">
+                      {uniqueStatuses.map((status: string) => (
+                        <label
+                          key={status}
+                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={filterStatuses.includes(status)}
+                            onChange={(e) =>
+                              toggleStatusFilter(status, e.target.checked)
+                            }
+                            className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                          />
+                          <span className="text-sm text-slate-700 capitalize">
+                            {status}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Currency group */}
+                  <div className="mb-4">
+                    <p className="text-sm font-semibold text-slate-700 mb-2">
+                      Currency
+                    </p>
+                    <div className="space-y-1">
+                      {uniqueCurrencies.map((currency: string) => (
+                        <label
+                          key={currency}
+                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={filterCurrencies.includes(currency)}
+                            onChange={(e) =>
+                              toggleCurrencyFilter(currency, e.target.checked)
+                            }
+                            className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                          />
+                          <span className="text-sm text-slate-700">
+                            {currency}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Duration group */}
+                  <div className="mb-6">
+                    <p className="text-sm font-semibold text-slate-700 mb-2">
+                      Duration
+                    </p>
+                    <div className="space-y-1">
+                      {[
+                        { value: "short", label: "Short (≤ 6 mo)" },
+                        { value: "medium", label: "Medium (7-12 mo)" },
+                        { value: "long", label: "Long (> 12 mo)" },
+                      ].map((option) => (
+                        <label
+                          key={option.value}
+                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="radio"
+                            name="duration-sheet"
+                            value={option.value}
+                            checked={filterDuration === option.value}
+                            onChange={(e) =>
+                              setFilterDuration(e.target.value)
+                            }
+                            className="w-4 h-4 border-slate-300 text-slate-700 focus:ring-slate-400"
+                          />
+                          <span className="text-sm text-slate-700">
+                            {option.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={clearFilters}
+                      variant="outline"
+                      className="flex-1 flex items-center justify-center"
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      onClick={() => setShowFilterSheet(false)}
+                      variant="primary"
+                      className="flex-1 flex items-center justify-center"
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Results counter */}
             <div className="text-xs text-slate-600 mt-3">
@@ -515,7 +665,6 @@ const BudgetsPage: React.FC = () => {
               {view === "cards" ? (
                 <CardsView
                   data={filteredData}
-                  onEdit={openEditModal}
                   onDelete={deleteBudgetMutation.mutate}
                 />
               ) : view === "table" ? (
