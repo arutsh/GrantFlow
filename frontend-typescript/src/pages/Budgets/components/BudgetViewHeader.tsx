@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Archive } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -30,7 +31,11 @@ export function StatusBadge({ status }: { status: string }) {
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full mb-2 ${cls}`}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-current" />
+      {status === "archived" ? (
+        <Archive className="w-3 h-3" />
+      ) : (
+        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+      )}
       {label}
     </span>
   );
