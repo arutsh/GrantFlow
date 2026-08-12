@@ -56,4 +56,4 @@ MailerSend's `personalization` currently includes a nested `account: {name: ...}
 ## Open Questions
 
 - Should the shared error's `status_code`/`retryable` fields be wired into the Celery retry logic as part of this change, or stay unused until a dedicated follow-up? Leaning: leave unused here — populating them is nearly free while writing/refactoring both clients, but consuming them is a separate, already-identified fix.
-- Is a Mailjet sandbox/test mode available equivalent to MailerSend's trial-domain cap, worth documenting in DEPLOYMENT_MODES.md alongside the existing MailerSend trial-domain note? To confirm during implementation.
+- ~~Is a Mailjet sandbox/test mode available equivalent to MailerSend's trial-domain cap, worth documenting in DEPLOYMENT_MODES.md alongside the existing MailerSend trial-domain note?~~ Resolved: Mailjet has no separate sandbox/test mode — dev/local use the same live API and credentials as prod would, just with a different `EMAIL_PROVIDER` value. Documented in DEPLOYMENT_MODES.md.
