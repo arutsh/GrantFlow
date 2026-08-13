@@ -4,6 +4,7 @@ from .jwt_utils import decode_access_token
 from .session_revocation import is_session_revoked
 from uuid import UUID
 from jose import JWTError
+from shared.observability import set_span_attributes
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")  # Only valid in users service
 
@@ -37,7 +38,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         if session_id and is_session_revoked(session_id):
             raise ValueError("Session has been revoked")
 
-        return {"user_id": user_uuid, "role": role, "token": token, "session_id": session_id}
+        return {
+            "user_id": user_uuid,
+            "role": role,
+            "token": token,
+            "session_id": session_id,
+            "payload": payload,
+        }
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -53,20 +60,14 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
 
 def get_validated_user(user: dict = Depends(get_current_user)) -> dict:
-    """Decode the JWT payload and return it with the raw token attached.
+    """Return the full decoded JWT payload, with the raw token attached.
 
-    Raises HTTP 401 on any failure — use this as a FastAPI dependency in
+    Reuses the payload `get_current_user` already decoded and verified —
+    signature/expiry/revocation checks all already happened there, so this
+    no longer re-decodes the token. Use this as a FastAPI dependency in
     every service instead of defining per-route copies.
     """
-    try:
-        payload = decode_access_token(user["token"])
-        if not payload:
-            raise ValueError("Empty token payload")
-        payload["token"] = user["token"]
-        return payload
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    payload = dict(user["payload"])
+    payload["token"] = user["token"]
+    set_span_attributes(user_id=payload.get("user_id"))
+    return payload

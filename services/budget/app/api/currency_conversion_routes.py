@@ -16,6 +16,7 @@ from app.services.currency_ledger_services import (
     list_currency_conversions_service,
     get_ledger_balance_service,
 )
+from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/currency-conversions", tags=["Currency Conversions"])
@@ -35,13 +36,17 @@ def create_currency_conversion_view(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return record_conversion_service(db, valid_user, conversion)
+    set_span_attributes(budget_id=conversion.budget_id)
+    created_conversion = record_conversion_service(db, valid_user, conversion)
+    set_span_attributes(conversion_id=created_conversion.id)
+    return created_conversion
 
 
 @router.get("/balance/{budget_id}", response_model=LedgerBalance)
 def get_ledger_balance_view(
     budget_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(budget_id=budget_id)
     return get_ledger_balance_service(db, valid_user, budget_id)
 
 
@@ -49,6 +54,7 @@ def get_ledger_balance_view(
 def get_currency_conversion_view(
     conversion_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(conversion_id=conversion_id)
     return get_currency_conversion_service(db, valid_user, conversion_id)
 
 
@@ -56,4 +62,5 @@ def get_currency_conversion_view(
 def list_currency_conversions_view(
     budget_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(budget_id=budget_id)
     return list_currency_conversions_service(db, valid_user, budget_id)

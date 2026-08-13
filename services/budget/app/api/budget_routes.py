@@ -31,6 +31,7 @@ from app.services.budget_services import (
 )
 from app.services.customer_client import require_donor
 from app.crud.budget_crud import get_budgets_by_creator
+from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/budgets", tags=["Public Budgets"])
@@ -51,7 +52,9 @@ async def create_budget_endpoint(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return await create_budget_service(budget, valid_user, db, include_user_datails=True)
+    result = await create_budget_service(budget, valid_user, db, include_user_datails=True)
+    set_span_attributes(budget_id=result["id"])
+    return result
 
 
 @router.get("/funded/summary", response_model=FundedBudgetsSummary)
@@ -100,6 +103,7 @@ async def get_budget_endpoint(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
+    set_span_attributes(budget_id=budget_id)
     budget = await get_viewable_budget_service(budget_id, valid_user, db, include_user_details=True)
     if budget:
         budget_lines = get_viewable_budget_lines_service(
@@ -116,6 +120,7 @@ async def update_budget_endpoint(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
+    set_span_attributes(budget_id=budget_id)
     updated_budget = await update_budget_service(
         budget_id=budget_id, budget=budget, valid_user=valid_user, db=db
     )
@@ -145,6 +150,7 @@ async def create_budget_with_lines_endpoint(
 async def delete_budget_endpoint(
     budget_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(budget_id=budget_id)
     return {
         "success": await delete_budget_service(budget_id=budget_id, valid_user=valid_user, db=db)
     }

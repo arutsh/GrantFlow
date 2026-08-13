@@ -11,6 +11,7 @@ from app.services.currency_ledger_services import (
     get_funding_receipt_service,
     list_funding_receipts_service,
 )
+from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/funding-receipts", tags=["Funding Receipts"])
@@ -30,13 +31,17 @@ def create_funding_receipt_view(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return record_receipt_service(db, valid_user, receipt)
+    set_span_attributes(budget_id=receipt.budget_id)
+    created_receipt = record_receipt_service(db, valid_user, receipt)
+    set_span_attributes(funding_receipt_id=created_receipt.id)
+    return created_receipt
 
 
 @router.get("/{receipt_id}", response_model=FundingReceipt)
 def get_funding_receipt_view(
     receipt_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(funding_receipt_id=receipt_id)
     return get_funding_receipt_service(db, valid_user, receipt_id)
 
 
@@ -44,4 +49,5 @@ def get_funding_receipt_view(
 def list_funding_receipts_view(
     budget_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(budget_id=budget_id)
     return list_funding_receipts_service(db, valid_user, budget_id)

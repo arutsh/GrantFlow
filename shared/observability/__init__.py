@@ -7,6 +7,7 @@ from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -86,6 +87,21 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
     # Auto-instrument SQLAlchemy globally
     SQLAlchemyInstrumentor().instrument()
 
+    # Auto-instrument outbound httpx calls (inter-service HTTP) globally
+    HTTPXClientInstrumentor().instrument()
+
+    # Auto-instrument pika (RabbitMQ) globally — only budget/users-service
+    # depend on the raw `pika` package (ai-service doesn't use RabbitMQ), so
+    # this is imported lazily and skipped where it isn't installed rather
+    # than making `opentelemetry-instrumentation-pika` a hard dependency of
+    # every service that calls init_observability().
+    try:
+        from opentelemetry.instrumentation.pika import PikaInstrumentor
+
+        PikaInstrumentor().instrument()
+    except ImportError:
+        pass
+
 
 def instrument_fastapi(app):
     """Instrument FastAPI app with tracing. Call this AFTER app is created."""
@@ -112,6 +128,19 @@ def get_tracer(name: str) -> trace.Tracer:
     return trace.get_tracer(name)
 
 
+def set_span_attributes(**attributes) -> None:
+    """Set one or more attributes on the currently active span.
+
+    Values are stringified (span attributes must be primitives) and `None`
+    values are skipped. Safe to call outside a request context — a no-op
+    span silently ignores `set_attribute`.
+    """
+    span = trace.get_current_span()
+    for key, value in attributes.items():
+        if value is not None:
+            span.set_attribute(key, str(value))
+
+
 async def metrics_endpoint(_request):
     """Prometheus metrics endpoint for scraping by Prometheus."""
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -122,5 +151,6 @@ __all__ = [
     "instrument_fastapi",
     "traced",
     "get_tracer",
+    "set_span_attributes",
     "metrics_endpoint",
 ]

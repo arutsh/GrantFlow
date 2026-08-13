@@ -24,6 +24,7 @@ opentelemetry-exporter-prometheus>=0.48b0
 opentelemetry-instrumentation>=0.48b0
 opentelemetry-instrumentation-asgi>=0.48b0
 opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation-httpx>=0.48b0
 opentelemetry-instrumentation-redis>=0.48b0
 opentelemetry-instrumentation-sqlalchemy>=0.48b0
 opentelemetry-proto>=1.28.0

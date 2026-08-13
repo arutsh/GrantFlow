@@ -13,11 +13,11 @@ doesn't happen when we pass an explicit endpoint= as done here).
 """
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from shared.observability import init_observability
+from shared.observability import init_observability, set_span_attributes
 
 
 @pytest.fixture
@@ -112,3 +112,27 @@ class TestInitObservability:
 
         span_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/traces")
         metric_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/metrics")
+
+
+class TestSetSpanAttributes:
+    def test_stringifies_and_sets_each_attribute_on_the_current_span(self):
+        mock_span = MagicMock()
+        with patch("shared.observability.trace.get_current_span", return_value=mock_span):
+            set_span_attributes(budget_id="abc-123", user_id="user-456")
+
+        mock_span.set_attribute.assert_any_call("budget_id", "abc-123")
+        mock_span.set_attribute.assert_any_call("user_id", "user-456")
+
+    def test_stringifies_non_string_values(self):
+        mock_span = MagicMock()
+        with patch("shared.observability.trace.get_current_span", return_value=mock_span):
+            set_span_attributes(count=42)
+
+        mock_span.set_attribute.assert_called_once_with("count", "42")
+
+    def test_skips_none_values(self):
+        mock_span = MagicMock()
+        with patch("shared.observability.trace.get_current_span", return_value=mock_span):
+            set_span_attributes(budget_id="abc-123", user_id=None)
+
+        mock_span.set_attribute.assert_called_once_with("budget_id", "abc-123")

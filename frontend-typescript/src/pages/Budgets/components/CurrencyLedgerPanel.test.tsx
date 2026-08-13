@@ -160,32 +160,57 @@ describe("CurrencyLedgerPanel", () => {
     getLedgerBalanceMock.mockResolvedValue(makeBalance({ local_balance: -450 }));
     renderPanel(makeBudget());
 
-    await waitFor(() => expect(screen.getByText(/unconverted/i)).toBeInTheDocument());
-    expect(screen.getByText(/unconsumed/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/ready to spend/i)).toBeInTheDocument());
+    expect(screen.getByText(/awaiting conversion/i)).toBeInTheDocument();
     expect(screen.getByText("£12,000")).toBeInTheDocument();
     expect(screen.getByText("-£450")).toBeInTheDocument();
   });
 
-  it("shows a received-to-date percentage when local_currency equals actual_currency", async () => {
+  it("shows a received-to-date percentage against the donor commitment", async () => {
     listFundingReceiptsByBudgetMock.mockResolvedValue([
       { id: "r1", budget_id: "b1", amount: 20000, received_at: "2026-06-01" },
       { id: "r2", budget_id: "b1", amount: 20000, received_at: "2026-07-01" },
     ] as FundingReceipt[]);
-    renderPanel(makeBudget({ local_currency: "GBP", actual_currency: "GBP", total_amount: 100000 }));
+    renderPanel(
+      makeBudget({ local_currency: "GBP", actual_currency: "GBP", donor_total_amount: 100000 }),
+    );
 
     await waitFor(() => expect(screen.getByText("£40,000")).toBeInTheDocument());
-    expect(screen.getByText(/40% of £100,000/)).toBeInTheDocument();
+    expect(screen.getByText(/40% of £100,000 committed/)).toBeInTheDocument();
   });
 
-  it("shows two separate figures with no ratio when currencies differ", async () => {
+  it("shows the percentage against the donor commitment even when currencies differ", async () => {
     listFundingReceiptsByBudgetMock.mockResolvedValue([
       { id: "r1", budget_id: "b1", amount: 20000, received_at: "2026-06-01" },
     ] as FundingReceipt[]);
-    renderPanel(makeBudget({ local_currency: "KES", actual_currency: "GBP", total_amount: 100000 }));
+    renderPanel(
+      makeBudget({ local_currency: "KES", actual_currency: "GBP", donor_total_amount: 50000 }),
+    );
 
-    expect(await screen.findByText("Budget Total")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByText("£20,000").length).toBe(2));
+    await waitFor(() => expect(screen.getByText(/40% of £50,000 committed/)).toBeInTheDocument());
+  });
+
+  it("floors the received percentage at 0% when a correction receipt makes the total negative", async () => {
+    listFundingReceiptsByBudgetMock.mockResolvedValue([
+      { id: "r1", budget_id: "b1", amount: -5000, received_at: "2026-06-01" },
+    ] as FundingReceipt[]);
+    renderPanel(
+      makeBudget({ local_currency: "GBP", actual_currency: "GBP", donor_total_amount: 100000 }),
+    );
+
+    await waitFor(() => expect(screen.getByText(/0% of £100,000 committed/)).toBeInTheDocument());
+    expect(screen.queryByText(/-5%/)).not.toBeInTheDocument();
+  });
+
+  it("shows no percentage or committed figure when the donor commitment isn't set", async () => {
+    listFundingReceiptsByBudgetMock.mockResolvedValue([
+      { id: "r1", budget_id: "b1", amount: 20000, received_at: "2026-06-01" },
+    ] as FundingReceipt[]);
+    renderPanel(makeBudget({ donor_total_amount: null }));
+
+    await waitFor(() => expect(screen.getByText("Funding receipt")).toBeInTheDocument());
     expect(screen.queryByText(/% of/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Budget Total")).not.toBeInTheDocument();
   });
 
   it("records a funding receipt with the entered amount and date, and closes the modal", async () => {

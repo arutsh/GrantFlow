@@ -242,3 +242,4 @@ terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/terraform.tfvars
 terraform/*.auto.tfvars
+frontend-typescript/tsconfig.tsbuildinfo

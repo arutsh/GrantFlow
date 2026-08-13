@@ -9,14 +9,16 @@
 **Goals:**
 - Every `DomainError`/`PermissionDenied` caught by `domain_error_handler` is recorded on the active span (`error.type`, `error.message`, `record_exception`).
 - Unhandled (non-domain) exceptions on all three services are caught by a catch-all handler that records them to the span before returning a generic 500 — so bugs that aren't yet modeled as `DomainError` are still traceable, and FastAPI's default "leak the traceback to the client" behavior doesn't apply.
-- `create_budget_with_lines_service` (the priority endpoint from the issue) carries `budget_id`/`user_id` as span attributes so a Jaeger trace pinpoints which budget/user failed.
+- Every mutation endpoint (POST/PATCH/DELETE) across budget-service's routers carries the relevant resource id (`budget_id`, `report_id`, `budget_line_id`, etc.) as a span attribute once known, so a Jaeger trace pinpoints which record failed — not just the original `create_budget_with_lines` endpoint from the issue.
+- GET endpoints whose path already names a resource (single-resource fetches and `by-{parent}` filters) carry that same id, so "why is fetching budget X slow/failing" is answerable from the span — not just mutations.
+- `user_id` is set on every authenticated request's span across all three services, via the shared `get_validated_user` dependency, not per-route.
 - Same handler pattern ported to `users-service` (already has the domain handler, just needs the span-recording + catch-all) and `ai-service` (needs both from scratch).
+- `error_handlers.py` exists once, in `shared/`, instead of three near-identical per-service copies.
 
 **Non-Goals:**
 - Not building a generic structured-logging-to-tracing bridge; `structlog` logging is untouched.
-- Not adding span attributes to every route — only the endpoint called out in the issue (`with-lines`) plus other budget mutation endpoints reached opportunistically, not an exhaustive sweep of every handler in every service.
+- Bare list/dashboard/summary GET endpoints with no resource id in their path (e.g. `GET /budgets/`, `GET /budgets/dashboard/summary`) still get nothing beyond `user_id` — there's no single record to attach, and query-param filters (e.g. `budget_id` on `GET /reports/`) are left for a future pass rather than folded in here.
 - httpx and pika instrumentation are nice-to-haves; if dependency resolution or breakage risk is high, they can be dropped without blocking the rest of the change (tracked as separate tasks, not gating).
-- Not deduplicating the (already duplicated) `error_handlers.py` between budget and users into `shared/` — noted as a pre-existing duplication this change increases, tracked separately, not part of this change's scope.
 
 ## Decisions
 
@@ -26,11 +28,14 @@
 **2. Catch-all handler registered for `Exception`, ordered after `DomainError`/`PermissionDenied`.**
 FastAPI dispatches to the most specific registered handler, so registering `app.add_exception_handler(Exception, catch_all_handler)` is safe alongside the existing `DomainError`/`PermissionDenied` handlers — it only fires for exceptions that aren't already domain errors. Response body stays a generic `{"detail": "Internal server error"}` (no stack trace to the client); the trace carries the detail instead.
 
-**3. Business-context attributes set at the route/service boundary via a small helper, not a new decorator.**
-Rather than inventing a new attribute-setting convention, use `get_tracer(__name__).start_as_current_span(...)` is unnecessary here since FastAPI already owns the request span — instead call `trace.get_current_span().set_attribute("budget_id", str(new_budget.id))` etc. directly in `create_budget_with_lines_service` at the point the ID becomes known (and in a `except` block for `user_id`, which is known from `valid_user` up front). This avoids adding a second tracing pattern alongside `traced()`.
+**3. Business-context attributes are set via a shared `set_span_attributes(**kwargs)` helper, called at the point each id becomes known — not a decorator, not scattered ad hoc `set_attribute` calls.**
+The first pass (single endpoint) called `trace.get_current_span().set_attribute(...)` directly, reasoning that one call site didn't justify a new helper. Widening coverage to every mutation endpoint across budget-service (~25 call sites) reverses that math: `shared/observability` gains a `set_span_attributes(**attributes)` helper (stringifies each value, skips `None`) that every call site — including the shared error handlers' `error.type`/`error.message` — uses instead of repeating the get-span/stringify/set-attribute pattern. Still no decorator and no second tracing pattern alongside `traced()`; just a thin wrapper around `trace.get_current_span()`.
+- `user_id` is set once, centrally, in `shared/security/dependencies.py`'s `get_validated_user`, which every authenticated route in all three services already depends on — covering every endpoint for free instead of per-route. This makes the per-route `user_id` line added to `create_budget_with_lines_service` in the first pass redundant; it's removed.
+- Resource-id attributes (`budget_id`, `report_id`, `budget_line_id`, `report_line_id`, `attachment_id`, `funding_receipt_id`, `conversion_id`, or `mapping_routes.py`'s own `donor_template_id`/`ngo_id`) are set at the route-handler level for update/delete/action endpoints (id already known from the path parameter, before the service is even called), and immediately after the service call returns for create endpoints (id only exists post-creation).
+- GET endpoints get the same treatment as update/delete: any resource id already present as a path parameter (single-resource fetches like `GET /{budget_id}`, and `by-{parent}` filters like `GET /by-budget/{budget_id}`) is set at the top of the handler, before the service call. GETs with no resource id in their path (bare lists, dashboards, summaries) are left alone — see Non-Goals.
 
-**4. `ai-service` gets the same two-file pattern (`exceptions.py` re-export + `error_handlers.py`) copied from `users-service`/`budget-service`, not a shared abstraction.**
-Given the existing duplication between budget and users, introducing a third copy now and centralizing all three later (tracked separately) is lower-risk than a mid-change refactor to `shared/`.
+**4. `error_handlers.py` is deduplicated into `shared/exceptions/error_handlers.py` — reversing the original call to defer this.**
+The first pass added a third near-identical copy for ai-service, explicitly deferring dedup as lower-risk-for-now. Revisited: `domain_error_handler` and `unhandled_exception_handler` move to `shared/exceptions/error_handlers.py`, next to `shared/exceptions/exceptions.py` (which all three services already import `DomainError`/`PermissionDenied` from). Each service's `main.py` imports the handlers directly from `shared.exceptions.error_handlers`; the three per-service `app/core/error_handlers.py` files are deleted rather than kept as re-export shims, since nothing else references that per-service path.
 
 **5. httpx/pika instrumentation added defensively.**
 `HTTPXClientInstrumentor().instrument()` and `PikaInstrumentor().instrument()` are called in `shared/observability/init_observability()` guarded the same way SQLAlchemy's is (only when OTEL isn't disabled), so services that don't use httpx/pika are unaffected by the added no-op instrumentation call. If the packages turn out to conflict with pinned `opentelemetry-*` versions in `requirements.txt`, this task can be dropped without affecting the rest of the change.
@@ -41,6 +46,7 @@ Given the existing duplication between budget and users, introducing a third cop
 - [`trace.get_current_span()` returns a no-op span if called outside a FastAPI-instrumented request context (e.g. in a test or a background task)] → `set_attribute`/`record_exception` on a no-op span are safe no-ops, so no guard is needed, but this should be called out in tests so a missing span isn't mistaken for a bug.
 - [New `opentelemetry-instrumentation-httpx`/`-pika` packages could pin transitive deps that conflict with the existing `opentelemetry-*==1.43.0`/`0.64b0` pins] → Nice-to-have scope; if `pip install` surfaces a conflict, drop these two tasks rather than force a version bump across all `opentelemetry-*` packages.
 - [Adding `user_id`/`budget_id` as span attributes sends what could be considered PII-adjacent identifiers to the OTLP backend (Grafana Cloud, per [[project_grafana_cloud_observability]])] → These are internal UUIDs, not names/emails; consistent with what's already logged via `structlog` today, so no new exposure class.
+- [Setting `user_id` inside `shared/security/dependencies.py` introduces a new `shared.security` → `shared.observability` import] → Not a new external dependency: all three services already call `init_observability()` at startup and already depend on the `opentelemetry-*` packages. `shared.observability` doesn't import `shared.security`, so there's no cycle.
 
 ## Migration Plan
 

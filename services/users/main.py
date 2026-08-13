@@ -15,7 +15,7 @@ from app.db.init_db import init_db
 from fastapi.openapi.utils import get_openapi
 from app.core.config import settings
 from app.core.exceptions import DomainError, PermissionDenied
-from app.core.error_handlers import domain_error_handler
+from shared.exceptions.error_handlers import domain_error_handler, unhandled_exception_handler
 from app.core.logging import setup_logging, get_logger
 from app.services.event_publisher import init_publisher, close_publisher
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
@@ -83,6 +83,7 @@ app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
 app.add_exception_handler(DomainError, domain_error_handler)
 app.add_exception_handler(PermissionDenied, domain_error_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 def custom_openapi():

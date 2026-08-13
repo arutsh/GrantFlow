@@ -13,6 +13,7 @@ layer mocked, matching test_donor_scoped_endpoints.py's convention.
 
 import asyncio
 from datetime import date
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -631,7 +632,8 @@ class TestReportRoutesWiring:
     def test_create_report_route_delegates_to_service(self, make_client):
         client = make_client()
         with patch(
-            "app.api.report_routes.create_report_service", return_value={"id": str(uuid4())}
+            "app.api.report_routes.create_report_service",
+            return_value=SimpleNamespace(id=uuid4()),
         ) as mock_service:
             response = client.post(
                 "/api/v1/reports/",
@@ -639,6 +641,60 @@ class TestReportRoutesWiring:
             )
         assert response.status_code == 200
         mock_service.assert_called_once()
+
+    def test_create_report_route_sets_span_attributes(self, make_client):
+        client = make_client()
+        budget_id = uuid4()
+        report_id = uuid4()
+        with (
+            patch(
+                "app.api.report_routes.create_report_service",
+                return_value=SimpleNamespace(id=report_id),
+            ),
+            patch("app.api.report_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.post(
+                "/api/v1/reports/",
+                json={"budget_id": str(budget_id), "name": "Report"},
+            )
+        mock_set_span_attrs.assert_any_call(budget_id=budget_id)
+        mock_set_span_attrs.assert_any_call(report_id=report_id)
+
+    def test_update_report_route_sets_report_id_span_attribute(self, make_client):
+        client = make_client()
+        report_id = uuid4()
+        with (
+            patch(
+                "app.api.report_routes.update_report_service",
+                return_value={"id": str(report_id)},
+            ),
+            patch("app.api.report_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.patch(f"/api/v1/reports/{report_id}", json={"name": "Renamed"})
+        mock_set_span_attrs.assert_any_call(report_id=report_id)
+
+    def test_get_report_route_sets_report_id_span_attribute(self, make_client):
+        client = make_client()
+        report_id = uuid4()
+        with (
+            patch(
+                "app.api.report_routes.get_report_service",
+                return_value={"id": str(report_id)},
+            ),
+            patch("app.api.report_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.get(f"/api/v1/reports/{report_id}")
+        mock_set_span_attrs.assert_any_call(report_id=report_id)
+
+    def test_list_reports_by_budget_route_sets_budget_id_span_attribute(self, make_client):
+        client = make_client()
+        budget_id = uuid4()
+        with (
+            patch("app.api.report_routes.list_reports_service", return_value=[]),
+            patch("app.api.report_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.get(f"/api/v1/reports/by-budget/{budget_id}")
+        mock_set_span_attrs.assert_any_call(budget_id=budget_id)
 
     def test_submit_report_route_delegates_to_service(self, make_client):
         client = make_client()
