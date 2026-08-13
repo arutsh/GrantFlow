@@ -7,7 +7,6 @@ from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -87,14 +86,21 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
     # Auto-instrument SQLAlchemy globally
     SQLAlchemyInstrumentor().instrument()
 
-    # Auto-instrument outbound httpx calls (inter-service HTTP) globally
-    HTTPXClientInstrumentor().instrument()
+    # Auto-instrument outbound httpx calls (inter-service HTTP) globally —
+    # imported lazily and skipped where it isn't installed (e.g. chat-service,
+    # which imports this module transitively via shared.security.dependencies
+    # but has no reason to depend on opentelemetry-instrumentation-httpx),
+    # rather than making it a hard dependency of every service that imports
+    # anything from shared/observability or shared/security.
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
-    # Auto-instrument pika (RabbitMQ) globally — only budget/users-service
-    # depend on the raw `pika` package (ai-service doesn't use RabbitMQ), so
-    # this is imported lazily and skipped where it isn't installed rather
-    # than making `opentelemetry-instrumentation-pika` a hard dependency of
-    # every service that calls init_observability().
+        HTTPXClientInstrumentor().instrument()
+    except ImportError:
+        pass
+
+    # Auto-instrument pika (RabbitMQ) globally — same reasoning as httpx
+    # above; only budget/users-service depend on the raw `pika` package.
     try:
         from opentelemetry.instrumentation.pika import PikaInstrumentor
 
