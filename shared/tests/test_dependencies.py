@@ -1,9 +1,11 @@
+from unittest.mock import patch
+
 import fakeredis
 import pytest
 from fastapi import HTTPException
 
 from shared.security import session_revocation
-from shared.security.dependencies import get_current_user
+from shared.security.dependencies import get_current_user, get_validated_user
 from shared.security.jwt_utils import create_access_token
 
 
@@ -54,3 +56,30 @@ class TestGetCurrentUserRevocation:
         # Session d is untouched.
         result = get_current_user(token=token_b)
         assert result["session_id"] == "session-d"
+
+
+class TestGetValidatedUserSpanAttribute:
+    def test_sets_user_id_on_the_active_span(self):
+        user_id = "44444444-4444-4444-4444-444444444444"
+        token = _token_for(user_id, "session-e")
+        current_user = get_current_user(token=token)
+
+        with patch("shared.security.dependencies.set_span_attributes") as mock_set_span_attrs:
+            payload = get_validated_user(user=current_user)
+
+        mock_set_span_attrs.assert_called_once_with(user_id=user_id)
+        assert payload["user_id"] == user_id
+
+    def test_reuses_the_already_decoded_payload_without_re_decoding(self):
+        """get_validated_user must not re-verify the JWT signature — the
+        token has already been decoded and validated by get_current_user."""
+        user_id = "55555555-5555-5555-5555-555555555555"
+        token = _token_for(user_id, "session-f")
+        current_user = get_current_user(token=token)
+
+        with patch("shared.security.dependencies.decode_access_token") as mock_decode:
+            payload = get_validated_user(user=current_user)
+
+        mock_decode.assert_not_called()
+        assert payload["user_id"] == user_id
+        assert payload["token"] == token

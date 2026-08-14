@@ -28,6 +28,7 @@ from app.services.report_services import (
 )
 from app.services.customer_client import require_donor
 from app.crud.report_crud import get_reports_by_creator
+from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -47,7 +48,10 @@ def create_report_view(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return create_report_service(db, valid_user, report)
+    set_span_attributes(budget_id=report.budget_id)
+    created_report = create_report_service(db, valid_user, report)
+    set_span_attributes(report_id=created_report.id)
+    return created_report
 
 
 @router.get("/", response_model=List[ReportWithBudgetInfo])
@@ -89,6 +93,7 @@ async def list_funded_reports_view(
 def list_reports_by_budget_view(
     budget_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(budget_id=budget_id)
     return list_reports_service(db, valid_user, budget_id)
 
 
@@ -115,6 +120,7 @@ def get_reports_by_creator_endpoint(
 def get_report_view(
     report_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(report_id=report_id)
     return get_report_service(db, valid_user, report_id)
 
 
@@ -125,6 +131,7 @@ def update_report_view(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
+    set_span_attributes(report_id=report_id)
     return update_report_service(db, valid_user, report_id, report)
 
 
@@ -132,6 +139,7 @@ def update_report_view(
 def delete_report_view(
     report_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(report_id=report_id)
     return {"success": delete_report_service(db, valid_user, report_id)}
 
 
@@ -139,6 +147,7 @@ def delete_report_view(
 def submit_report_view(
     report_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(report_id=report_id)
     return submit_report_service(db, valid_user, report_id)
 
 
@@ -149,6 +158,7 @@ def review_report_view(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
+    set_span_attributes(report_id=report_id)
     return review_report_service(db, valid_user, report_id, review.decision, review.review_notes)
 
 
@@ -156,4 +166,5 @@ def review_report_view(
 def reopen_report_view(
     report_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(report_id=report_id)
     return reopen_report_service(db, valid_user, report_id)

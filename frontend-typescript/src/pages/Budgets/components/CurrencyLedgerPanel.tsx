@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
-import { SummaryStat } from "./BudgetViewSummary";
+import { ProgressBar } from "@/components/ui/ProgressBar";
 import { formatCurrency } from "@/utils/currency";
 import { formatDateOnly } from "@/utils/datetime";
 import { getCurrentCustomerId, isBudgetFunder, isBudgetOwner } from "@/utils/roleAccess";
@@ -21,6 +21,7 @@ import {
   ledgerBalanceQueryKey,
 } from "../queryKeys";
 import { Budget, FundingReceipt, CurrencyConversion } from "../types/budget";
+import { SummaryStat } from "./BudgetViewSummary";
 
 function impliedRate(conversion: CurrencyConversion): string {
   const { donor_amount, local_amount } = conversion;
@@ -110,10 +111,19 @@ export function CurrencyLedgerPanel({
   const balance = balanceQuery.data;
 
   const receivedToDate = receipts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
-  const sameCurrency = budget.local_currency === budget.actual_currency;
-  const totalAmount = budget.total_amount ?? 0;
+  // donor_total_amount is the donor's commitment in actual_currency — same
+  // currency as receivedToDate by construction, so this works whether or not
+  // local_currency matches actual_currency (unlike comparing against the
+  // local-currency budget total, which only lines up when they're equal).
+  const donorTotal = budget.donor_total_amount ?? null;
+  // A correction/refund receipt can make receivedToDate negative, which
+  // would otherwise render as a negative progress-bar width and a
+  // nonsensical "-N%" — floor it at 0 for display, same as the ceiling at
+  // 100% below for over-received budgets.
   const receivedPct =
-    sameCurrency && totalAmount > 0 ? Math.round((receivedToDate / totalAmount) * 100) : 0;
+    donorTotal && donorTotal > 0
+      ? Math.max(0, Math.round((receivedToDate / donorTotal) * 100))
+      : null;
 
   // Newest first, same convention as a bank/ledger statement.
   const history: HistoryEntry[] = [
@@ -151,36 +161,59 @@ export function CurrencyLedgerPanel({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-4 mb-4">
-          {balance && (
-            <>
-              <SummaryStat
-                label={`Unconverted (${balance.actual_currency ?? budget.actual_currency})`}
-                value={formatCurrency(balance.donor_balance, balance.actual_currency ?? undefined)}
-              />
-              <SummaryStat
-                label={`Unconsumed (${balance.local_currency ?? budget.local_currency})`}
-                value={formatCurrency(balance.local_balance, balance.local_currency ?? undefined)}
-              />
-            </>
-          )}
-          {sameCurrency ? (
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <SummaryStat
-              label="Received to Date"
+              label="Received from Donor"
               value={formatCurrency(receivedToDate, budget.actual_currency)}
-              sub={`${receivedPct}% of ${formatCurrency(totalAmount, budget.local_currency)}`}
-            />
-          ) : (
-            <>
-              <SummaryStat
-                label="Received to Date"
-                value={formatCurrency(receivedToDate, budget.actual_currency)}
-              />
-              <SummaryStat
-                label="Budget Total"
-                value={formatCurrency(totalAmount, budget.local_currency)}
-              />
-            </>
+              badge={
+                receivedPct !== null && receivedPct >= 100 ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                    Fully received
+                  </span>
+                ) : undefined
+              }
+            >
+              {receivedPct !== null && donorTotal !== null && (
+                <div className="mt-2">
+                  <ProgressBar percent={receivedPct} />
+                  <div className="text-xs text-slate-500 mt-1">
+                    {receivedPct}% of {formatCurrency(donorTotal, budget.actual_currency)}{" "}
+                    committed
+                  </div>
+                </div>
+              )}
+            </SummaryStat>
+          </div>
+
+          {balance && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-micro-label">Available to Spend</span>
+              <div className="flex flex-col gap-2 mt-2">
+                <div className="flex items-center justify-between rounded-md bg-white border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-700">
+                    Ready to spend{" "}
+                    <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700">
+                      {balance.local_currency ?? budget.local_currency}
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {formatCurrency(balance.local_balance, balance.local_currency ?? undefined)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-md bg-white border border-slate-200 px-3 py-2">
+                  <span className="text-sm text-slate-700">
+                    Awaiting conversion{" "}
+                    <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">
+                      {balance.actual_currency ?? budget.actual_currency}
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {formatCurrency(balance.donor_balance, balance.actual_currency ?? undefined)}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

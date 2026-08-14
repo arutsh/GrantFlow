@@ -336,7 +336,7 @@ class TestAttachmentRoutesWiring:
         client = make_client()
         with patch(
             "app.api.attachment_routes.upload_attachment_service",
-            return_value={"id": str(uuid4())},
+            return_value=SimpleNamespace(id=uuid4()),
         ) as mock_service:
             response = client.post(
                 "/api/v1/attachments/",
@@ -345,6 +345,25 @@ class TestAttachmentRoutesWiring:
             )
         assert response.status_code == 200
         mock_service.assert_called_once()
+
+    def test_upload_route_sets_span_attributes(self, make_client):
+        client = make_client()
+        report_line_id = uuid4()
+        attachment_id = uuid4()
+        with (
+            patch(
+                "app.api.attachment_routes.upload_attachment_service",
+                return_value=SimpleNamespace(id=attachment_id),
+            ),
+            patch("app.api.attachment_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.post(
+                "/api/v1/attachments/",
+                data={"report_line_id": str(report_line_id)},
+                files={"file": ("receipt.pdf", b"pdf-bytes", "application/pdf")},
+            )
+        mock_set_span_attrs.assert_any_call(report_line_id=report_line_id)
+        mock_set_span_attrs.assert_any_call(attachment_id=attachment_id)
 
     def test_download_route_streams_content(self, make_client):
         client = make_client()
@@ -381,3 +400,13 @@ class TestAttachmentRoutesWiring:
         assert response.status_code == 200
         assert response.json() == {"success": True}
         mock_service.assert_called_once()
+
+    def test_delete_route_sets_attachment_id_span_attribute(self, make_client):
+        client = make_client()
+        attachment_id = uuid4()
+        with (
+            patch("app.api.attachment_routes.delete_attachment_service", return_value=True),
+            patch("app.api.attachment_routes.set_span_attributes") as mock_set_span_attrs,
+        ):
+            client.delete(f"/api/v1/attachments/{attachment_id}")
+        mock_set_span_attrs.assert_any_call(attachment_id=attachment_id)

@@ -56,6 +56,22 @@ def test_get_budget_endpoint_found():
     assert body["lines"] == []
 
 
+def test_get_budget_endpoint_sets_budget_id_span_attribute():
+    budget_id = str(uuid.uuid4())
+
+    with (
+        patch(
+            "app.api.budget_routes.get_viewable_budget_service",
+            AsyncMock(return_value={"id": budget_id, "name": "Test Budget"}),
+        ),
+        patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
+        patch("app.api.budget_routes.set_span_attributes") as mock_set_span_attrs,
+    ):
+        client.get(f"/api/v1/budgets/{budget_id}")
+
+    mock_set_span_attrs.assert_any_call(budget_id=uuid.UUID(budget_id))
+
+
 def test_get_budget_endpoint_not_found():
     budget_id = str(uuid.uuid4())
 
@@ -93,6 +109,53 @@ def test_update_budget_endpoint_not_found_returns_404():
         response = client.patch(f"/api/v1/budgets/{budget_id}", json={"name": "X"})
 
     assert response.status_code == 404
+
+
+def test_create_budget_endpoint_sets_budget_id_span_attribute():
+    budget_id = str(uuid.uuid4())
+    payload = {"name": "Test Budget", "external_funder_name": "name123"}
+
+    with (
+        patch(
+            "app.api.budget_routes.create_budget_service",
+            AsyncMock(return_value={"id": budget_id, "name": "Test Budget"}),
+        ),
+        patch("app.api.budget_routes.set_span_attributes") as mock_set_span_attrs,
+    ):
+        client.post("/api/v1/budgets/", json=payload)
+
+    mock_set_span_attrs.assert_any_call(budget_id=budget_id)
+
+
+def test_update_budget_endpoint_sets_budget_id_span_attribute():
+    budget_id = str(uuid.uuid4())
+
+    with (
+        patch(
+            "app.api.budget_routes.update_budget_service",
+            AsyncMock(return_value={"id": budget_id, "name": "Updated Budget"}),
+        ),
+        patch("app.api.budget_routes.set_span_attributes") as mock_set_span_attrs,
+    ):
+        client.patch(f"/api/v1/budgets/{budget_id}", json={"name": "Updated Budget"})
+
+    mock_set_span_attrs.assert_any_call(budget_id=uuid.UUID(budget_id))
+
+
+def test_delete_budget_endpoint_sets_budget_id_span_attribute():
+    budget_id = str(uuid.uuid4())
+
+    with (
+        patch(
+            "app.api.budget_routes.delete_budget_service",
+            AsyncMock(return_value=True),
+        ),
+        patch("app.api.budget_routes.set_span_attributes") as mock_set_span_attrs,
+    ):
+        response = client.delete(f"/api/v1/budgets/{budget_id}")
+
+    assert response.status_code == 200
+    mock_set_span_attrs.assert_any_call(budget_id=uuid.UUID(budget_id))
 
 
 def test_get_budgets():

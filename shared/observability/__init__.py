@@ -86,6 +86,28 @@ def init_observability(service_name: str, otlp_endpoint: str | None = None):
     # Auto-instrument SQLAlchemy globally
     SQLAlchemyInstrumentor().instrument()
 
+    # Auto-instrument outbound httpx calls (inter-service HTTP) globally —
+    # imported lazily and skipped where it isn't installed (e.g. chat-service,
+    # which imports this module transitively via shared.security.dependencies
+    # but has no reason to depend on opentelemetry-instrumentation-httpx),
+    # rather than making it a hard dependency of every service that imports
+    # anything from shared/observability or shared/security.
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument()
+    except ImportError:
+        pass
+
+    # Auto-instrument pika (RabbitMQ) globally — same reasoning as httpx
+    # above; only budget/users-service depend on the raw `pika` package.
+    try:
+        from opentelemetry.instrumentation.pika import PikaInstrumentor
+
+        PikaInstrumentor().instrument()
+    except ImportError:
+        pass
+
 
 def instrument_fastapi(app):
     """Instrument FastAPI app with tracing. Call this AFTER app is created."""
@@ -112,6 +134,19 @@ def get_tracer(name: str) -> trace.Tracer:
     return trace.get_tracer(name)
 
 
+def set_span_attributes(**attributes) -> None:
+    """Set one or more attributes on the currently active span.
+
+    Values are stringified (span attributes must be primitives) and `None`
+    values are skipped. Safe to call outside a request context — a no-op
+    span silently ignores `set_attribute`.
+    """
+    span = trace.get_current_span()
+    for key, value in attributes.items():
+        if value is not None:
+            span.set_attribute(key, str(value))
+
+
 async def metrics_endpoint(_request):
     """Prometheus metrics endpoint for scraping by Prometheus."""
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -122,5 +157,6 @@ __all__ = [
     "instrument_fastapi",
     "traced",
     "get_tracer",
+    "set_span_attributes",
     "metrics_endpoint",
 ]

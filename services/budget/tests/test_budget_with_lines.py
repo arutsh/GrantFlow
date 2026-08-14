@@ -232,3 +232,58 @@ class TestCreateBudgetWithLinesEndpoint:
         payload = {k: v for k, v in VALID_PAYLOAD.items() if k != "external_funder_name"}
         response = client.post("/api/v1/budgets/with-lines", json=payload)
         assert response.status_code == 422
+
+    def test_sets_budget_id_span_attribute_on_success(self):
+        mock_budget = _mock_budget()
+        mock_lines = [_mock_line(LINE_ID_1, "Personnel"), _mock_line(LINE_ID_2, "Supplies")]
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=mock_budget),
+            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
+            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
+            patch("app.services.budget_line_services.create_budget_line", side_effect=mock_lines),
+            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_budget_service",
+                new_callable=AsyncMock,
+                return_value=_mock_enriched_budget(mock_lines),
+            ),
+            patch("app.services.budget_services.set_span_attributes") as mock_set_span_attrs,
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 200
+        mock_set_span_attrs.assert_any_call(budget_id=mock_budget.id)
+
+    def test_does_not_set_budget_id_when_budget_creation_fails(self):
+        with (
+            patch(
+                "app.services.budget_services.create_budget",
+                side_effect=Exception("DB error creating budget"),
+            ),
+            patch("app.services.budget_services.set_span_attributes") as mock_set_span_attrs,
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 500
+        mock_set_span_attrs.assert_not_called()
+
+    def test_sets_budget_id_when_failure_occurs_after_budget_created(self):
+        mock_budget = _mock_budget()
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=mock_budget),
+            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
+            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
+            patch(
+                "app.services.budget_line_services.create_budget_line",
+                side_effect=Exception("DB error"),
+            ),
+            patch("app.services.budget_services.delete_budget_line"),
+            patch("app.services.budget_services.delete_budget"),
+            patch("app.services.budget_services.set_span_attributes") as mock_set_span_attrs,
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 500
+        mock_set_span_attrs.assert_any_call(budget_id=mock_budget.id)

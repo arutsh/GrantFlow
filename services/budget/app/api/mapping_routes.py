@@ -34,6 +34,7 @@ from app.crud.budget_donor_template_crud import (
 from app.schemas.budget_line_schema import BudgetCategoryCreate, BudgetCategory
 from app.crud.budget_category_crud import create_budget_category, list_budget_categories
 from app.services.mapping_service import suggest_semantic_mapping
+from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user  # noqa: F401
 
 router = APIRouter(prefix="/donor-mapping", tags=["Donor Mapping"])
@@ -45,6 +46,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _get_template_or_404(db: Session, template_id: int):
+    template = get_donor_template(db, template_id)
+    if not template:
+        raise HTTPException(404, "Template not found")
+    return template
 
 
 @router.post("/ping")
@@ -72,7 +80,9 @@ def create_template(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return create_donor_template(db, payload.name)
+    created_template = create_donor_template(db, payload.name)
+    set_span_attributes(donor_template_id=created_template.id)
+    return created_template
 
 
 @router.get("/templates", response_model=List[DonorTemplate])
@@ -85,10 +95,11 @@ def list_templates(db: Session = Depends(get_db), valid_user=Depends(get_validat
 def create_field(
     payload: DonorFieldCreate, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
-    template = get_donor_template(db, payload.donor_template_id)
-    if not template:
-        raise HTTPException(404, "Template not found")
-    return create_donor_field(db, payload.donor_template_id, payload.field_name)
+    set_span_attributes(donor_template_id=payload.donor_template_id)
+    _get_template_or_404(db, payload.donor_template_id)
+    created_field = create_donor_field(db, payload.donor_template_id, payload.field_name)
+    set_span_attributes(donor_field_id=created_field.id)
+    return created_field
 
 
 @router.post("/fields/bulk", response_model=List[DonorField])
@@ -98,10 +109,11 @@ def bulk_create_field_endpoint(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    template = get_donor_template(db, template_id)
-    if not template:
-        raise HTTPException(404, "Template not found")
-    return bulk_create_donor_fields(db, template_id, field_names)
+    set_span_attributes(donor_template_id=template_id)
+    _get_template_or_404(db, template_id)
+    created_fields = bulk_create_donor_fields(db, template_id, field_names)
+    set_span_attributes(donor_field_ids=",".join(str(f.id) for f in created_fields))
+    return created_fields
 
 
 @router.post("/categories", response_model=BudgetCategory)
@@ -110,13 +122,18 @@ def create_budget_category_endpoint(
     db: Session = Depends(get_db),
     valid_user=Depends(get_validated_user),
 ):
-    return create_budget_category(
+    set_span_attributes(donor_template_id=payload.donor_template_id)
+    if payload.donor_template_id is not None:
+        _get_template_or_404(db, payload.donor_template_id)
+    created_category = create_budget_category(
         db,
         user_id=valid_user["user_id"],
         name=payload.name,
         code=payload.code,
         donor_template_id=payload.donor_template_id,
     )
+    set_span_attributes(budget_category_id=created_category.id)
+    return created_category
 
 
 @router.get("/categories", response_model=List[BudgetCategory])
@@ -130,6 +147,7 @@ def list_budget_categories_view(
 def list_budget_categories_by_template(
     template_id: int, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(donor_template_id=template_id)
     return list_budget_categories(db, template_id)
 
 
@@ -137,6 +155,7 @@ def list_budget_categories_by_template(
 def list_fields(
     template_id: int, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(donor_template_id=template_id)
     return list_donor_fields(db, template_id)
 
 
@@ -164,6 +183,7 @@ def suggest(
 def save_mapping(
     payload: NgoMappingCreate, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(donor_field_id=payload.donor_field_id)
     # Optionally verify donor_field_id exists:
     fld = db.get(DonorFieldModel, payload.donor_field_id)
     if not fld:
@@ -173,6 +193,7 @@ def save_mapping(
     db.add(m)
     db.commit()
     db.refresh(m)
+    set_span_attributes(ngo_mapping_id=m.id)
     return m
 
 
@@ -180,4 +201,5 @@ def save_mapping(
 def list_mappings(
     ngo_id: str, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
+    set_span_attributes(ngo_id=ngo_id)
     return db.query(NgoMappingModel).filter(NgoMappingModel.ngo_id == ngo_id).all()

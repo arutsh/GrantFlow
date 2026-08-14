@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import { useDetailedBudget } from "../SingleBudgetViewContext";
 import { formatCurrency } from "@/utils/currency";
@@ -44,18 +45,24 @@ export function SummaryStat({
   label,
   value,
   sub,
+  badge,
+  children,
 }: {
   label: string;
   value: string | number;
   sub?: string;
+  badge?: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div>
-      <div className="text-micro-label">
-        {label}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-micro-label">{label}</div>
+        {badge}
       </div>
       <div className="text-stat-value mt-0.5">{value}</div>
       {sub && <div className="text-xs text-slate-500 mt-0.5">{sub}</div>}
+      {children}
     </div>
   );
 }

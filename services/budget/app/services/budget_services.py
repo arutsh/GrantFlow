@@ -3,6 +3,7 @@ import structlog
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from fastapi import status, HTTPException
+from shared.observability import set_span_attributes
 from sqlalchemy.exc import IntegrityError
 from app.crud.budget_crud import (
     create_budget,
@@ -524,6 +525,7 @@ async def create_budget_with_lines_service(
             db,
             budget_status=BudgetStatus.ai_draft,
         )
+        set_span_attributes(budget_id=new_budget.id)
 
         for line_input in request.lines:
             line = create_budget_line_service(
