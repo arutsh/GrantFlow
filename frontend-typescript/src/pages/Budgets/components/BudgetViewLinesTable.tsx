@@ -80,6 +80,7 @@ function UsedPill({
   actualCurrency,
   rate,
   labelInline = true,
+  loading = false,
 }: {
   used: number;
   allocated: number;
@@ -88,7 +89,22 @@ function UsedPill({
   actualCurrency: string | undefined;
   rate: number | null | undefined;
   labelInline?: boolean;
+  loading?: boolean;
 }) {
+  // Avoid a real-looking "0%" while spend is still loading (#216).
+  if (loading) {
+    return (
+      <div>
+        <span
+          className={`inline-flex items-center text-xs font-bold px-2.5 py-0.5 rounded-full animate-pulse ${USED_TONE_CLASSES.neutral}`}
+        >
+          …
+        </span>
+        <div className="text-xs text-slate-400 mt-1">Loading…</div>
+      </div>
+    );
+  }
+
   const pct = allocated > 0 ? Math.round((used / allocated) * 100) : null;
   const tone: "good" | "warn" | "danger" | "neutral" =
     pct === null || pct > 100
@@ -144,14 +160,8 @@ export function BudgetViewLinesTable({
   onClose: () => void;
   readOnly?: boolean;
 }) {
-  const {
-    budget,
-    setBudget,
-    budgetCategories,
-    existingExtraKeys,
-    budgetCategoryNames,
-    spendByLineId,
-  } = useDetailedBudget();
+  const { budget, setBudget, spendByLineId, isSpendPending } =
+    useDetailedBudget();
   const [displayMode, setDisplayMode] = useState<CurrencyDisplayMode>("local");
   const rate = budget?.estimated_exchange_rate;
   // A rate of exactly 0 is meaningless (division by zero downstream in
@@ -315,6 +325,7 @@ export function BudgetViewLinesTable({
             actualCurrency={budget?.actual_currency}
             rate={rate}
             labelInline={displayMode === "both"}
+            loading={isSpendPending}
           />
         ),
         aggregatedCell: (info) => (
@@ -326,6 +337,7 @@ export function BudgetViewLinesTable({
             actualCurrency={budget?.actual_currency}
             rate={rate}
             labelInline={displayMode === "both"}
+            loading={isSpendPending}
           />
         ),
       },
@@ -372,11 +384,17 @@ export function BudgetViewLinesTable({
     budget?.local_currency,
     budget?.actual_currency,
     spendByLineId,
+    isSpendPending,
     displayMode,
     rate,
     localCode,
     donorCode,
   ]);
+
+  // react-table caches each row's computed cell values keyed off `data`'s
+  // reference alone, oblivious to accessorFn closing over spendByLineId —
+  // force a cache bust when spend data changes (#216).
+  const tableData = useMemo(() => [...(lines ?? [])], [lines, spendByLineId]);
 
   // Mobile card list: same data as the desktop table, grouped by category
   // like TableCommon's grouping does, but always-expanded (no separate
@@ -439,7 +457,7 @@ export function BudgetViewLinesTable({
       </div>
 
       <div className="hidden sm:block">
-        <TableCommon data={lines || []} columns={columns} bare />
+        <TableCommon data={tableData} columns={columns} bare />
       </div>
 
       <div className="sm:hidden flex flex-col gap-4">
@@ -484,6 +502,7 @@ export function BudgetViewLinesTable({
                       displayMode={displayMode}
                       actualCurrency={budget?.actual_currency}
                       rate={rate}
+                      loading={isSpendPending}
                     />
                   </div>
                 </div>
@@ -511,6 +530,7 @@ export function BudgetViewLinesTable({
                         displayMode={displayMode}
                         actualCurrency={budget?.actual_currency}
                         rate={rate}
+                        loading={isSpendPending}
                       />
                       {extraFieldKeys
                         .filter((key) => line.extra_fields?.[key] !== undefined)

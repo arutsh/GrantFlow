@@ -31,7 +31,7 @@ export function SingleBudgetViewContainer() {
 function SingleBudgetView({ id }: { id: string | undefined }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditLineOpen, setIsEditLineOpen] = useState<BudgetLine | undefined>(
-    undefined
+    undefined,
   );
   // Bumped by CurrencyLedgerPanel's "set actual currency first" prompt (or
   // the `?edit=1` URL param below) to open BudgetViewHeader's edit mode from

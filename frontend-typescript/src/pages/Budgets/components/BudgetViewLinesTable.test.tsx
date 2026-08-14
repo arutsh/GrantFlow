@@ -25,6 +25,7 @@ function renderTable(
   lines: BudgetLine[],
   spendByLineId: Record<string, number>,
   budgetOverrides: Partial<Budget> = {},
+  isSpendPending = false,
 ) {
   useDetailedBudgetMock.mockReturnValue({
     budget: makeBudget(budgetOverrides),
@@ -33,6 +34,7 @@ function renderTable(
     budgetCategoryNames: [],
     existingExtraKeys: [],
     spendByLineId,
+    isSpendPending,
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -98,6 +100,20 @@ describe("BudgetViewLinesTable Used column", () => {
     const pills = screen.getAllByText("0%");
     expect(pills[0].className).toContain("bg-slate-100");
     expect(screen.getAllByText("£0 / £300").length).toBeGreaterThan(0);
+  });
+
+  it("shows a loading pill instead of 0% while spend is still being fetched (#216)", () => {
+    renderTable(
+      [makeLine({ id: "bl5", amount: 300, category: { id: "c5", name: "Misc", code: "MISC" } })],
+      {},
+      {},
+      true,
+    );
+
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
+    const pills = screen.getAllByText("…");
+    expect(pills.length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
   });
 });
 

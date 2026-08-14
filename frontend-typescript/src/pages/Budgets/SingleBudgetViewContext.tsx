@@ -35,6 +35,8 @@ interface SingleBudgetViewContextType {
   // exists yet, so this is an N+1 fetch-and-sum client-side, fine for the
   // usual handful of reports per budget.
   spendByLineId: Record<string, number>;
+  // True while reports/report-lines are still fetching (#216).
+  isSpendPending: boolean;
   totalReported: number;
   // Whether any report has ever been submitted against this budget — gates
   // whether "Total Reported" is worth showing at all. A draft report with
@@ -117,20 +119,34 @@ export const SingleBudgetViewContextProvider: React.FC<{
     queryClient.setQueryData(budgetDetailsQueryKey(id), updated);
   };
 
-  const { data: reports } = useQuery({
+  const { data: reports, isPending: isReportsPending } = useQuery({
     queryKey: reportsByBudgetQueryKey(id),
     queryFn: () => (id ? listReportsByBudget(id) : Promise.resolve([])),
     enabled: !!id,
   });
 
+  // The `queries` array itself must stay referentially stable across
+  // renders (memoized on `reports`, whose reference React Query already
+  // holds stable via structural sharing) — otherwise it's a new array of
+  // new object literals every render, which re-fires useQueries' internal
+  // `observer.setQueries()` effect on every render (including the ones
+  // triggered by report-line data itself resolving), fighting the in-flight
+  // fetch instead of just waiting for it (#216).
+  //
   // combine's result is only recomputed when useQueries' structurally-shared
   // output actually changes, unlike a useMemo keyed on the queries array
   // (which is a new reference every render regardless of data changes).
-  const spendByLineId = useQueries({
-    queries: (reports ?? []).map((report) => ({
-      queryKey: reportLinesQueryKey(report.id),
-      queryFn: () => listReportLinesByReport(report.id),
-    })),
+  const reportLineQueries = useMemo(
+    () =>
+      (reports ?? []).map((report) => ({
+        queryKey: reportLinesQueryKey(report.id),
+        queryFn: () => listReportLinesByReport(report.id),
+      })),
+    [reports],
+  );
+
+  const { spendByLineId, isSpendPending: isSpendQueriesPending } = useQueries({
+    queries: reportLineQueries,
     combine: (queries) => {
       const totals: Record<string, number> = {};
       queries.forEach((query) => {
@@ -139,9 +155,15 @@ export const SingleBudgetViewContextProvider: React.FC<{
           totals[line.budget_line_id] = (totals[line.budget_line_id] ?? 0) + (line.amount ?? 0);
         });
       });
-      return totals;
+      return {
+        spendByLineId: totals,
+        isSpendPending: queries.some((query) => query.isPending),
+      };
     },
   });
+
+  // Also pending while `reports` itself hasn't loaded yet.
+  const isSpendPending = isReportsPending || isSpendQueriesPending;
 
   const totalReported = useMemo(
     () => Object.values(spendByLineId).reduce((sum, value) => sum + value, 0),
@@ -158,6 +180,7 @@ export const SingleBudgetViewContextProvider: React.FC<{
         totalAmount,
         existingExtraKeys,
         spendByLineId,
+        isSpendPending,
         totalReported,
         hasReports: (reports ?? []).some((r) => r.status !== "draft"),
       }}
