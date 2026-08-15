@@ -21,28 +21,38 @@
   "panels": [
     {
       "id": 1,
-      "title": "Request rate (per service)",
+      "title": "Activity rate (all services)",
+      "description": "HTTP request rate for users/budget/ai/chat, task rate for worker — one line per service.",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
       "targets": [
         {
           "expr": "sum by (job) (rate(http_server_duration_milliseconds_count[5m]))",
+          "legendFormat": "{{job}}"
+        },
+        {
+          "expr": "sum by (job) (rate(worker_tasks_total[5m]))",
           "legendFormat": "{{job}}"
         }
       ]
     },
     {
       "id": 2,
-      "title": "Error rate (5xx, per service)",
+      "title": "Error rate (all services)",
+      "description": "HTTP 5xx rate for users/budget/ai/chat, task failure rate for worker — one line per service.",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
       "targets": [
         {
           "expr": "sum by (job) (rate(http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[5m]))",
+          "legendFormat": "{{job}}"
+        },
+        {
+          "expr": "sum by (job) (rate(worker_tasks_total{status=\"failure\"}[5m]))",
           "legendFormat": "{{job}}"
         }
       ]
@@ -72,6 +82,34 @@
         {
           "expr": "histogram_quantile(0.99, sum by (job, le) (rate(http_server_duration_milliseconds_bucket[5m])))",
           "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Worker task rate (drill-down, by task)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (task_name) (rate(worker_tasks_total[5m]))",
+          "legendFormat": "{{task_name}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Worker task failure rate (drill-down, by task)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (task_name) (rate(worker_tasks_total{status=\"failure\"}[5m]))",
+          "legendFormat": "{{task_name}}"
         }
       ]
     }

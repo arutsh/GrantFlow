@@ -205,10 +205,11 @@ All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_
 
 ### Observability
 
-Traces and metrics from all four services export via OTLP straight to a
-hosted Grafana Cloud free-tier stack — no monitoring containers on the prod
-box. See [`docs/observability/GRAFANA_CLOUD_PRODUCTION.md`](../observability/GRAFANA_CLOUD_PRODUCTION.md)
-for how it's wired, where to view traces/dashboards, and the
+Traces, metrics, and logs from all five services (the four FastAPI services
+plus `worker`) export via OTLP straight to a hosted Grafana Cloud free-tier
+stack — no monitoring containers on the prod box. See
+[`docs/observability/GRAFANA_CLOUD_PRODUCTION.md`](../observability/GRAFANA_CLOUD_PRODUCTION.md)
+for how it's wired, where to view traces/dashboards/logs, and the
 `OTEL_SDK_DISABLED=true` rollback flag.
 
 **Not yet set — needed for email verification (`services/worker`):** `MAILERSEND_API_TOKEN`, `MAILERSEND_SENDER_DOMAIN`, `MAILERSEND_SENDER_EMAIL`, `FRONTEND_BASE_URL`. `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`, `MAILJET_SENDER_EMAIL` are also plumbed through but not required until `EMAIL_PROVIDER` is flipped to `mailjet` in prod. See the "Email verification (MailerSend / Mailjet)" section below for what each one is. Without the active provider's vars set, `deploy.yml`'s `envsubst` step leaves the `${VAR}` placeholders in `services/worker/.env.worker.prod` unexpanded, so the worker sends with empty credentials.

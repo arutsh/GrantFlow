@@ -15,12 +15,18 @@ from app.core.exceptions import DomainError, PermissionDenied
 from app.core.logging import setup_logging, get_logger
 from app.db.session import engine
 from shared.exceptions.error_handlers import domain_error_handler, unhandled_exception_handler
-from shared.observability import init_observability, instrument_fastapi, metrics_endpoint
+from shared.observability import (
+    init_logging,
+    init_observability,
+    instrument_fastapi,
+    metrics_endpoint,
+)
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("ai-service")
+init_logging("ai-service")
 
 # Async engines need explicit instrumentation — init_observability hooks into sync engine
 # creation events which don't fire for create_async_engine.
