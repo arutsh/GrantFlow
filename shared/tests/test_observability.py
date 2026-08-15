@@ -12,12 +12,20 @@ they fall back to reading OTEL_EXPORTER_OTLP_ENDPOINT themselves, which
 doesn't happen when we pass an explicit endpoint= as done here).
 """
 
+import logging
 import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from opentelemetry.sdk._logs import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider as SDKLoggerProvider
+from opentelemetry.sdk._logs.export import InMemoryLogExporter, SimpleLogRecordProcessor
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from shared.observability import init_observability, set_span_attributes
+from shared.observability import init_logging, init_observability, set_span_attributes
 
 
 @pytest.fixture
@@ -25,7 +33,10 @@ def mocked_observability():
     with (
         patch("shared.observability.OTLPSpanExporter") as span_exporter,
         patch("shared.observability.OTLPMetricExporter") as metric_exporter,
-        patch("shared.observability.SQLAlchemyInstrumentor"),
+        # Lazily imported inside init_observability (see the httpx/pika
+        # instrumentors below it), so it's patched at its own module rather
+        # than as a shared.observability attribute.
+        patch("opentelemetry.instrumentation.sqlalchemy.SQLAlchemyInstrumentor"),
         patch("shared.observability.TracerProvider"),
         patch("shared.observability.MeterProvider"),
         patch("shared.observability.trace"),
@@ -112,6 +123,115 @@ class TestInitObservability:
 
         span_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/traces")
         metric_exporter.assert_called_once_with(endpoint="http://explicit:4318/v1/metrics")
+
+
+@pytest.fixture
+def mocked_logging():
+    # Deliberately does NOT patch logging.getLogger — it's a stdlib module
+    # object shared process-wide (including by pytest's own log capture), so
+    # patching an attribute on it leaks far beyond this module. Instead, let
+    # init_logging attach the mocked LoggingHandler to the real root logger,
+    # and remove it again on teardown.
+    with (
+        patch("shared.observability.OTLPLogExporter") as log_exporter,
+        patch("shared.observability.LoggerProvider"),
+        patch("shared.observability.BatchLogRecordProcessor"),
+        patch("shared.observability.set_logger_provider"),
+        patch("shared.observability.LoggingHandler") as logging_handler,
+    ):
+        yield log_exporter, logging_handler
+
+    root_logger = logging.getLogger()
+    if logging_handler.return_value in root_logger.handlers:
+        root_logger.removeHandler(logging_handler.return_value)
+
+
+class TestInitLogging:
+    def test_disabled_flag_short_circuits_before_any_exporter_is_built(
+        self, monkeypatch, mocked_logging
+    ):
+        monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
+        log_exporter, logging_handler = mocked_logging
+
+        init_logging("test-service")
+
+        log_exporter.assert_not_called()
+        logging_handler.assert_not_called()
+
+    def test_local_dev_lets_the_exporter_resolve_its_own_default(self, monkeypatch, mocked_logging):
+        monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        log_exporter, *_ = mocked_logging
+
+        init_logging("test-service")
+
+        log_exporter.assert_called_once_with(endpoint=None)
+
+    def test_grafana_cloud_endpoint_env_var_is_forwarded_with_logs_suffix(
+        self, monkeypatch, mocked_logging
+    ):
+        monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+        monkeypatch.setenv(
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
+        )
+        log_exporter, *_ = mocked_logging
+
+        init_logging("test-service")
+
+        log_exporter.assert_called_once_with(
+            endpoint="https://otlp-gateway-prod-us-central-0.grafana.net/otlp/v1/logs"
+        )
+
+    def test_blank_endpoint_env_var_is_treated_as_unset(self, monkeypatch, mocked_logging):
+        monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        log_exporter, *_ = mocked_logging
+
+        init_logging("test-service")
+
+        log_exporter.assert_called_once_with(endpoint=None)
+        assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ
+
+    def test_attaches_logging_handler_to_root_logger(self, monkeypatch, mocked_logging):
+        monkeypatch.delenv("OTEL_SDK_DISABLED", raising=False)
+        _log_exporter, logging_handler = mocked_logging
+
+        init_logging("test-service")
+
+        assert logging_handler.return_value in logging.getLogger().handlers
+
+
+class TestLogTraceCorrelation:
+    def test_log_emitted_inside_active_span_carries_trace_and_span_ids(self):
+        # Independent SDK provider instances (not the shared.observability
+        # globals) so this doesn't mutate process-wide OTel state — this test
+        # is verifying the SDK's own automatic log/trace correlation, not
+        # init_logging's wiring (covered separately above).
+        log_exporter = InMemoryLogExporter()
+        logger_provider = SDKLoggerProvider(resource=Resource.create({"service.name": "test"}))
+        logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
+        handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+
+        span_exporter = InMemorySpanExporter()
+        tracer_provider = SDKTracerProvider()
+        tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+        tracer = tracer_provider.get_tracer("correlation-test")
+
+        py_logger = logging.getLogger("shared-observability-correlation-test")
+        py_logger.setLevel(logging.INFO)
+        py_logger.addHandler(handler)
+        py_logger.propagate = False
+        try:
+            with tracer.start_as_current_span("test-span") as span:
+                span_context = span.get_span_context()
+                py_logger.info("hello from inside span")
+        finally:
+            py_logger.removeHandler(handler)
+
+        [record] = log_exporter.get_finished_logs()
+        assert record.log_record.trace_id == span_context.trace_id
+        assert record.log_record.span_id == span_context.span_id
 
 
 class TestSetSpanAttributes:

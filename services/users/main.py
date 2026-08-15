@@ -20,6 +20,7 @@ from app.core.logging import setup_logging, get_logger
 from app.services.event_publisher import init_publisher, close_publisher
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from shared.observability import (
+    init_logging,
     init_observability,
     instrument_fastapi,
     metrics_endpoint,
@@ -29,6 +30,7 @@ setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("users-service")
+init_logging("users-service")
 
 # Only enable debugpy when running in VSCode
 if os.getenv("VSCODE_DEBUGGER") == "1":

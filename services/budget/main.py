@@ -25,6 +25,7 @@ from app.services.user_client import (
 from app.services.event_consumer import init_consumer, close_consumer, start_consumer
 
 from shared.observability import (
+    init_logging,
     init_observability,
     instrument_fastapi,
     metrics_endpoint,
@@ -34,6 +35,7 @@ setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("budget-service")
+init_logging("budget-service")
 
 # Only enable debugpy when running in VSCode
 if os.getenv("VSCODE_DEBUGGER") == "1":

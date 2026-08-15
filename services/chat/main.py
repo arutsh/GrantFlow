@@ -14,12 +14,18 @@ from app.core.logging import setup_logging, get_logger
 from app.db.session import engine
 from app.services.budget_tool_registry import BudgetToolRegistry
 from shared.ai_client import AiClient
-from shared.observability import init_observability, instrument_fastapi, metrics_endpoint
+from shared.observability import (
+    init_logging,
+    init_observability,
+    instrument_fastapi,
+    metrics_endpoint,
+)
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("chat-service")
+init_logging("chat-service")
 
 # Async engines need explicit instrumentation — init_observability hooks into sync engine
 # creation events which don't fire for create_async_engine.
