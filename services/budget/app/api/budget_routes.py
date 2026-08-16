@@ -137,9 +137,7 @@ async def restore_budget_endpoint(
     valid_user=Depends(get_validated_user),
 ):
     set_span_attributes(budget_id=budget_id)
-    updated_budget = await restore_budget_service(
-        budget_id=budget_id, valid_user=valid_user, db=db
-    )
+    updated_budget = await restore_budget_service(budget_id=budget_id, valid_user=valid_user, db=db)
     if not updated_budget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return updated_budget
