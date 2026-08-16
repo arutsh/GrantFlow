@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,8 @@ from app.schemas.auth_schema import (
     VerifyEmailRequest,
     VerifyEmailResponse,
     ResendVerificationResponse,
+    ImpersonateRequest,
+    ImpersonateResponse,
 )
 from app.schemas.session_schema import SessionSummary
 
@@ -24,6 +26,7 @@ from app.utils.security import (
     hash_token,
     verify_token_hash,
     REFRESH_TOKEN_EXPIRE_DAYS,
+    IMPERSONATION_TOKEN_EXPIRE_MINUTES,
 )
 from shared.security.password_policy import validate_password_strength
 from shared.security.session_revocation import mark_session_revoked
@@ -384,3 +387,50 @@ def revoke_one_session(
     if not session.revoked:
         _revoke_session_everywhere(db, session)
     return {"revoked": True}
+
+
+@router.post("/auth/impersonate", response_model=ImpersonateResponse)
+def start_impersonation(
+    req: ImpersonateRequest,
+    current_user: dict = Depends(get_validated_user),
+    db: Session = Depends(get_db),
+):
+    """Mint a short-lived, admin-equivalent token scoped to req.customer_id.
+
+    Stateless by design (superuser-cross-tenant-access design.md's Decision
+    3.1): no impersonation_sessions table, no refresh token — a leaked or
+    outlived token's exposure window is bounded by IMPERSONATION_TOKEN_EXPIRE
+    _MINUTES alone, with every request under it logged (privileged-access-
+    audit capability) as the accepted mitigation instead of real-time
+    revocation. user_id stays the superuser's own real identity (Decision 2)
+    so every created_by/updated_by attribution reflects the true actor;
+    is_ngo/is_donor are computed from the target customer so donor/grantee
+    gates (e.g. require_donor) behave exactly as they would for that
+    customer's own user.
+    """
+    if current_user.get("role") != "superuser":
+        raise HTTPException(status_code=403, detail="Superuser role required")
+
+    customer = get_customer(db, req.customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    expires_delta = timedelta(minutes=IMPERSONATION_TOKEN_EXPIRE_MINUTES)
+    token = create_access_token(
+        {
+            "user_id": str(current_user["user_id"]),
+            "customer_id": str(customer.id),
+            "role": "admin",
+            "is_impersonating": True,
+            **_role_flags(customer),
+            "email_verified": current_user.get("email_verified", True),
+        },
+        expires_delta=expires_delta,
+    )
+
+    return ImpersonateResponse(
+        access_token=token,
+        customer_id=customer.id,
+        customer_name=customer.name,
+        expires_in=int(expires_delta.total_seconds()),
+    )

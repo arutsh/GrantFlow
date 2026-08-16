@@ -50,6 +50,18 @@ class TokenResponse(BaseModel):
     status: str
 
 
+class ImpersonateRequest(BaseModel):
+    customer_id: UUID
+
+
+class ImpersonateResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    customer_id: UUID
+    customer_name: str
+    expires_in: int
+
+
 class VerifyEmailRequest(BaseModel):
     email: EmailStr
     token: str

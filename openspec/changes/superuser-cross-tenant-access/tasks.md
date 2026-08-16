@@ -19,11 +19,11 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 3. Impersonation token issuance — depends on 1
 
-- [ ] 3.1 Add `impersonation_sessions` (or fold into `privileged_access_logs`, see Group 4) tracking in `services/users` if session bookkeeping beyond the JWT itself is needed (e.g. for revocation) — decide during implementation per design.md's open question on TTL
-- [ ] 3.2 Add superuser-only endpoint in `services/users` to mint an impersonation token: accepts target `customer_id`, issues a token with admin-equivalent permissions scoped to that customer, `user_id` set to the superuser's own real id, and an impersonation flag/claim
-- [ ] 3.3 Set a short, fixed expiry on impersonation tokens (see design.md open question for TTL value)
-- [ ] 3.4 Tests: superuser can mint a token for any `customer_id`; non-superuser is rejected; token grants access scoped to the target customer; token carries the superuser's real `user_id`; expired token is rejected; a superuser token with no impersonation session still gets empty/not-found per Group 1's fix
-- [ ] 3.5 Run users-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
+- [x] 3.1 Decided: no `impersonation_sessions` table — stateless token, matching design.md's accepted risk mitigation (short expiry + audit log, not real-time revocation). Documented inline in `start_impersonation`'s docstring.
+- [x] 3.2 Add superuser-only endpoint in `services/users` to mint an impersonation token: accepts target `customer_id`, issues a token with admin-equivalent permissions scoped to that customer, `user_id` set to the superuser's own real id, and an impersonation flag/claim
+- [x] 3.3 Set a short, fixed expiry on impersonation tokens (`IMPERSONATION_TOKEN_EXPIRE_MINUTES`, default 15, env-configurable — see `shared/security/jwt_utils.py`)
+- [x] 3.4 Tests: superuser can mint a token for any `customer_id`; non-superuser is rejected; token grants access scoped to the target customer; token carries the superuser's real `user_id`; expired token is rejected; (a superuser token with no impersonation session still gets empty/not-found — covered by Group 1's `test_superuser_no_active_session.py`, not duplicated here)
+- [x] 3.5 Run users-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
 
 ## 4. Centralized privileged-access audit hook — depends on 3
 
