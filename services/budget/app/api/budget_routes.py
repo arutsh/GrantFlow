@@ -22,6 +22,7 @@ from app.services.budget_services import (
     create_budget_with_lines_service,
     get_viewable_budget_service,
     update_budget_service,
+    restore_budget_service,
     list_budget_service,
     delete_budget_service,
     get_funded_budgets_summary_service,
@@ -123,6 +124,21 @@ async def update_budget_endpoint(
     set_span_attributes(budget_id=budget_id)
     updated_budget = await update_budget_service(
         budget_id=budget_id, budget=budget, valid_user=valid_user, db=db
+    )
+    if not updated_budget:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return updated_budget
+
+
+@router.post("/{budget_id}/restore", response_model=BudgetUpdate)
+async def restore_budget_endpoint(
+    budget_id: UUID,
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    set_span_attributes(budget_id=budget_id)
+    updated_budget = await restore_budget_service(
+        budget_id=budget_id, valid_user=valid_user, db=db
     )
     if not updated_budget:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
