@@ -58,8 +58,7 @@ def list_all_reports(
     (GET /reports/) — every report on a budget this customer OWNS (the
     grantee/owner side; see list_funded_reports for the donor/funder side).
 
-    customer_id=None means "no visibility restriction" (superuser). Mirrors
-    /budgets/ vs /budgets/funded/'s existing owner/donor route split rather
+    Mirrors /budgets/ vs /budgets/funded/'s existing owner/donor route split rather
     than the combined owner-or-funder rule get_viewable_budget uses for a
     single budget's access check. Eager-loads Budget via contains_eager (not
     joinedload, which would issue a second join on top of the one already

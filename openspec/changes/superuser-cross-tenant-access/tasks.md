@@ -2,12 +2,12 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 1. Close superuser blanket cross-tenant access in budget/report
 
-- [ ] 1.1 Remove the `if valid_user["role"] == "superuser": <unscoped>` branch in `services/budget/app/services/budget_services.py::list_budget_service`; always call `list_budgets(db, customer_id=valid_user.get("customer_id"))`, returning an empty list when `customer_id` is absent
-- [ ] 1.2 Remove the equivalent branches in `budget_services.py::get_budget_service`, `_resolve_updatable_budget`, `_can_view_budget`/`get_viewable_budget_service` — scope purely by `valid_user.get("customer_id")`, treating its absence as not-found
-- [ ] 1.3 Remove the equivalent branches in `services/budget/app/services/budget_line_services.py` (`get_viewable_budget_lines_service`, `get_budget_lines_service`, `get_budget_line_by_id_service`)
-- [ ] 1.4 Remove the equivalent branch in `services/budget/app/services/report_services.py` (`get_viewable_budget`/`_get_budget_or_404`)
-- [ ] 1.5 Tests: a superuser token with no `customer_id` gets an empty list from every list endpoint touched above, and not-found from every single-resource endpoint touched above; a regular customer's own access is unaffected
-- [ ] 1.6 Run budget-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
+- [x] 1.1 Remove the `if valid_user["role"] == "superuser": <unscoped>` branch in `services/budget/app/services/budget_services.py::list_budget_service`; always call `list_budgets(db, customer_id=valid_user.get("customer_id"))`, returning an empty list when `customer_id` is absent
+- [x] 1.2 Remove the equivalent branches in `budget_services.py::get_budget_service`, `_resolve_updatable_budget`, `_can_view_budget`/`get_viewable_budget_service` — scope purely by `valid_user.get("customer_id")`, treating its absence as not-found
+- [x] 1.3 Remove the equivalent branches in `services/budget/app/services/budget_line_services.py` (`get_viewable_budget_lines_service`, `get_budget_lines_service`, `get_budget_line_by_id_service`) — also `create_budget_line_service`, same bypass shape, found during implementation
+- [x] 1.4 Remove the equivalent branch in `services/budget/app/services/report_services.py` (`get_viewable_budget`/`_get_budget_or_404`) — also `is_owner`, `_can_review`, `list_all_reports_service`, same bypass shape, found during implementation
+- [x] 1.5 Tests: a superuser token with no `customer_id` gets an empty list from every list endpoint touched above, and not-found from every single-resource endpoint touched above; a regular customer's own access is unaffected
+- [x] 1.6 Run budget-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
 
 ## 2. Fix AI provider settings to be customer-scoped
 

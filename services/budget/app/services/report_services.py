@@ -48,21 +48,19 @@ def _get_budget_or_404(db, budget_id: UUID) -> BudgetModel:
 
 def get_viewable_budget(db, valid_user: dict, budget_id: UUID) -> BudgetModel:
     budget = _get_budget_or_404(db, budget_id)
-    if valid_user["role"] != "superuser" and not _can_view_budget(budget, valid_user):
+    if not _can_view_budget(budget, valid_user):
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
     return budget
 
 
 def is_owner(budget: BudgetModel, valid_user: dict) -> bool:
-    return valid_user["role"] == "superuser" or str(budget.owner_id) == str(
-        valid_user.get("customer_id")
-    )
+    return str(budget.owner_id) == str(valid_user.get("customer_id"))
 
 
 def _can_review(budget: BudgetModel, valid_user: dict) -> bool:
-    if valid_user["role"] == "superuser":
-        return True
     customer_id = valid_user.get("customer_id")
+    if not customer_id:
+        return False
     if budget.funding_customer_id:
         return str(budget.funding_customer_id) == str(customer_id)
     return str(budget.owner_id) == str(customer_id)
@@ -165,14 +163,13 @@ def list_all_reports_service(
     for the donor/funder-side equivalent (GET /reports/funded/); the two
     routes mirror /budgets/ vs /budgets/funded/'s existing owner/donor
     split rather than one combined owner-or-funder list."""
-    is_superuser = valid_user["role"] == "superuser"
     customer_id = valid_user.get("customer_id")
-    if not is_superuser and not customer_id:
+    if not customer_id:
         return []
 
     reports = list_all_reports(
         db,
-        customer_id=None if is_superuser else customer_id,
+        customer_id=customer_id,
         status=status,
         budget_id=budget_id,
         funding_customer_id=funding_customer_id,

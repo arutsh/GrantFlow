@@ -33,12 +33,25 @@ class TestCanViewBudget:
     def test_stranger_cannot_view(self):
         assert not _can_view_budget(_budget(), make_valid_user(customer_id=STRANGER_ID))
 
-    def test_superuser_can_view_regardless_of_customer_id(self):
+    def test_superuser_without_matching_session_cannot_view(self):
+        """A superuser is scoped purely by customer_id, same as any other
+        caller (see superuser-cross-tenant-access design.md Decision 7) — no
+        active impersonation session for this budget's owner/funder means
+        not-found, not a blanket bypass."""
         user = make_valid_user(role="superuser", customer_id=STRANGER_ID)
+        assert not _can_view_budget(_budget(), user)
+
+    def test_superuser_impersonating_the_owner_can_view(self):
+        user = make_valid_user(role="superuser", customer_id=OWNER_ID)
         assert _can_view_budget(_budget(), user)
 
     def test_missing_customer_id_cannot_view(self):
         user = make_valid_user(customer_id=STRANGER_ID)
+        user["customer_id"] = None
+        assert not _can_view_budget(_budget(), user)
+
+    def test_superuser_with_no_active_session_cannot_view(self):
+        user = make_valid_user(role="superuser", customer_id=STRANGER_ID)
         user["customer_id"] = None
         assert not _can_view_budget(_budget(), user)
 

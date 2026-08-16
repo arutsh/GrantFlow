@@ -166,7 +166,9 @@ def _resolve_updatable_budget(
 ) -> tuple[BudgetModel, bool]:
     """Authorization for PATCH /budgets/{id}. Returns (budget, is_funder_confirm).
 
-    The owner (or a superuser) may always act on their own budget. The one
+    The owner may always act on their own budget (a superuser reaches this
+    the same way, via customer_id set on an active impersonation session —
+    see the customer-impersonation OpenSpec capability). The one
     exception — a matching funder confirming a draft/ai_draft budget (see
     design.md's "Confirm access extends to the matching funder" decision) —
     is resolved here as an explicit authorization branch rather than by
@@ -177,15 +179,15 @@ def _resolve_updatable_budget(
     if not budget:
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
 
-    if valid_user["role"] == "superuser" or str(budget.owner_id) == str(
-        valid_user.get("customer_id")
-    ):
+    customer_id = valid_user.get("customer_id")
+    if customer_id and str(budget.owner_id) == str(customer_id):
         return budget, False
 
     if (
         is_confirm_attempt
         and budget.funding_customer_id
-        and str(budget.funding_customer_id) == str(valid_user.get("customer_id"))
+        and customer_id
+        and str(budget.funding_customer_id) == str(customer_id)
         and budget.status in (BudgetStatus.draft, BudgetStatus.ai_draft)
     ):
         return budget, True
@@ -360,11 +362,8 @@ async def restore_budget_service(budget_id: UUID, valid_user: dict, db):
 
 async def get_budget_service(budget_id, valid_user, db, include_user_details: bool = False):
 
-    budget = (
-        get_budget(db, budget_id)
-        if valid_user["role"] == "superuser"
-        else get_budget(db, budget_id, valid_user["customer_id"])
-    )
+    customer_id = valid_user.get("customer_id")
+    budget = get_budget(db, budget_id, customer_id) if customer_id else None
     if not budget:
         raise DomainError(
             "Budget Not found",
@@ -377,8 +376,6 @@ async def get_budget_service(budget_id, valid_user, db, include_user_details: bo
 
 
 def _can_view_budget(budget: BudgetModel, valid_user: dict) -> bool:
-    if valid_user["role"] == "superuser":
-        return True
     customer_id = valid_user.get("customer_id")
     if not customer_id:
         return False
@@ -406,9 +403,6 @@ async def get_viewable_budget_service(
 
 
 async def list_budget_service(valid_user, db, include_user_details: bool = False):
-    if valid_user["role"] == "superuser":
-        return list_budgets(db)
-
     customer_id = valid_user.get("customer_id")
     if not customer_id:
         return []
