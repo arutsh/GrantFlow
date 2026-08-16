@@ -331,6 +331,33 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
     return _budget_update_response(updated_budget)
 
 
+async def restore_budget_service(budget_id: UUID, valid_user: dict, db):
+    """Reverses an archive. Owner-or-superuser only (no funder branch — see
+    design.md's "Owner-only authorization" decision), so is_confirm_attempt
+    is always False here even though the target may end up `confirmed`.
+    """
+    valid_budget, _ = _resolve_updatable_budget(budget_id, valid_user, False, db)
+
+    if valid_budget.status != BudgetStatus.archived:
+        raise DomainError(
+            "Only an archived budget can be restored",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    restoring_to_confirmed = bool(valid_budget.confirmed_at and valid_budget.start_date)
+    target_status = BudgetStatus.confirmed if restoring_to_confirmed else BudgetStatus.draft
+
+    updated_budget = update_budget(
+        session=db,
+        budget_id=budget_id,
+        status=target_status,
+        clear_confirmed_at=not restoring_to_confirmed,
+    )
+    if not updated_budget:
+        return None
+    return _budget_update_response(updated_budget)
+
+
 async def get_budget_service(budget_id, valid_user, db, include_user_details: bool = False):
 
     budget = (

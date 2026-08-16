@@ -1,6 +1,7 @@
 import {
   BudgetUpdate,
   Budget,
+  BudgetPatched,
   CreateBudgetWithLinesRequest,
 } from "@/pages/Budgets/types/budget";
 import gatewayApi from "@/api/gatewayApi";
@@ -22,6 +23,11 @@ export const archiveBudget = async (id: string) => {
   const { data } = await gatewayApi.patch(`/budgets/${id}`, {
     status: "archived",
   });
+  return data;
+};
+
+export const restoreBudget = async (id: string): Promise<BudgetPatched> => {
+  const { data } = await gatewayApi.post(`/budgets/${id}/restore`);
   return data;
 };
 

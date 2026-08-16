@@ -45,3 +45,12 @@ export function canReviewReport(
   if (budget.funder?.id) return budget.funder.id === currentCustomerId;
   return isBudgetOwner(budget, currentCustomerId);
 }
+
+// Owner-only, no funder branch (see design.md's "Owner-only authorization"
+// decision for restore) — mirrors restore_budget_service's authorization.
+export function canRestoreBudget(
+  budget: Budget,
+  currentCustomerId: string | null
+): boolean {
+  return budget.status === "archived" && isBudgetOwner(budget, currentCustomerId);
+}

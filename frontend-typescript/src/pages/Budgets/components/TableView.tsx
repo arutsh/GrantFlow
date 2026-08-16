@@ -3,8 +3,9 @@ import { TableCommon } from "@/components/ui/Table";
 import { StatusBadge } from "@/pages/Budgets/components/BudgetViewHeader";
 import { utcToLocal } from "@/utils/datetime";
 import { formatCurrency } from "@/utils/currency";
+import { getCurrentCustomerId, canRestoreBudget } from "@/utils/roleAccess";
 import { createColumnHelper } from "@tanstack/react-table";
-import { Edit2, Trash2 } from "lucide-react";
+import { Edit2, Trash2, RotateCcw } from "lucide-react";
 
 const columnHelper = createColumnHelper<any>();
 
@@ -15,11 +16,14 @@ export function TableView({
   data,
   onEdit,
   onDelete,
+  onRestore,
 }: {
   data: any[];
   onEdit: (budget: any) => void;
   onDelete: (budget_id: string) => void;
+  onRestore: (budget_id: string) => void;
 }) {
+  const currentCustomerId = getCurrentCustomerId();
   const columns = [
     columnHelper.accessor("status", {
       header: "Status",
@@ -64,33 +68,49 @@ export function TableView({
     }),
     columnHelper.display({
       id: "actions",
-      cell: (info) => (
-        <div
-          className="flex space-x-1 gap-1"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Button
-            onClick={() => onEdit(info.row.original)}
-            variant="icon"
-            title="Edit budget"
+      cell: (info) => {
+        const budget = info.row.original;
+        const canRestore = canRestoreBudget(budget, currentCustomerId);
+        return (
+          <div
+            className="flex space-x-1 gap-1"
+            onClick={(e) => e.stopPropagation()}
           >
-            <Edit2 size={18} />
-          </Button>
+            {canRestore ? (
+              <Button
+                onClick={() => onRestore(budget.id)}
+                variant="icon"
+                title="Restore budget"
+              >
+                <RotateCcw size={18} />
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => onEdit(budget)}
+                  variant="icon"
+                  title="Edit budget"
+                >
+                  <Edit2 size={18} />
+                </Button>
 
-          <Button
-            variant="icon-danger"
-            onClick={() => onDelete(info.row.original.id)}
-            disabled={info.row.original.status === "confirmed"}
-            title={
-              info.row.original.status === "confirmed"
-                ? CONFIRMED_DELETE_DISABLED_TITLE
-                : "Delete budget"
-            }
-          >
-            <Trash2 size={18} />
-          </Button>
-        </div>
-      ),
+                <ConfirmDeleteButton
+                  variant="icon-danger"
+                  onConfirm={() => onDelete(budget.id)}
+                  disabled={budget.status === "confirmed"}
+                  title={
+                    budget.status === "confirmed"
+                      ? CONFIRMED_DELETE_DISABLED_TITLE
+                      : "Delete budget"
+                  }
+                >
+                  <Trash2 size={18} />
+                </ConfirmDeleteButton>
+              </>
+            )}
+          </div>
+        );
+      },
     }),
   ];
 

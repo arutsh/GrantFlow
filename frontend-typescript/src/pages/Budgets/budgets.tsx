@@ -1,14 +1,12 @@
 import React, { useEffect, useState, useMemo } from "react";
-import Input from "@/components/ui/Input";
+import axios from "axios";
 import Button from "@/components/ui/Button";
 import {
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { fetchAllBudgets } from "@/api/gatewayApi";
-import { utcToLocal } from "@/utils/datetime";
 import { HiPlus } from "react-icons/hi";
 import {
   HiXMark,
@@ -20,7 +18,7 @@ import { CardsView } from "./components/CardsView";
 
 import { CardTableToggle } from "@/components/ui/CardTableToggle";
 import { Budget, BudgetPatched } from "./types/budget";
-import { archiveBudget, deleteBudget } from "@/api/budgetApi";
+import { archiveBudget, restoreBudget } from "@/api/budgetApi";
 import { AddBudgetModal } from "./components/AddBudget";
 import { EditBudgetModal } from "./components/EditBudget";
 import { STATUS_STYLES } from "./constants/budgetStatus";
@@ -31,6 +29,7 @@ const BudgetsPage: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState("");
@@ -59,9 +58,7 @@ const BudgetsPage: React.FC = () => {
   };
 
   const activeFilterCount =
-    filterStatuses.length +
-    filterCurrencies.length +
-    (filterDuration ? 1 : 0);
+    filterStatuses.length + filterCurrencies.length + (filterDuration ? 1 : 0);
 
   useEffect(() => {
     const handleResize = () => {
@@ -121,11 +118,38 @@ const BudgetsPage: React.FC = () => {
   const deleteBudgetMutation = useMutation({
     mutationFn: async (budgetId: string) => archiveBudget(budgetId),
     onSuccess: (_, budgetId) => {
-      // Invalidate and refetch budgets after deletion
+      // "Delete" archives rather than removing the record, so it stays in
+      // the cache (status flips to archived) instead of being filtered out.
       queryClient.setQueryData(["budgets"], (oldData: Budget[] | undefined) => {
         if (!oldData) return [];
-        return oldData.filter((b) => b.id !== budgetId);
+        return oldData.map((b) =>
+          b.id === budgetId ? { ...b, status: "archived" } : b,
+        );
       });
+    },
+  });
+  const restoreBudgetMutation = useMutation({
+    mutationFn: async (budgetId: string) => restoreBudget(budgetId),
+    onMutate: () => {
+      setRestoreError(null);
+    },
+    onSuccess: (updatedBudget) => {
+      queryClient.setQueryData(["budgets"], (oldData: Budget[] | undefined) => {
+        if (!oldData) return [];
+        return oldData.map((b) =>
+          b.id === updatedBudget.id
+            ? { ...b, status: updatedBudget.status! }
+            : b,
+        );
+      });
+    },
+    onError: (err) => {
+      const detail =
+        axios.isAxiosError(err) &&
+        typeof err.response?.data?.detail === "string"
+          ? err.response.data.detail
+          : null;
+      setRestoreError(detail ?? "Failed to restore budget");
     },
   });
   const { isPending, isError, data, error } = useQuery({
@@ -144,8 +168,12 @@ const BudgetsPage: React.FC = () => {
           searchTerm.toLowerCase(),
         );
 
+      // Archived budgets are hidden by default; they only show up once the
+      // user explicitly opts in via the status filter.
       const matchesStatus =
-        filterStatuses.length === 0 || filterStatuses.includes(budget.status);
+        filterStatuses.length === 0
+          ? budget.status !== "archived"
+          : filterStatuses.includes(budget.status);
       const matchesCurrency =
         filterCurrencies.length === 0 ||
         (budget.local_currency &&
@@ -225,6 +253,19 @@ const BudgetsPage: React.FC = () => {
               Manage and track all your budgets in one place.
             </p>
           </div>
+
+          {restoreError && (
+            <div className="mb-4 px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm border border-red-200 flex items-center justify-between gap-2">
+              <span>{restoreError}</span>
+              <button
+                onClick={() => setRestoreError(null)}
+                className="hover:opacity-70 transition-opacity"
+                aria-label="Dismiss error"
+              >
+                <HiXMark size={16} />
+              </button>
+            </div>
+          )}
 
           {/* Controls Section */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
@@ -340,189 +381,193 @@ const BudgetsPage: React.FC = () => {
 
               {/* Desktop (lg+): existing Status/Currency/Duration dropdowns + Clear, unchanged */}
               <div className="hidden lg:contents">
-              {/* Status Filter - Multi-select with Dropdown */}
-              <div className="relative flex-shrink-0 w-full lg:w-auto">
-                <button
-                  onClick={() => setShowStatusDropdown(!showStatusDropdown)}
-                  className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                >
-                  <span className="text-slate-700">
-                    {filterStatuses.length === 0
-                      ? "Status"
-                      : `${filterStatuses.length} selected`}
-                  </span>
-                  <svg
-                    className={`w-4 h-4 text-slate-400 transition-transform ${showStatusDropdown ? "rotate-180" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {/* Status Filter - Multi-select with Dropdown */}
+                <div className="relative flex-shrink-0 w-full lg:w-auto">
+                  <button
+                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                    className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                    />
-                  </svg>
-                </button>
+                    <span className="text-slate-700">
+                      {filterStatuses.length === 0
+                        ? "Status"
+                        : `${filterStatuses.length} selected`}
+                    </span>
+                    <svg
+                      className={`w-4 h-4 text-slate-400 transition-transform ${showStatusDropdown ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
+                    </svg>
+                  </button>
 
-                {/* Status Dropdown */}
-                {showStatusDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
-                    <div className="p-2">
-                      {uniqueStatuses.map((status: string) => (
-                        <label
-                          key={status}
-                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterStatuses.includes(status)}
-                            onChange={(e) =>
-                              toggleStatusFilter(status, e.target.checked)
-                            }
-                            className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-                          />
-                          <span className="text-sm text-slate-700 capitalize">
-                            {status}
-                          </span>
-                        </label>
-                      ))}
+                  {/* Status Dropdown */}
+                  {showStatusDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
+                      <div className="p-2">
+                        {uniqueStatuses.map((status: string) => (
+                          <label
+                            key={status}
+                            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={filterStatuses.includes(status)}
+                              onChange={(e) =>
+                                toggleStatusFilter(status, e.target.checked)
+                              }
+                              className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                            />
+                            <span className="text-sm text-slate-700 capitalize">
+                              {status}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {/* Currency Filter - Multi-select with Dropdown */}
-              <div className="relative flex-shrink-0 w-full lg:w-auto">
-                <button
-                  onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
-                  className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                >
-                  <span className="text-slate-700">
-                    {filterCurrencies.length === 0
-                      ? "Currency"
-                      : `${filterCurrencies.length} selected`}
-                  </span>
-                  <svg
-                    className={`w-4 h-4 text-slate-400 transition-transform ${showCurrencyDropdown ? "rotate-180" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {/* Currency Filter - Multi-select with Dropdown */}
+                <div className="relative flex-shrink-0 w-full lg:w-auto">
+                  <button
+                    onClick={() =>
+                      setShowCurrencyDropdown(!showCurrencyDropdown)
+                    }
+                    className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                    />
-                  </svg>
-                </button>
+                    <span className="text-slate-700">
+                      {filterCurrencies.length === 0
+                        ? "Currency"
+                        : `${filterCurrencies.length} selected`}
+                    </span>
+                    <svg
+                      className={`w-4 h-4 text-slate-400 transition-transform ${showCurrencyDropdown ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
+                    </svg>
+                  </button>
 
-                {/* Currency Dropdown */}
-                {showCurrencyDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
-                    <div className="p-2">
-                      {uniqueCurrencies.map((currency: string) => (
-                        <label
-                          key={currency}
-                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={filterCurrencies.includes(currency)}
-                            onChange={(e) =>
-                              toggleCurrencyFilter(currency, e.target.checked)
-                            }
-                            className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-                          />
-                          <span className="text-sm text-slate-700">
-                            {currency}
-                          </span>
-                        </label>
-                      ))}
+                  {/* Currency Dropdown */}
+                  {showCurrencyDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
+                      <div className="p-2">
+                        {uniqueCurrencies.map((currency: string) => (
+                          <label
+                            key={currency}
+                            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={filterCurrencies.includes(currency)}
+                              onChange={(e) =>
+                                toggleCurrencyFilter(currency, e.target.checked)
+                              }
+                              className="w-4 h-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                            />
+                            <span className="text-sm text-slate-700">
+                              {currency}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {/* Duration Filter - Single select with Dropdown */}
-              <div className="relative flex-shrink-0 w-full lg:w-auto">
-                <button
-                  onClick={() => setShowDurationDropdown(!showDurationDropdown)}
-                  className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                >
-                  <span className="text-slate-700">
-                    {filterDuration === ""
-                      ? "Duration"
-                      : filterDuration === "short"
-                        ? "≤ 6 mo"
-                        : filterDuration === "medium"
-                          ? "7-12 mo"
-                          : "> 12 mo"}
-                  </span>
-                  <svg
-                    className={`w-4 h-4 text-slate-400 transition-transform ${showDurationDropdown ? "rotate-180" : ""}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {/* Duration Filter - Single select with Dropdown */}
+                <div className="relative flex-shrink-0 w-full lg:w-auto">
+                  <button
+                    onClick={() =>
+                      setShowDurationDropdown(!showDurationDropdown)
+                    }
+                    className="w-full lg:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white hover:bg-slate-50 flex items-center justify-between gap-2 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                    />
-                  </svg>
-                </button>
+                    <span className="text-slate-700">
+                      {filterDuration === ""
+                        ? "Duration"
+                        : filterDuration === "short"
+                          ? "≤ 6 mo"
+                          : filterDuration === "medium"
+                            ? "7-12 mo"
+                            : "> 12 mo"}
+                    </span>
+                    <svg
+                      className={`w-4 h-4 text-slate-400 transition-transform ${showDurationDropdown ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                      />
+                    </svg>
+                  </button>
 
-                {/* Duration Dropdown */}
-                {showDurationDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
-                    <div className="p-2">
-                      {[
-                        { value: "short", label: "Short (≤ 6 mo)" },
-                        { value: "medium", label: "Medium (7-12 mo)" },
-                        { value: "long", label: "Long (> 12 mo)" },
-                      ].map((option) => (
-                        <label
-                          key={option.value}
-                          className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
-                        >
-                          <input
-                            type="radio"
-                            name="duration"
-                            value={option.value}
-                            checked={filterDuration === option.value}
-                            onChange={(e) => {
-                              setFilterDuration(e.target.value);
-                              setShowDurationDropdown(false);
-                            }}
-                            className="w-4 h-4 border-slate-300 text-slate-700 focus:ring-slate-400"
-                          />
-                          <span className="text-sm text-slate-700">
-                            {option.label}
-                          </span>
-                        </label>
-                      ))}
+                  {/* Duration Dropdown */}
+                  {showDurationDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-300 rounded-lg shadow-lg z-10">
+                      <div className="p-2">
+                        {[
+                          { value: "short", label: "Short (≤ 6 mo)" },
+                          { value: "medium", label: "Medium (7-12 mo)" },
+                          { value: "long", label: "Long (> 12 mo)" },
+                        ].map((option) => (
+                          <label
+                            key={option.value}
+                            className="flex items-center gap-2 px-3 py-2 rounded hover:bg-slate-50 cursor-pointer"
+                          >
+                            <input
+                              type="radio"
+                              name="duration"
+                              value={option.value}
+                              checked={filterDuration === option.value}
+                              onChange={(e) => {
+                                setFilterDuration(e.target.value);
+                                setShowDurationDropdown(false);
+                              }}
+                              className="w-4 h-4 border-slate-300 text-slate-700 focus:ring-slate-400"
+                            />
+                            <span className="text-sm text-slate-700">
+                              {option.label}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {/* Clear Button */}
-              {(searchTerm ||
-                filterStatuses.length > 0 ||
-                filterCurrencies.length > 0 ||
-                filterDuration) && (
-                <Button
-                  onClick={clearFilters}
-                  variant="outline"
-                  className="w-full lg:w-auto flex items-center justify-center gap-1 py-2 px-3"
-                >
-                  <HiXMark size={14} /> Clear All
-                </Button>
-              )}
+                {/* Clear Button */}
+                {(searchTerm ||
+                  filterStatuses.length > 0 ||
+                  filterCurrencies.length > 0 ||
+                  filterDuration) && (
+                  <Button
+                    onClick={clearFilters}
+                    variant="outline"
+                    className="w-full lg:w-auto flex items-center justify-center gap-1 py-2 px-3"
+                  >
+                    <HiXMark size={14} /> Clear All
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -620,9 +665,7 @@ const BudgetsPage: React.FC = () => {
                             name="duration-sheet"
                             value={option.value}
                             checked={filterDuration === option.value}
-                            onChange={(e) =>
-                              setFilterDuration(e.target.value)
-                            }
+                            onChange={(e) => setFilterDuration(e.target.value)}
                             className="w-4 h-4 border-slate-300 text-slate-700 focus:ring-slate-400"
                           />
                           <span className="text-sm text-slate-700">
@@ -666,12 +709,14 @@ const BudgetsPage: React.FC = () => {
                 <CardsView
                   data={filteredData}
                   onDelete={deleteBudgetMutation.mutate}
+                  onRestore={restoreBudgetMutation.mutate}
                 />
               ) : view === "table" ? (
                 <TableView
                   data={filteredData}
                   onEdit={openEditModal}
                   onDelete={deleteBudgetMutation.mutate}
+                  onRestore={restoreBudgetMutation.mutate}
                 />
               ) : null}
             </>
@@ -714,7 +759,6 @@ const BudgetsPage: React.FC = () => {
           )}
         </div>
         {/* end main scrollable area */}
-
       </div>
       {/* end outer flex */}
     </>
