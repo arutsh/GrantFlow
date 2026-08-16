@@ -13,7 +13,7 @@ The backend SHALL provide `POST /budgets/{id}/restore`, callable only by the bud
 
 #### Scenario: Restoring falls back to draft if start_date is missing despite a prior confirmation
 - **WHEN** the owner calls `POST /budgets/{id}/restore` on a budget whose `status` is `archived`, `confirmed_at` is set, but `start_date` is not set
-- **THEN** the backend sets `status` to `draft` rather than `confirmed`
+- **THEN** the backend sets `status` to `draft` rather than `confirmed`, and clears `confirmed_at` so the budget doesn't end up `draft` with a stale confirmation timestamp
 
 #### Scenario: Restore is rejected on a non-archived budget
 - **WHEN** `POST /budgets/{id}/restore` is called on a budget whose `status` is not `archived`
