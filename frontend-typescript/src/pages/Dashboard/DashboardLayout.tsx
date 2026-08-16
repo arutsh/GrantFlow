@@ -16,6 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import ogfIcon from "@/assets/logos/ogf-icon.svg";
 import { Link, NavLink } from "react-router-dom";
 import { TopBar } from "./TopBar";
+import { ImpersonationBanner } from "./ImpersonationBanner";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -173,6 +174,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Main content + AI panel, with a global top bar above both */}
       <div className="flex flex-col flex-1 overflow-hidden">
+        <ImpersonationBanner />
         <TopBar onOpenMenu={() => setIsMobileDrawerOpen(true)} />
         <div className="flex flex-1 overflow-hidden">
           <main className="flex-1 p-4 sm:p-8 overflow-auto bg-gray-50">{children}</main>

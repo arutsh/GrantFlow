@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, type Mock } from "vitest";
 import DashboardLayout from "./DashboardLayout";
 import * as authContext from "@/context/AuthContext";
@@ -44,19 +46,29 @@ function getAside(container: HTMLElement): Element {
   return aside;
 }
 
-function renderLayout() {
+function renderWithProviders(children: ReactNode) {
+  const queryClient = new QueryClient();
   return render(
     <MemoryRouter>
-      <DashboardLayout>
-        <div>Page content</div>
-      </DashboardLayout>
+      <QueryClientProvider client={queryClient}>
+        <DashboardLayout>{children}</DashboardLayout>
+      </QueryClientProvider>
     </MemoryRouter>,
   );
 }
 
+function renderLayout() {
+  return renderWithProviders(<div>Page content</div>);
+}
+
 describe("DashboardLayout", () => {
   beforeEach(() => {
-    useAuthMock.mockReturnValue({ isDonor: false });
+    useAuthMock.mockReturnValue({
+      isDonor: false,
+      isImpersonating: false,
+      impersonatedCustomerName: null,
+      exitImpersonation: vi.fn(),
+    });
     useAiChatMock.mockReturnValue({ isAiOpen: false, toggleAi: vi.fn() });
   });
 
@@ -107,5 +119,59 @@ describe("DashboardLayout", () => {
 
     expect(screen.getByText("Page content")).toBeInTheDocument();
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
+  });
+
+  it("does not render the impersonation banner outside an active session", () => {
+    renderLayout();
+
+    expect(screen.queryByRole("button", { name: "Exit impersonation" })).not.toBeInTheDocument();
+  });
+
+  it("renders the impersonation banner above TopBar, naming the customer, whenever a session is active", () => {
+    useAuthMock.mockReturnValue({
+      isDonor: false,
+      isImpersonating: true,
+      impersonatedCustomerName: "Acme NGO",
+      exitImpersonation: vi.fn(),
+    });
+
+    renderLayout();
+
+    expect(screen.getByText(/Acme NGO/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exit impersonation" })).toBeInTheDocument();
+  });
+
+  it("keeps the banner mounted across a route change, since it's rendered above the swapped page content", () => {
+    useAuthMock.mockReturnValue({
+      isDonor: false,
+      isImpersonating: true,
+      impersonatedCustomerName: "Acme NGO",
+      exitImpersonation: vi.fn(),
+    });
+
+    const queryClient = new QueryClient();
+    const { rerender } = render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <DashboardLayout>
+            <div>Budgets page</div>
+          </DashboardLayout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/Acme NGO/)).toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <DashboardLayout>
+            <div>Reports page</div>
+          </DashboardLayout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Reports page")).toBeInTheDocument();
+    expect(screen.getByText(/Acme NGO/)).toBeInTheDocument();
   });
 });

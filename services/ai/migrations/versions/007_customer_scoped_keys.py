@@ -4,7 +4,7 @@ Dedupes any existing (customer_id, provider_id) duplicates (keeping the
 newest) before adding the new unique constraint; dev/demo data only, no
 production backfill concern.
 
-Revision ID: 007_customer_scope_user_provider_keys
+Revision ID: 007_customer_scoped_keys
 Revises: 006_drop_ai_chat_tables
 Create Date: 2026-08-16 00:00:00.000000
 
@@ -15,7 +15,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "007_customer_scope_user_provider_keys"
+revision: str = "007_customer_scoped_keys"
 down_revision: Union[str, Sequence[str], None] = "006_drop_ai_chat_tables"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

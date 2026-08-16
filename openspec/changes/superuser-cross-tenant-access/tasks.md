@@ -35,17 +35,17 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 5. Impersonation UI: top bar picker + warning banner — depends on 3
 
-- [ ] 5.1 Add `is_superuser` (and any impersonation-active state) to the decoded JWT claims surfaced by `AuthContext` (`frontend-typescript/src/context/AuthContext.tsx`)
-- [ ] 5.2 Add a customer-search endpoint call (reuse the existing customer search pattern from `ManageGrantees.tsx`'s donor→grantee NGO search) wired to a new `<ImpersonatePicker />` component, rendered in `TopBar.tsx` to the left of the existing user menu, visible only when `isSuperuser` is true
-- [ ] 5.3 Selecting a customer in the picker calls the impersonation-token endpoint (Group 3) and swaps the app's active auth token, without discarding the superuser's own original token client-side (needed for exit)
-- [ ] 5.4 Add `<ImpersonationBanner />`, rendered once in `DashboardLayout` above `TopBar`, visible whenever an impersonation session is active, naming the impersonated customer, with an always-visible **Exit** control and no other way to hide it
-- [ ] 5.5 Exit control ends the impersonation session and restores the superuser's own original session/token
-- [ ] 5.6 Tests: picker is absent for non-superusers; banner appears immediately on impersonation start and persists across route changes; banner has no dismiss/hide control other than exit; exit restores the superuser's own session
+- [x] 5.1 Add `is_superuser` (and any impersonation-active state) to the decoded JWT claims surfaced by `AuthContext` (`frontend-typescript/src/context/AuthContext.tsx`)
+- [x] 5.2 Add a customer-search endpoint call (reuse the existing customer search pattern from `ManageGrantees.tsx`'s donor→grantee NGO search) wired to a new `<ImpersonatePicker />` component, rendered in `TopBar.tsx` to the left of the existing user menu, visible only when `isSuperuser` is true
+- [x] 5.3 Selecting a customer in the picker calls the impersonation-token endpoint (Group 3) and swaps the app's active auth token, without discarding the superuser's own original token client-side (needed for exit)
+- [x] 5.4 Add `<ImpersonationBanner />`, rendered once in `DashboardLayout` above `TopBar`, visible whenever an impersonation session is active, naming the impersonated customer, with an always-visible **Exit** control and no other way to hide it
+- [x] 5.5 Exit control ends the impersonation session and restores the superuser's own original session/token
+- [x] 5.6 Tests: picker is absent for non-superusers; banner appears immediately on impersonation start and persists across route changes; banner has no dismiss/hide control other than exit; exit restores the superuser's own session
 - [ ] 5.7 Run frontend test suite and lint clean; PR merged
 
 ## 6. Disclosure — depends on 3, 4, 5
 
-- [ ] 6.1 Add a subsection to `docs/legal/privacy-policy-stub.md` disclosing that superusers may temporarily access any organization's account (read and write) for support/demo/security/compliance purposes, and that every such action is logged
-- [ ] 6.2 Add an "Administrative Access" section to `SECURITY.md` describing impersonation and the audit log as the mitigation
-- [ ] 6.3 Check `docs/security/subprocessors.md` for whether any cross-reference is needed (expected: no change)
+- [x] 6.1 Add a subsection to `docs/legal/privacy-policy-stub.md` disclosing that superusers may temporarily access any organization's account (read and write) for support/demo/security/compliance purposes, and that every such action is logged
+- [x] 6.2 Add an "Administrative Access" section to `SECURITY.md` describing impersonation and the audit log as the mitigation
+- [x] 6.3 Check `docs/security/subprocessors.md` for whether any cross-reference is needed (expected: no change) — confirmed no change: impersonation is an internal admin-access mechanism, it doesn't introduce a new third-party data recipient
 - [ ] 6.4 PR merged

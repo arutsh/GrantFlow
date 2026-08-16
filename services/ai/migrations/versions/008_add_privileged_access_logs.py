@@ -1,7 +1,7 @@
 """Add privileged_access_logs table
 
 Revision ID: 008_add_privileged_access_logs
-Revises: 007_customer_scope_user_provider_keys
+Revises: 007_customer_scoped_keys
 Create Date: 2026-08-16 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 import shared
 
 revision: str = "008_add_privileged_access_logs"
-down_revision: Union[str, Sequence[str], None] = "007_customer_scope_user_provider_keys"
+down_revision: Union[str, Sequence[str], None] = "007_customer_scoped_keys"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

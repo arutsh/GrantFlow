@@ -20,19 +20,39 @@ interface TokenClaims {
   is_ngo?: boolean;
   is_donor?: boolean;
   email_verified?: boolean;
+  role?: string;
+  is_impersonating?: boolean;
 }
 
 function decodeRoleFlags(token: string | null): {
   isNgo: boolean;
   isDonor: boolean;
   emailVerified: boolean;
+  isSuperuser: boolean;
+  isImpersonating: boolean;
 } {
   const claims = safeDecodeToken<TokenClaims>(token);
   return {
     isNgo: !!claims?.is_ngo,
     isDonor: !!claims?.is_donor,
     emailVerified: !!claims?.email_verified,
+    isSuperuser: claims?.role === "superuser",
+    isImpersonating: !!claims?.is_impersonating,
   };
+}
+
+// Everything an active impersonation session displaces, so exitImpersonation
+// can put it back exactly as it was — including removing (not just backing
+// up) both refresh tokens while impersonating, so axios's silent-refresh
+// interceptor can't use the superuser's own refresh token to silently swap
+// the session back out from under an active impersonation.
+const IMPERSONATION_BACKUP_KEY = "impersonationBackup";
+const IMPERSONATION_CUSTOMER_NAME_KEY = "impersonationCustomerName";
+
+interface ImpersonationBackup {
+  sessionToken: string | null;
+  sessionRefreshToken: string | null;
+  localRefreshToken: string | null;
 }
 
 interface AuthContextType {
@@ -43,6 +63,9 @@ interface AuthContextType {
   isNgo: boolean;
   isDonor: boolean;
   emailVerified: boolean;
+  isSuperuser: boolean;
+  isImpersonating: boolean;
+  impersonatedCustomerName: string | null;
   login: (
     token: string,
     username: string,
@@ -53,6 +76,8 @@ interface AuthContextType {
   logout: () => void;
   loading?: boolean;
   setIsRegistering: (isRegistering: boolean) => void;
+  startImpersonation: (impersonationToken: string, customerName: string) => void;
+  exitImpersonation: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -67,8 +92,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [impersonatedCustomerName, setImpersonatedCustomerName] = useState<string | null>(
+    sessionStorage.getItem(IMPERSONATION_CUSTOMER_NAME_KEY)
+  );
 
-  const { isNgo, isDonor, emailVerified } = useMemo(
+  const { isNgo, isDonor, emailVerified, isSuperuser, isImpersonating } = useMemo(
     () => decodeRoleFlags(token),
     [token]
   );
@@ -148,6 +176,53 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsRegistering(false);
   };
 
+  const startImpersonation = (impersonationToken: string, customerName: string) => {
+    const backup: ImpersonationBackup = {
+      sessionToken: sessionStorage.getItem("token"),
+      sessionRefreshToken: sessionStorage.getItem("refreshToken"),
+      localRefreshToken: localStorage.getItem("refreshToken"),
+    };
+    sessionStorage.setItem(IMPERSONATION_BACKUP_KEY, JSON.stringify(backup));
+    sessionStorage.removeItem("refreshToken");
+    localStorage.removeItem("refreshToken");
+    sessionStorage.setItem("token", impersonationToken);
+    sessionStorage.setItem(IMPERSONATION_CUSTOMER_NAME_KEY, customerName);
+    setToken(impersonationToken);
+    setImpersonatedCustomerName(customerName);
+  };
+
+  const exitImpersonation = () => {
+    const raw = sessionStorage.getItem(IMPERSONATION_BACKUP_KEY);
+    let backup: ImpersonationBackup = {
+      sessionToken: null,
+      sessionRefreshToken: null,
+      localRefreshToken: null,
+    };
+    try {
+      if (raw) backup = JSON.parse(raw);
+    } catch {
+      // Corrupted backup — fall through to the empty default above rather
+      // than throwing while a superuser is trying to exit impersonation.
+    }
+
+    if (backup.sessionToken !== null) {
+      sessionStorage.setItem("token", backup.sessionToken);
+    } else {
+      sessionStorage.removeItem("token");
+    }
+    if (backup.sessionRefreshToken !== null) {
+      sessionStorage.setItem("refreshToken", backup.sessionRefreshToken);
+    }
+    if (backup.localRefreshToken !== null) {
+      localStorage.setItem("refreshToken", backup.localRefreshToken);
+    }
+    sessionStorage.removeItem(IMPERSONATION_BACKUP_KEY);
+    sessionStorage.removeItem(IMPERSONATION_CUSTOMER_NAME_KEY);
+
+    setImpersonatedCustomerName(null);
+    setToken(sessionStorage.getItem("token") || localStorage.getItem("token"));
+  };
+
   // 🔹 Don’t render children until we finish checking storage
   if (loading) {
     return <div>Loading...</div>;
@@ -161,11 +236,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isNgo,
         isDonor,
         emailVerified,
+        isSuperuser,
+        isImpersonating,
+        impersonatedCustomerName,
         login,
         logout,
         isRegistering,
         loading,
         setIsRegistering,
+        startImpersonation,
+        exitImpersonation,
       }}
     >
       {children}

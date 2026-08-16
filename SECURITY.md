@@ -75,6 +75,39 @@ than waiting for confirmation — see step 2.
   changed to prevent recurrence. Keep this internal unless disclosure is
   otherwise required.
 
+## Administrative access
+
+GrandFlow superusers can start a time-boxed **impersonation session**
+scoped to any customer, from a customer-search control in the top
+navigation bar (visible only to superusers). The resulting session
+grants admin-equivalent read/write access to that customer's account,
+for support, demo, security, and compliance purposes — without asking
+for or storing that customer's credentials.
+
+Two properties make this auditable rather than an unaccountable
+backdoor:
+
+- **True-actor attribution.** The session carries the superuser's own
+  real identity, not one borrowed from the impersonated customer's
+  users — every `created_by`/`updated_by` field recorded during the
+  session reflects who actually performed the action.
+- **Centralized, non-opt-in audit logging.** Every request made under
+  an impersonation session — reads and writes alike — is logged (actor,
+  target customer, method, path, timestamp) by a shared hook in every
+  service's request path, not by per-route instrumentation that a new
+  endpoint could forget to add. Audit-log write failures block the
+  request for mutations (fail-closed); a broken audit table does not
+  block plain page views (fail-open), so a reliability issue can't
+  silently disable the audit trail for writes while still letting a
+  demo session read data.
+
+Sessions expire after a short, fixed lifetime
+(`IMPERSONATION_TOKEN_EXPIRE_MINUTES`), and every active session shows
+a persistent, non-dismissible banner naming the impersonated customer,
+with no way to hide it short of ending the session. See the
+`customer-impersonation` and `privileged-access-audit` capabilities for
+the full behavior.
+
 ## Scope
 
 This process covers GrandFlow's own hosted platform and its

@@ -13,13 +13,27 @@ function makeFakeJwt(payload: Record<string, unknown>): string {
 }
 
 function TestComponent() {
-  const { isAuthenticated, isNgo, isDonor, login, logout, username } =
-    useAuth();
+  const {
+    isAuthenticated,
+    isNgo,
+    isDonor,
+    isSuperuser,
+    isImpersonating,
+    impersonatedCustomerName,
+    login,
+    logout,
+    username,
+    startImpersonation,
+    exitImpersonation,
+  } = useAuth();
   return (
     <div>
       <div>Auth: {isAuthenticated ? "Yes" : "No"}</div>
       <div data-testid="is-ngo">{String(isNgo)}</div>
       <div data-testid="is-donor">{String(isDonor)}</div>
+      <div data-testid="is-superuser">{String(isSuperuser)}</div>
+      <div data-testid="is-impersonating">{String(isImpersonating)}</div>
+      <div data-testid="impersonated-customer">{impersonatedCustomerName ?? ""}</div>
       <button
         onClick={() =>
           login("fake-token", "john", true, "active", "refresh-token")
@@ -60,6 +74,30 @@ function TestComponent() {
       >
         LoginNgoAndDonor
       </button>
+      <button
+        onClick={() =>
+          login(
+            makeFakeJwt({ role: "superuser" }),
+            "root",
+            false,
+            "active",
+            "refresh-token",
+          )
+        }
+      >
+        LoginSuperuser
+      </button>
+      <button
+        onClick={() =>
+          startImpersonation(
+            makeFakeJwt({ role: "admin", is_impersonating: true, customer_id: "cust-1" }),
+            "Acme NGO",
+          )
+        }
+      >
+        StartImpersonation
+      </button>
+      <button onClick={exitImpersonation}>ExitImpersonation</button>
       <button onClick={logout}>Logout</button>
     </div>
   );
@@ -215,5 +253,96 @@ describe("AuthProvider", () => {
     });
     expect(screen.getByTestId("is-donor")).toHaveTextContent("true");
     expect(screen.getByTestId("is-ngo")).toHaveTextContent("false");
+  });
+
+  it("derives isSuperuser from the token's role claim", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginSuperuser"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-superuser")).toHaveTextContent("true");
+    });
+  });
+
+  it("defaults isSuperuser to false for a regular user", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("Login"));
+
+    await waitFor(() => screen.getByText("Auth: Yes"));
+    expect(screen.getByTestId("is-superuser")).toHaveTextContent("false");
+  });
+
+  it("startImpersonation swaps the active token and marks isImpersonating, naming the customer", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginSuperuser"));
+    await waitFor(() => screen.getByText("Auth: Yes"));
+
+    userEvent.click(screen.getByText("StartImpersonation"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-impersonating")).toHaveTextContent("true");
+    });
+    expect(screen.getByTestId("impersonated-customer")).toHaveTextContent("Acme NGO");
+  });
+
+  it("removes refresh tokens from storage while impersonating, so a silent refresh can't revive the superuser's own session", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginSuperuser"));
+    await waitFor(() => screen.getByText("Auth: Yes"));
+    expect(sessionStorage.getItem("refreshToken")).toBe("refresh-token");
+
+    userEvent.click(screen.getByText("StartImpersonation"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-impersonating")).toHaveTextContent("true");
+    });
+    expect(sessionStorage.getItem("refreshToken")).toBeNull();
+    expect(localStorage.getItem("refreshToken")).toBeNull();
+  });
+
+  it("exitImpersonation restores the superuser's own token, refresh token, and clears impersonation state", async () => {
+    render(
+      <AuthProvider>
+        <TestComponent />
+      </AuthProvider>,
+    );
+
+    userEvent.click(screen.getByText("LoginSuperuser"));
+    await waitFor(() => screen.getByText("Auth: Yes"));
+    const ownToken = sessionStorage.getItem("token");
+
+    userEvent.click(screen.getByText("StartImpersonation"));
+    await waitFor(() => {
+      expect(screen.getByTestId("is-impersonating")).toHaveTextContent("true");
+    });
+
+    userEvent.click(screen.getByText("ExitImpersonation"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-impersonating")).toHaveTextContent("false");
+    });
+    expect(screen.getByTestId("impersonated-customer")).toHaveTextContent("");
+    expect(sessionStorage.getItem("token")).toBe(ownToken);
+    expect(sessionStorage.getItem("refreshToken")).toBe("refresh-token");
   });
 });
