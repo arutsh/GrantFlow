@@ -18,6 +18,7 @@ from app.core.exceptions import DomainError, PermissionDenied
 from shared.exceptions.error_handlers import domain_error_handler, unhandled_exception_handler
 from app.core.logging import setup_logging, get_logger
 from app.services.event_publisher import init_publisher, close_publisher
+from app.services.privileged_access_audit import write_privileged_access_log
 from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from shared.observability import (
     init_logging,
@@ -25,12 +26,15 @@ from shared.observability import (
     instrument_fastapi,
     metrics_endpoint,
 )
+from shared.security.privileged_access import register_privileged_access_sink
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("users-service")
 init_logging("users-service")
+
+register_privileged_access_sink(write_privileged_access_log)
 
 # Only enable debugpy when running in VSCode
 if os.getenv("VSCODE_DEBUGGER") == "1":

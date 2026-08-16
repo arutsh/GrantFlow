@@ -13,6 +13,7 @@ from app.models.currency_ledger import (
     CurrencyConversionModel,
     ReportLineConversionAllocationModel,
 )
+from app.models.privileged_access_log import PrivilegedAccessLog
 
 __all__ = [
     "BudgetModel",
@@ -30,4 +31,5 @@ __all__ = [
     "FundingReceiptModel",
     "CurrencyConversionModel",
     "ReportLineConversionAllocationModel",
+    "PrivilegedAccessLog",
 ]

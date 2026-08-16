@@ -1,0 +1,5 @@
+from app.db.session import SessionLocal
+from app.models.privileged_access_log import PrivilegedAccessLog
+from shared.security.privileged_access import make_privileged_access_sink
+
+write_privileged_access_log = make_privileged_access_sink(SessionLocal, PrivilegedAccessLog)

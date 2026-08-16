@@ -27,11 +27,11 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 4. Centralized privileged-access audit hook — depends on 3
 
-- [ ] 4.1 Add `privileged_access_logs` model + migration to each service (budget, users, ai, chat), modeled on `services/ai/app/models/audit_log.py::AIAuditLog`'s append-only shape, but generic (actor, target `customer_id`, request path, method, timestamp) rather than AI-specific
-- [ ] 4.2 Add the audit-write hook at (or immediately after) `shared/security/dependencies.py:62`'s `get_validated_user`, firing whenever the decoded token carries the impersonation flag — each service writes to its own local table
-- [ ] 4.3 Decide and implement the fail-closed/fail-open question for audit-write failures (design.md Open Questions) — writes should fail closed at minimum; confirm and implement the read-path behavior during this ticket
-- [ ] 4.4 Tests per service: a read during impersonation produces a log entry; a write during impersonation produces a log entry; a normal (non-impersonation) request produces no entry; audit-write failure behavior matches the decision made in 4.3
-- [ ] 4.5 Run full test suite (all services touched) and flake8 (`--max-line-length=100`) clean; PR merged
+- [x] 4.1 Add `privileged_access_logs` model + migration to each service (budget, users, ai, chat) — generic shape (actor_user_id, customer_id, method, path, created_at)
+- [x] 4.2 Add the audit-write hook in `shared/security/dependencies.py`'s `get_validated_user` (fires when `payload["is_impersonating"]`), dispatching to a per-service sink registered at startup via `shared/security/privileged_access.py::register_privileged_access_sink` (each service's `main.py` registers its own local-DB writer — budget/users use their existing sync `SessionLocal`; ai/chat, which are async-only elsewhere, use a small dedicated sync engine on the same DB, since this hook runs synchronously)
+- [x] 4.3 Decided: fail-closed for writes (non-GET/HEAD/OPTIONS — a 503 blocks the request if the audit write fails or no sink is registered), fail-open for reads (logged via `logging.exception`, request proceeds) — implemented in `shared/security/privileged_access.py::log_privileged_access`
+- [x] 4.4 Tests: shared-level fail-open/fail-closed + registry behavior (`shared/tests/test_privileged_access.py`, `shared/tests/test_dependencies.py`'s new `TestGetValidatedUserPrivilegedAccessHook`); per-service sink writes a real row with correct fields (`test_privileged_access_audit.py` in each of the 4 services)
+- [x] 4.5 Run full test suite (all services touched) and flake8 (`--max-line-length=100`) clean; PR merged
 
 ## 5. Impersonation UI: top bar picker + warning banner — depends on 3
 

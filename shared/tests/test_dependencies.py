@@ -9,6 +9,18 @@ from shared.security.dependencies import get_current_user, get_validated_user
 from shared.security.jwt_utils import create_access_token
 
 
+def _impersonation_token(user_id: str, customer_id: str, session_id: str) -> str:
+    return create_access_token(
+        {
+            "user_id": user_id,
+            "customer_id": customer_id,
+            "session_id": session_id,
+            "role": "admin",
+            "is_impersonating": True,
+        }
+    )
+
+
 @pytest.fixture(autouse=True)
 def fake_redis(monkeypatch):
     fake = fakeredis.FakeStrictRedis()
@@ -83,3 +95,26 @@ class TestGetValidatedUserSpanAttribute:
         mock_decode.assert_not_called()
         assert payload["user_id"] == user_id
         assert payload["token"] == token
+
+
+class TestGetValidatedUserPrivilegedAccessHook:
+    def test_normal_request_never_logs(self):
+        user_id = "66666666-6666-6666-6666-666666666666"
+        current_user = get_current_user(token=_token_for(user_id, "session-g"))
+
+        with patch("shared.security.dependencies.log_privileged_access") as mock_log:
+            get_validated_user(user=current_user)
+
+        mock_log.assert_not_called()
+
+    def test_impersonation_token_logs(self):
+        user_id = "77777777-7777-7777-7777-777777777777"
+        customer_id = "88888888-8888-8888-8888-888888888888"
+        current_user = get_current_user(
+            token=_impersonation_token(user_id, customer_id, "session-h")
+        )
+
+        with patch("shared.security.dependencies.log_privileged_access") as mock_log:
+            get_validated_user(user=current_user)
+
+        mock_log.assert_called_once()
