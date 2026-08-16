@@ -11,11 +11,11 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 2. Fix AI provider settings to be customer-scoped
 
-- [ ] 2.1 Add migration `services/ai/migrations/versions/` adding a unique/lookup index on `UserProviderKey.customer_id` (per provider), and a data-migration note for any existing rows (dev/demo data only at this stage — no production backfill concern yet)
-- [ ] 2.2 Change `services/ai/app/crud/user_provider_key.py`'s `get_key`/`upsert_key`/`delete_key` to key by `customer_id` instead of `user_id`
-- [ ] 2.3 Update `services/ai/app/api/settings_routes.py` (`get_ai_settings`/`save_ai_settings`/`clear_ai_key`) to resolve and pass `customer_id` (via existing `resolve_customer_id`) instead of `user_id` to the CRUD functions
-- [ ] 2.4 Update/add tests: two different admin-role users of the same customer see and modify the same AI settings row
-- [ ] 2.5 Run ai-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
+- [x] 2.1 Add migration `services/ai/migrations/versions/` adding a unique/lookup index on `UserProviderKey.customer_id` (per provider), and a data-migration note for any existing rows (dev/demo data only at this stage — no production backfill concern yet)
+- [x] 2.2 Change `services/ai/app/crud/user_provider_key.py`'s `get_key`/`upsert_key`/`delete_key` to key by `customer_id` instead of `user_id`
+- [x] 2.3 Update `services/ai/app/api/settings_routes.py` (`get_ai_settings`/`save_ai_settings`/`clear_ai_key`) to resolve and pass `customer_id` (via existing `resolve_customer_id`) instead of `user_id` to the CRUD functions
+- [x] 2.4 Update/add tests: two different admin-role users of the same customer see and modify the same AI settings row
+- [x] 2.5 Run ai-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
 
 ## 3. Impersonation token issuance — depends on 1
 
