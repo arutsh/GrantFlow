@@ -167,8 +167,7 @@ def _resolve_updatable_budget(
     """Authorization for PATCH /budgets/{id}. Returns (budget, is_funder_confirm).
 
     The owner may always act on their own budget (a superuser reaches this
-    the same way, via customer_id set on an active impersonation session —
-    see the customer-impersonation OpenSpec capability). The one
+    via an impersonation session's customer_id, same as anyone else). The one
     exception — a matching funder confirming a draft/ai_draft budget (see
     design.md's "Confirm access extends to the matching funder" decision) —
     is resolved here as an explicit authorization branch rather than by

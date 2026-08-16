@@ -1,11 +1,5 @@
-"""
-Tests for POST /auth/impersonate (superuser-cross-tenant-access, Group 3).
-
-Calls the route function directly with a mocked `get_customer` — matching
-this file's sibling `test_auth_routes.py` convention (no real DB session,
-no TestClient/get_db override needed, sidestepping auth_routes.py's own
-module-local get_db not being the one make_client(db=db) overrides).
-"""
+"""Tests for POST /auth/impersonate. Calls the route function directly with a
+mocked get_customer, matching test_auth_routes.py's convention."""
 
 from unittest.mock import patch
 from uuid import uuid4

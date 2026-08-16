@@ -1,18 +1,8 @@
 """Scope user_provider_keys by customer_id instead of user_id
 
-Fixes a pre-existing bug: AI provider settings were looked up by the
-individual caller's user_id, so two admins of the same org could each save
-a separate row and silently shadow one another (see the
-superuser-cross-tenant-access OpenSpec change). Lookups now key on
-(customer_id, provider_id) instead of (user_id, provider_id).
-
-Data-migration note: this is dev/demo data only at this stage — no
-production backfill concern. Any rows sharing the same (customer_id,
-provider_id) (the exact bug this migration fixes) are deduped, keeping only
-the most recently updated row, so the new unique constraint can be added
-without failing on existing local/dev data. Rows with a NULL customer_id
-predate customer_id's introduction (migration 005) and are left in place —
-they're simply unreachable via the customer_id-keyed lookup going forward.
+Dedupes any existing (customer_id, provider_id) duplicates (keeping the
+newest) before adding the new unique constraint; dev/demo data only, no
+production backfill concern.
 
 Revision ID: 007_customer_scope_user_provider_keys
 Revises: 006_drop_ai_chat_tables

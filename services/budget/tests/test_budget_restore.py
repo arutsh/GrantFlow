@@ -103,10 +103,7 @@ class TestRestoreArchivedBudget:
             )
 
     def test_superuser_without_matching_session_cannot_restore(self, db):
-        """A superuser is scoped purely by customer_id, same as any other
-        caller (see superuser-cross-tenant-access design.md Decision 7) — no
-        active impersonation session for this budget's owner means not-found,
-        not a blanket bypass."""
+        """No active impersonation session for this owner means not-found."""
         budget = _make_budget(db)
 
         with pytest.raises(DomainError):

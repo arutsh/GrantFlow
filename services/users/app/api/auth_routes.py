@@ -395,19 +395,8 @@ def start_impersonation(
     current_user: dict = Depends(get_validated_user),
     db: Session = Depends(get_db),
 ):
-    """Mint a short-lived, admin-equivalent token scoped to req.customer_id.
-
-    Stateless by design (superuser-cross-tenant-access design.md's Decision
-    3.1): no impersonation_sessions table, no refresh token — a leaked or
-    outlived token's exposure window is bounded by IMPERSONATION_TOKEN_EXPIRE
-    _MINUTES alone, with every request under it logged (privileged-access-
-    audit capability) as the accepted mitigation instead of real-time
-    revocation. user_id stays the superuser's own real identity (Decision 2)
-    so every created_by/updated_by attribution reflects the true actor;
-    is_ngo/is_donor are computed from the target customer so donor/grantee
-    gates (e.g. require_donor) behave exactly as they would for that
-    customer's own user.
-    """
+    """Stateless: no impersonation_sessions table, no refresh token — short
+    expiry + the audit log (not revocation) is the accepted mitigation."""
     if current_user.get("role") != "superuser":
         raise HTTPException(status_code=403, detail="Superuser role required")
 

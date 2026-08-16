@@ -203,10 +203,7 @@ class TestClearAiKey:
 
 
 class TestCustomerScopedLookup:
-    """Two different admin-role users of the same customer must resolve to
-    the same UserProviderKey row — looked up by customer_id, not by
-    whichever admin happens to be calling (see superuser-cross-tenant-access
-    design.md Decision 4)."""
+    """Two admins of the same customer must resolve to the same UserProviderKey row."""
 
     CUSTOMER_ID = "cccccccc-0000-0000-0000-000000000003"
 

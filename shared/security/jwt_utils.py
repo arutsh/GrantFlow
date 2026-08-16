@@ -23,12 +23,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "20"))
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# Superuser impersonation tokens (customer-impersonation capability): kept
-# short and separate from the regular access-token TTL above since the
-# accepted mitigation for a leaked/outlived token is expiry + the
-# privileged-access audit log, not real-time revocation (see
-# superuser-cross-tenant-access design.md Risks). No refresh flow —
-# stateless, one-shot, re-minted from the top-bar picker when needed again.
+# Impersonation tokens: short expiry + the audit log is the mitigation, not revocation.
 IMPERSONATION_TOKEN_EXPIRE_MINUTES = int(os.getenv("IMPERSONATION_TOKEN_EXPIRE_MINUTES", "15"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

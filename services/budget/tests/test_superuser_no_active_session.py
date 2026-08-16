@@ -1,16 +1,5 @@
-"""
-Tests for openspec/changes/superuser-cross-tenant-access, Group 1: closing
-the unconditional `if valid_user["role"] == "superuser": <unscoped>` bypass
-in budget/report services.
-
-A superuser is scoped purely by `valid_user.get("customer_id")`, exactly
-like a regular customer user (design.md Decision 7). With no active
-impersonation session (no customer_id resolved on their token), every list
-endpoint touched by that fix must return an empty result and every
-single-resource endpoint must behave as not-found — never fall back to
-"every customer's data". A regular customer's own access must stay
-unaffected.
-"""
+"""A superuser with no customer_id (no active impersonation session) gets an
+empty list / not-found, never every customer's data (design.md Decision 7)."""
 
 import asyncio
 from datetime import date
@@ -38,19 +27,17 @@ from app.services.report_services import (
     list_all_reports_service,
     list_reports_service,
 )
-from tests.factories.user import make_valid_user
+from tests.factories.user import ValidUserFactory
 
 OWNER_ID = str(uuid4())
 
 
 def _superuser_no_session():
-    user = make_valid_user(role="superuser")
-    user["customer_id"] = None
-    return user
+    return ValidUserFactory(role="superuser", customer_id=None)
 
 
 def _owner_user():
-    return make_valid_user(customer_id=OWNER_ID)
+    return ValidUserFactory(customer_id=OWNER_ID)
 
 
 def _make_budget(db, status=BudgetStatus.confirmed):
