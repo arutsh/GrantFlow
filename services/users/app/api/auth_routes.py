@@ -105,7 +105,19 @@ def _customer_role_claims(db: Session, customer_id) -> dict:
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db)):
+async def register_endpoint(
+    req: RegisterRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    # No existing account to key on yet, so both scopes use the IP —
+    # volumetric abuse from one source is the threat, not one account.
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(client_ip, client_ip, bucket="register"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration attempts. Try again later.",
+        )
 
     try:
         user = await create_user(
@@ -114,13 +126,15 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
             password=req.password,
             first_name=req.first_name,
             last_name=req.last_name,
-            role=req.role,
             customer_id=req.customer_id,
             consent_data_processing=req.consent_data_processing,
             consent_marketing=req.consent_marketing,
         )
     except ValueError as e:
+        record_failed_attempt(client_ip, client_ip, bucket="register")
         raise HTTPException(status_code=400, detail=str(e))
+
+    clear_failed_attempts(client_ip, bucket="register")
 
     raw_token = set_email_verification_token(db, user)
     try:

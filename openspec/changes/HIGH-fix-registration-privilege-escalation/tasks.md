@@ -2,14 +2,14 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 1. Close the privilege-escalation hole: registration ignores client role, gets rate-limited
 
-- [ ] 1.1 Remove the `role` field from `RegisterRequest` in `shared/schemas/auth_schema.py` (imported into `services/users/app/schemas/auth_schema.py`)
-- [ ] 1.2 Update `register_endpoint` in `services/users/app/api/auth_routes.py` to call `create_user()` without forwarding a client role — always resulting in `role: user` for new accounts
-- [ ] 1.3 Confirm `create_user()` in `services/users/app/crud/user_crud.py` still accepts an explicit `role` kwarg for its other caller (admin-management/invite flow) — do not change its signature or default, only stop `register_endpoint` from passing a client-controlled value
-- [ ] 1.4 Wire `POST /api/register` into the existing `is_locked_out`/`record_failed_attempt` rate limiter (`app/services/login_rate_limiter.py`), keyed per source IP only, using a new `"register"` bucket, mirroring the pattern already used for `verify-email`/`change-password`
-- [ ] 1.5 Grep `frontend-typescript` for any registration form submitting a `role` field to `/api/register`; remove it if present (should be none — confirm rather than assume)
-- [ ] 1.6 Add/update tests: registering with `role: "superuser"` or `role: "admin"` in the payload results in a stored/JWT role of `user`; repeated registration attempts from one IP past the threshold return 429
-- [ ] 1.7 Manually re-run the exploit chain from the pentest (register with `role: superuser` → call `/auth/impersonate` → attempt cross-tenant read) and confirm it now fails at step one
-- [ ] 1.8 Run the users-service test suite and lint clean; PR merged (`Closes` the tracking ticket)
+- [x] 1.1 Remove the `role` field from `RegisterRequest` in `shared/schemas/auth_schema.py` (imported into `services/users/app/schemas/auth_schema.py`)
+- [x] 1.2 Update `register_endpoint` in `services/users/app/api/auth_routes.py` to call `create_user()` without forwarding a client role — always resulting in `role: user` for new accounts
+- [x] 1.3 Confirm `create_user()` in `services/users/app/crud/user_crud.py` still accepts an explicit `role` kwarg for its other caller (admin-management/invite flow) — do not change its signature or default, only stop `register_endpoint` from passing a client-controlled value
+- [x] 1.4 Wire `POST /api/register` into the existing `is_locked_out`/`record_failed_attempt` rate limiter (`app/services/login_rate_limiter.py`), keyed per source IP only, using a new `"register"` bucket, mirroring the pattern already used for `verify-email`/`change-password`
+- [x] 1.5 Grep `frontend-typescript` for any registration form submitting a `role` field to `/api/register`; remove it if present (confirmed none — `Register.tsx` never sends `role`)
+- [x] 1.6 Add/update tests: registering with `role: "superuser"` or `role: "admin"` in the payload results in a stored/JWT role of `user`; repeated registration attempts from one IP past the threshold return 429
+- [x] 1.7 Re-run the exploit chain from the pentest (register with `role: superuser` → call `/auth/impersonate`) and confirm it now fails at step one — covered by an automated test (`test_registered_role_user_cannot_self_authorize_impersonation`) rather than a manual curl session against a running server
+- [x] 1.8 Run the users-service test suite and lint clean; PR merged (`Closes` the tracking ticket)
 
 ## 2. Defense in depth: DB-level CHECK constraint on `users.role` — depends on 1
 
