@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
-from app.crud.customer_crud import deactivate_customer, get_customer, update_customer
+from app.crud.customer_crud import (
+    deactivate_customer,
+    get_customer,
+    lock_customer_for_update,
+    update_customer,
+)
 from app.crud.sessions_curd import revoke_all_sessions_for_user
 from app.crud.user_crud import (
     count_admins,
@@ -85,6 +90,9 @@ def remove_user_service(session: Session, valid_user: dict, target_user_id: UUID
     target = _get_active_target_user(session, target_user_id)
     _require_same_company(valid_user, target.customer_id)
 
+    # Held until this transaction commits/rolls back, so a concurrent
+    # remove/demote for this company can't slip past the same check.
+    lock_customer_for_update(session, target.customer_id)
     remaining_admins = count_admins(session, target.customer_id, exclude_user_id=target.id)
     if target.role == "admin" and remaining_admins == 0:
         raise DomainError("Cannot remove the last admin of a company", status.HTTP_400_BAD_REQUEST)
@@ -104,6 +112,7 @@ async def update_user_role_service(
     target = _get_active_target_user(session, target_user_id)
     _require_same_company(valid_user, target.customer_id)
 
+    lock_customer_for_update(session, target.customer_id)
     if (
         target.role == "admin"
         and new_role != "admin"
@@ -114,6 +123,14 @@ async def update_user_role_service(
     # Otherwise a still-live token keeps its stale role claim.
     _revoke_user_sessions(session, target.id)
     return await update_user(session, target, {"role": new_role})
+
+
+def get_company_service(session: Session, valid_user: dict, customer_id: UUID):
+    _require_same_company(valid_user, customer_id)
+    customer = get_customer(session, customer_id)
+    if not customer:
+        raise DomainError("Customer not found", status.HTTP_404_NOT_FOUND)
+    return customer
 
 
 def update_company_service(session: Session, valid_user: dict, customer_id: UUID, updates: dict):

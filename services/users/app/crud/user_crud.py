@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.user import UserModel
 from app.utils.security import hash_password, hash_token, verify_token_hash
 from app.services.event_publisher import get_publisher
+from shared.schemas.user_schema import UserStatus
 
 
 from app.core.logging import get_logger
@@ -283,9 +284,14 @@ def accept_invite(session: Session, user: UserModel, password: str) -> UserModel
 
 
 def count_admins(session: Session, customer_id: UUID, exclude_user_id: UUID | None = None) -> int:
+    """Only counts admins who can actually authenticate — a pending,
+    unaccepted admin invite (no password set yet) must not count toward the
+    last-admin quorum, or the real admin could lock themselves out while the
+    invite sits unaccepted."""
     query = session.query(UserModel).filter(
         UserModel.customer_id == customer_id,
         UserModel.role == "admin",
+        UserModel.status == UserStatus.active,
         UserModel.deleted_at.is_(None),
     )
     if exclude_user_id:

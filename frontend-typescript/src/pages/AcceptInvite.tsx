@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
+import axios from "axios";
 import { acceptInvite } from "@/api/adminManagementApi";
 import Button from "@/components/ui/Button";
 import PasswordInput from "@/components/ui/PasswordInput";
@@ -17,6 +18,19 @@ export default function AcceptInvite() {
     mutationFn: () => acceptInvite(email as string, token as string, password),
     onSuccess: () => navigate("/login"),
   });
+
+  // FastAPI returns a plain string `detail` for HTTPException (e.g. an
+  // expired token) but a list of {msg, ...} objects for pydantic validation
+  // errors like a weak password — surface either as readable text.
+  const errorMessage = (() => {
+    if (!axios.isAxiosError(mutation.error)) {
+      return "This invitation link is invalid or has expired.";
+    }
+    const detail = mutation.error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && typeof detail[0]?.msg === "string") return detail[0].msg;
+    return "This invitation link is invalid or has expired.";
+  })();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,7 +81,7 @@ export default function AcceptInvite() {
 
         {mutation.isError && (
           <p className="text-sm text-red-500 mt-4">
-            This invitation link is invalid or has expired.{" "}
+            {errorMessage}{" "}
             <Link to="/login" className="underline">
               Go to login
             </Link>

@@ -228,6 +228,20 @@ class TestRemoveUser:
         db.refresh(admin)
         assert admin.deleted_at is None
 
+    def test_pending_admin_invite_does_not_count_toward_quorum(self, make_client, db):
+        # A second admin invite that hasn't been accepted yet (status
+        # "pending", no password set) can't authenticate — it must not save
+        # the sole real admin from the last-admin check.
+        customer = _make_customer(db)
+        admin, client = _admin_client(make_client, db, customer)
+        _make_user(db, customer, role="admin", status="pending", hashed_password=None)
+
+        resp = client.delete(f"/api/users/{admin.id}/remove")
+
+        assert resp.status_code == 400
+        db.refresh(admin)
+        assert admin.deleted_at is None
+
 
 class TestUpdateUserRole:
     def test_admin_promotes_teammate(self, make_client, db):
@@ -293,6 +307,26 @@ class TestUpdateUserRole:
         assert resp.status_code == 200
         db.refresh(live_session)
         assert live_session.revoked is True
+
+
+class TestGetCompany:
+    def test_admin_gets_own_company(self, make_client, db):
+        customer = _make_customer(db, name="My Org")
+        _, client = _admin_client(make_client, db, customer)
+
+        resp = client.get(f"/api/customers/{customer.id}")
+
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "My Org"
+
+    def test_admin_cannot_get_another_company(self, make_client, db):
+        customer = _make_customer(db)
+        other_customer = _make_customer(db)
+        _, client = _admin_client(make_client, db, customer)
+
+        resp = client.get(f"/api/customers/{other_customer.id}")
+
+        assert resp.status_code == 403
 
 
 class TestUpdateCompany:

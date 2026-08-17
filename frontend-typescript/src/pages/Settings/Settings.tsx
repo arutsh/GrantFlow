@@ -12,11 +12,14 @@ import { AiIntegrationsSection } from "./components/AiIntegrationsSection";
 import { OrganizationBillingSection } from "./components/OrganizationBillingSection";
 
 export default function SettingsPage() {
-  const { isDonor, isAdmin, isSuperuser, isImpersonating } = useAuth();
+  const { isDonor, isAdmin, isSuperuser } = useAuth();
   const [section, setSection] = useState<SettingsSectionKey>("profile");
 
   const showCompanyGeneral = isAdmin || isSuperuser;
-  const showTeam = isAdmin || (isSuperuser && isImpersonating);
+  // Impersonation tokens always carry role="admin" (see AuthContext's
+  // decodeRoleFlags), so isAdmin alone already covers an impersonating
+  // superuser — no separate isSuperuser branch is reachable here.
+  const showTeam = isAdmin;
 
   return (
     <div className="max-w-4xl">

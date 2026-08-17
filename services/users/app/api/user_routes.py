@@ -97,7 +97,7 @@ def list_users_endpoint(
     # bearing on which company they're currently acting as.
     users = get_users_query(db)
     if valid_user.get("role") == "superuser":
-        return users.all()
+        return users.filter(UserModel.deleted_at.is_(None)).all()
     if valid_user.get("role") == "admin" and valid_user.get("customer_id"):
         return (
             users.filter(UserModel.customer_id == valid_user["customer_id"])

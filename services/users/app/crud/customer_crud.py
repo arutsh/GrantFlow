@@ -9,6 +9,13 @@ def get_customer(session: Session, customer_id: UUID):
     return session.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
 
 
+def lock_customer_for_update(session: Session, customer_id: UUID) -> None:
+    """Take a row lock on the customer for the rest of this transaction, so
+    concurrent admin-management mutations (remove/demote) for the same
+    company serialize instead of racing past each other's last-admin check."""
+    session.query(CustomerModel).filter(CustomerModel.id == customer_id).with_for_update().first()
+
+
 def get_customers(
     session: Session,
     limit: int = 100,
