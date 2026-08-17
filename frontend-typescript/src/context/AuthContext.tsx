@@ -29,6 +29,7 @@ function decodeRoleFlags(token: string | null): {
   isDonor: boolean;
   emailVerified: boolean;
   isSuperuser: boolean;
+  isAdmin: boolean;
   isImpersonating: boolean;
 } {
   const claims = safeDecodeToken<TokenClaims>(token);
@@ -37,6 +38,11 @@ function decodeRoleFlags(token: string | null): {
     isDonor: !!claims?.is_donor,
     emailVerified: !!claims?.email_verified,
     isSuperuser: claims?.role === "superuser",
+    // True for a real company admin AND a superuser mid-impersonation —
+    // impersonation tokens always carry role="admin" (see
+    // POST /auth/impersonate), which is what lets the Company Management
+    // page work unmodified for both.
+    isAdmin: claims?.role === "admin",
     isImpersonating: !!claims?.is_impersonating,
   };
 }
@@ -64,6 +70,7 @@ interface AuthContextType {
   isDonor: boolean;
   emailVerified: boolean;
   isSuperuser: boolean;
+  isAdmin: boolean;
   isImpersonating: boolean;
   impersonatedCustomerName: string | null;
   login: (
@@ -96,7 +103,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.getItem(IMPERSONATION_CUSTOMER_NAME_KEY)
   );
 
-  const { isNgo, isDonor, emailVerified, isSuperuser, isImpersonating } = useMemo(
+  const { isNgo, isDonor, emailVerified, isSuperuser, isAdmin, isImpersonating } = useMemo(
     () => decodeRoleFlags(token),
     [token]
   );
@@ -237,6 +244,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isDonor,
         emailVerified,
         isSuperuser,
+        isAdmin,
         isImpersonating,
         impersonatedCustomerName,
         login,

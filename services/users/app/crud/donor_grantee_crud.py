@@ -10,6 +10,11 @@ from app.models.customer import DonorGranteeModel
 
 
 def create_donor_grantee(session: Session, donor_id: UUID, grantee_id: UUID) -> DonorGranteeModel:
+    if str(donor_id) == str(grantee_id):
+        raise DomainError(
+            "A customer cannot be its own donor and grantee", status.HTTP_400_BAD_REQUEST
+        )
+
     # One query for both lookups. Keyed by str(id): CustomerModel.id round-trips
     # as either a str or a uuid.UUID depending on DB dialect (see GUID.process_result_value
     # in shared/db/type_decorators.py) — comparing as str sidesteps that mismatch.

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy.orm import Session
 
@@ -6,6 +7,13 @@ from app.models.customer import CustomerModel
 
 def get_customer(session: Session, customer_id: UUID):
     return session.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+
+
+def lock_customer_for_update(session: Session, customer_id: UUID) -> None:
+    """Take a row lock on the customer for the rest of this transaction, so
+    concurrent admin-management mutations (remove/demote) for the same
+    company serialize instead of racing past each other's last-admin check."""
+    session.query(CustomerModel).filter(CustomerModel.id == customer_id).with_for_update().first()
 
 
 def get_customers(
@@ -48,3 +56,18 @@ def create_customer(
 
 def get_customers_by_ids(session: Session, customer_ids: list[UUID]):
     return session.query(CustomerModel).filter(CustomerModel.id.in_(customer_ids)).all()
+
+
+def update_customer(session: Session, customer: CustomerModel, updates: dict) -> CustomerModel:
+    for key, value in updates.items():
+        setattr(customer, key, value)
+    session.commit()
+    session.refresh(customer)
+    return customer
+
+
+def deactivate_customer(session: Session, customer: CustomerModel) -> CustomerModel:
+    customer.deactivated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    session.commit()
+    session.refresh(customer)
+    return customer

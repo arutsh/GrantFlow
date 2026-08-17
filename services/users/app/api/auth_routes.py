@@ -185,6 +185,7 @@ def login(
         not user
         or not user.hashed_password
         or getattr(user, "deleted_at", None) is not None
+        or (user.customer and getattr(user.customer, "deactivated_at", None) is not None)
         or not verify_password(req.password, user.hashed_password)
     ):
         record_failed_attempt(req.email, client_ip)
@@ -224,6 +225,9 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 
     s = get_session_by_id(db, session_id)
     if not s or s.revoked:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    if s.user.customer and getattr(s.user.customer, "deactivated_at", None) is not None:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     # Session model always has naive datetime, assume UTC

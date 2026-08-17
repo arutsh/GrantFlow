@@ -1,8 +1,18 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from uuid import uuid4, UUID
 from app.schemas.user_schema import User, UserCreate, UserUpdate
 from app.schemas.consent_schema import ConsentState, ConsentUpdateRequest, EmailChangeRequest
+from app.schemas.admin_management_schema import (
+    AcceptInviteRequest,
+    AcceptInviteResponse,
+    InviteUserRequest,
+    InviteUserResponse,
+    RoleUpdateRequest,
+)
 from app.models.user import UserModel
 from app.models.customer import CustomerModel
 from app.db.session import SessionLocal
@@ -16,12 +26,19 @@ from app.crud.user_crud import (
     set_marketing_consent,
     soft_delete_user,
     set_pending_email_verification_token,
+    get_user_by_verification_token,
+    accept_invite,
     _publish_user_event,
 )
 from app.crud.customer_crud import create_customer, get_customer
 from app.crud.sessions_curd import revoke_all_sessions_for_user
+from app.services.admin_management_services import (
+    invite_user_service,
+    remove_user_service,
+    update_user_role_service,
+)
 from app.services.budget_client import get_financial_record_refs
-from app.services.celery_client import enqueue_verification_email
+from app.services.celery_client import enqueue_verification_email, enqueue_invite_email
 from shared.security.dependencies import get_validated_user
 from shared.security.jwt_utils import REFRESH_TOKEN_EXPIRE_DAYS
 from shared.security.session_revocation import mark_session_revoked
@@ -68,15 +85,26 @@ def get_user_endpoint(user_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/users/", response_model=list[User])
-def list_users_endpoint(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    # Only superuser can list all users
-
+def list_users_endpoint(
+    db: Session = Depends(get_db), valid_user: dict = Depends(get_validated_user)
+):
+    # Superuser (not impersonating) lists everyone; an admin — real, or a
+    # superuser impersonating (impersonation tokens carry role="admin" plus
+    # the target customer_id, see design.md decision 2) — lists their own
+    # company's users only, for the Company Management page. Trusting the
+    # JWT claims here (not a DB self-lookup) is what makes this scope
+    # correctly under impersonation: the real superuser's own DB row has no
+    # bearing on which company they're currently acting as.
     users = get_users_query(db)
-    current_user = users.filter(UserModel.id == current_user["user_id"]).first()
-    if current_user.role != "superuser":
-        raise HTTPException(status_code=403, detail="Not authorized to list users")
-
-    return users.all()
+    if valid_user.get("role") == "superuser":
+        return users.filter(UserModel.deleted_at.is_(None)).all()
+    if valid_user.get("role") == "admin" and valid_user.get("customer_id"):
+        return (
+            users.filter(UserModel.customer_id == valid_user["customer_id"])
+            .filter(UserModel.deleted_at.is_(None))
+            .all()
+        )
+    raise HTTPException(status_code=403, detail="Not authorized to list users")
 
 
 @router.post("/users/by_ids/", response_model=list[User])
@@ -228,6 +256,83 @@ async def request_email_change(
 
     debug_token = raw_token if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS else None
     return {"pending_email": req.new_email, "debug_token": debug_token}
+
+
+@router.post("/users/invite", response_model=InviteUserResponse)
+async def invite_user_endpoint(
+    req: InviteUserRequest,
+    db: Session = Depends(get_db),
+    valid_user: dict = Depends(get_validated_user),
+):
+    user, raw_token = await invite_user_service(
+        db,
+        valid_user,
+        email=req.email,
+        first_name=req.first_name,
+        last_name=req.last_name,
+        role=req.role,
+    )
+
+    inviter = get_user(db, valid_user["user_id"])
+    inviter_name = (
+        f"{inviter.first_name or ''} {inviter.last_name or ''}".strip() or inviter.email
+        if inviter
+        else ""
+    )
+    company = get_customer(db, user.customer_id)
+    try:
+        enqueue_invite_email(
+            user.email,
+            raw_token,
+            user.first_name,
+            inviter_name=inviter_name,
+            company_name=company.name if company else "",
+        )
+    except Exception:
+        logger.exception("invite_email_enqueue_failed", user_id=str(user.id))
+
+    debug_token = raw_token if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS else None
+    return InviteUserResponse(
+        user_id=str(user.id), email=user.email, status=user.status, debug_token=debug_token
+    )
+
+
+@router.post("/users/accept-invite", response_model=AcceptInviteResponse)
+def accept_invite_endpoint(req: AcceptInviteRequest, db: Session = Depends(get_db)):
+    user = get_user_by_verification_token(db, req.email, req.token)
+    expires_at = user.email_verification_expires_at if user else None
+    if (
+        not user
+        or user.hashed_password is not None
+        or not expires_at
+        or expires_at.replace(tzinfo=ZoneInfo("UTC")) < datetime.now(ZoneInfo("UTC"))
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired invite token")
+
+    accept_invite(db, user, req.password)
+    return AcceptInviteResponse(email_verified=True)
+
+
+@router.delete("/users/{user_id}/remove")
+def remove_company_user_endpoint(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    valid_user: dict = Depends(get_validated_user),
+):
+    """Admin-scoped removal of another user in the caller's own company —
+    distinct from the self-service DELETE /users/{user_id} above."""
+    remove_user_service(db, valid_user, user_id)
+    return {"removed": True}
+
+
+@router.patch("/users/{user_id}/role", response_model=User)
+async def update_user_role_endpoint(
+    user_id: UUID,
+    req: RoleUpdateRequest,
+    db: Session = Depends(get_db),
+    valid_user: dict = Depends(get_validated_user),
+):
+    return await update_user_role_service(db, valid_user, user_id, req.role)
 
 
 @router.delete("/users/{user_id}")

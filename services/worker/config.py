@@ -12,14 +12,22 @@ from pathlib import Path
 #   MAILERSEND_SENDER_EMAIL — from-address sent with each email (must belong to the sender domain)
 #   MAILERSEND_VERIFICATION_TEMPLATE_ID — MailerSend dashboard template ID for the
 #                                          verification email
+#   MAILERSEND_INVITE_TEMPLATE_ID — MailerSend dashboard template ID for the admin-invite
+#                                    email (distinct from verification: welcomes the invitee,
+#                                    names the inviter/company, links to /accept-invite).
+#                                    Personalization vars: name, inviter_name, org_name,
+#                                    invite_url, expiry_hours, support_email
 #   MAILERSEND_API_URL — override for the MailerSend Email API endpoint; blank uses the real
 #                         MailerSend API (only set this to point at a local mock in dev)
 #   MAILJET_API_KEY / MAILJET_SECRET_KEY — Mailjet Send API v3.1 Basic Auth credentials
 #   MAILJET_SENDER_EMAIL — from-address sent with each email (must belong to a verified sender)
 #   MAILJET_VERIFICATION_TEMPLATE_ID — Mailjet dashboard template ID for the verification email
+#   MAILJET_INVITE_TEMPLATE_ID — Mailjet dashboard template ID for the admin-invite email;
+#                                 same personalization vars as MAILERSEND_INVITE_TEMPLATE_ID
 #   MAILJET_API_URL — override for the Mailjet Send API endpoint; blank uses the real Mailjet API
 #                      (only set this to point at a local mock in dev)
-#   FRONTEND_BASE_URL — origin used to build the verification link, e.g. https://app.example.com
+#   FRONTEND_BASE_URL — origin used to build the verification/accept-invite link,
+#                        e.g. https://app.example.com
 
 BASE_DIR = Path(__file__).resolve().parent
 env_mode = os.getenv("ENV", "development")
@@ -44,12 +52,14 @@ class Settings(BaseSettings):
     MAILERSEND_SENDER_EMAIL: str = ""
     MAILERSEND_SENDER_NAME: str = "OpenGrandFlow"
     MAILERSEND_VERIFICATION_TEMPLATE_ID: str = ""
+    MAILERSEND_INVITE_TEMPLATE_ID: str = ""
     MAILERSEND_API_URL: str = ""
     MAILJET_API_KEY: str = ""
     MAILJET_SECRET_KEY: str = ""
     MAILJET_SENDER_EMAIL: str = ""
     MAILJET_SENDER_NAME: str = "OpenGrandFlow"
     MAILJET_VERIFICATION_TEMPLATE_ID: str = ""
+    MAILJET_INVITE_TEMPLATE_ID: str = ""
     MAILJET_API_URL: str = ""
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 

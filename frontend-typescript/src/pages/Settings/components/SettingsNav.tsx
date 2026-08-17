@@ -4,6 +4,7 @@ export type SettingsSectionKey =
   | "privacy"
   | "notifications"
   | "org-general"
+  | "org-team"
   | "org-members"
   | "org-ai"
   | "org-billing";
@@ -25,6 +26,7 @@ const MY_ACCOUNT_ITEMS: NavItem[] = [
 
 const ORG_ITEMS: NavItem[] = [
   { key: "org-general", label: "General" },
+  { key: "org-team", label: "Team" },
   { key: "org-members", label: "Members & grantees" },
   { key: "org-ai", label: "AI & integrations" },
   { key: "org-billing", label: "Billing" },
@@ -69,14 +71,22 @@ export function SettingsNav({
   active,
   onChange,
   showGrantees,
+  showCompanyGeneral,
+  showTeam,
 }: {
   active: SettingsSectionKey;
   onChange: (key: SettingsSectionKey) => void;
   showGrantees: boolean;
+  showCompanyGeneral: boolean;
+  showTeam: boolean;
 }) {
-  // Grantee management is donor-only (approving/revoking grantee orgs) —
-  // matches the gating the old flat Settings page applied to ManageGrantees.
-  const orgItems = ORG_ITEMS.filter((item) => item.key !== "org-members" || showGrantees);
+  // Grantee management is donor-only; company general/team are admin-only.
+  const orgItems = ORG_ITEMS.filter((item) => {
+    if (item.key === "org-members") return showGrantees;
+    if (item.key === "org-general") return showCompanyGeneral;
+    if (item.key === "org-team") return showTeam;
+    return true;
+  });
 
   return (
     <nav

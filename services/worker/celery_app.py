@@ -91,6 +91,7 @@ app = Celery(
         "tasks.ai.cleanup_sessions",
         "tasks.debug.ping",
         "tasks.users.send_verification_email",
+        "tasks.users.send_invite_email",
     ],
 )
 

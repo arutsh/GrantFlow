@@ -25,3 +25,29 @@ export const getCustomersByIds = async (customerIds: string[]): Promise<Customer
   const { data } = await gatewayApi.post("/customers/by_ids/", customerIds);
   return data;
 };
+
+export const getCustomer = async (customerId: string): Promise<Customer> => {
+  const { data } = await gatewayApi.get(`/customers/${customerId}`);
+  return data;
+};
+
+export interface CompanyUpdatePayload {
+  name?: string;
+  country?: string;
+  currency?: string;
+  is_ngo?: boolean;
+  is_donor?: boolean;
+}
+
+export const updateCustomer = async (
+  customerId: string,
+  updates: CompanyUpdatePayload,
+): Promise<Customer> => {
+  const { data } = await gatewayApi.patch(`/customers/${customerId}`, updates);
+  return data;
+};
+
+export const deactivateCustomer = async (customerId: string): Promise<Customer> => {
+  const { data } = await gatewayApi.post(`/customers/${customerId}/deactivate`);
+  return data;
+};

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.user import UserModel
 from app.utils.security import hash_password, hash_token, verify_token_hash
 from app.services.event_publisher import get_publisher
+from shared.schemas.user_schema import UserStatus
 
 
 from app.core.logging import get_logger
@@ -231,6 +232,71 @@ def set_marketing_consent(session: Session, user: UserModel, granted: bool) -> U
     session.commit()
     session.refresh(user)
     return user
+
+
+async def create_invited_user(
+    session: Session,
+    email: str,
+    customer_id: UUID,
+    role: str = "user",
+    first_name: str | None = "",
+    last_name: str | None = "",
+) -> tuple[UserModel, str]:
+    """Admin-management-page invite flow: creates a pending row immediately
+    (visible in the company's user list right away), reusing the
+    email-verification token columns/helpers for the accept-invite link
+    rather than a dedicated invite-token table (design.md decision 3)."""
+    existing = session.query(UserModel).filter(UserModel.email == email).first()
+    if existing:
+        raise ValueError("Email already registered")
+
+    user = UserModel(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        role=role,
+        customer_id=customer_id,
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    raw_token = set_email_verification_token(session, user)
+
+    logger.info(
+        "user_invited", user_id=str(user.id), email=user.email, customer_id=str(customer_id)
+    )
+    await _publish_user_event("user.created", user)
+    return user, raw_token
+
+
+def accept_invite(session: Session, user: UserModel, password: str) -> UserModel:
+    """Distinct from mark_email_verified: also sets the invitee's chosen
+    password and activates the pending account in one step."""
+    user.hashed_password = hash_password(password)
+    user.email_verified = True
+    user.status = "active"
+    user.email_verification_token_hash = None
+    user.email_verification_expires_at = None
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+def count_admins(session: Session, customer_id: UUID, exclude_user_id: UUID | None = None) -> int:
+    """Only counts admins who can actually authenticate — a pending,
+    unaccepted admin invite (no password set yet) must not count toward the
+    last-admin quorum, or the real admin could lock themselves out while the
+    invite sits unaccepted."""
+    query = session.query(UserModel).filter(
+        UserModel.customer_id == customer_id,
+        UserModel.role == "admin",
+        UserModel.status == UserStatus.active,
+        UserModel.deleted_at.is_(None),
+    )
+    if exclude_user_id:
+        query = query.filter(UserModel.id != exclude_user_id)
+    return query.count()
 
 
 def _tombstone_email(user_id: UUID) -> str:
