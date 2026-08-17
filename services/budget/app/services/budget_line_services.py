@@ -1,7 +1,6 @@
 from fastapi import status
 from app.crud.budget_crud import (
     get_budget,
-    list_budgets,
     recalculate_budget_total,
 )
 from app.crud.budget_line_crud import (
@@ -32,11 +31,8 @@ def create_budget_line_service(
     budget_line: BudgetLineCreate,
 ):
 
-    budget = (
-        get_budget(db, budget_line.budget_id)
-        if valid_user["role"] == "superuser"
-        else get_budget(db, budget_line.budget_id, valid_user["customer_id"])
-    )
+    customer_id = valid_user.get("customer_id")
+    budget = get_budget(db, budget_line.budget_id, customer_id) if customer_id else None
     if not budget:
         raise DomainError(
             "Budget Not found",
@@ -60,6 +56,27 @@ def create_budget_line_service(
     return created_line
 
 
+def get_budget_lines_service(
+    db,
+    valid_user,
+    budget_id=None,
+):
+    customer_id = valid_user.get("customer_id")
+    if budget_id:
+        budget = get_budget(db, budget_id, customer_id) if customer_id else None
+        if not budget:
+            raise DomainError(
+                "Budget Not found",
+                status.HTTP_400_BAD_REQUEST,
+            )
+
+        return list_budget_lines(db, budget_id=budget_id)
+    else:
+        if not customer_id:
+            return []
+        return list_budget_lines(db, customer_id=customer_id)
+
+
 def get_viewable_budget_lines_service(db, valid_user, budget_id):
     """Like get_budget_lines_service for a single budget_id, but also allows a
     donor who funds this budget (not just its owner) to view its lines. Used
@@ -76,30 +93,6 @@ def get_viewable_budget_lines_service(db, valid_user, budget_id):
     return list_budget_lines(db, budget_id=budget_id)
 
 
-def get_budget_lines_service(
-    db,
-    valid_user,
-    budget_id=None,
-):
-    if budget_id:
-        budget = (
-            get_budget(db, budget_id)
-            if valid_user["role"] == "superuser"
-            else get_budget(db, budget_id, valid_user["customer_id"])
-        )
-        if not budget:
-            raise DomainError(
-                "Budget Not found",
-                status.HTTP_400_BAD_REQUEST,
-            )
-
-        return list_budget_lines(db, budget_id=budget_id)
-    else:
-        if valid_user["role"] == "superuser":
-            return list_budget_lines(db)
-        return list_budget_lines(db, customer_id=valid_user["customer_id"])
-
-
 def get_budget_line_by_id_service(
     db,
     valid_user: dict,
@@ -112,22 +105,12 @@ def get_budget_line_by_id_service(
             status.HTTP_404_NOT_FOUND,
         )
 
-    budget = (
-        get_budget(db, budget_line.budget_id)
-        if valid_user["role"] == "superuser"
-        else get_budget(db, budget_line.budget_id, valid_user["customer_id"])
-    )
+    customer_id = valid_user.get("customer_id")
+    budget = get_budget(db, budget_line.budget_id, customer_id) if customer_id else None
     if not budget:
         raise PermissionDenied()
 
     return budget_line
-
-
-def list_budget_service(valid_user, db):
-    if valid_user["role"] == "superuser":
-        return list_budgets(db)
-
-    return list_budgets(db, customer_id=valid_user["customer_id"])
 
 
 def update_budget_line_service(

@@ -1,6 +1,7 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from .jwt_utils import decode_access_token
+from .privileged_access import log_privileged_access
 from .session_revocation import is_session_revoked
 from uuid import UUID
 from jose import JWTError
@@ -59,7 +60,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         )
 
 
-def get_validated_user(user: dict = Depends(get_current_user)) -> dict:
+def get_validated_user(
+    user: dict = Depends(get_current_user),
+    request: Request = None,  # type: ignore[assignment]
+) -> dict:
     """Return the full decoded JWT payload, with the raw token attached.
 
     Reuses the payload `get_current_user` already decoded and verified —
@@ -70,4 +74,6 @@ def get_validated_user(user: dict = Depends(get_current_user)) -> dict:
     payload = dict(user["payload"])
     payload["token"] = user["token"]
     set_span_attributes(user_id=payload.get("user_id"))
+    if payload.get("is_impersonating"):
+        log_privileged_access(payload, request)
     return payload

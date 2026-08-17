@@ -5,6 +5,8 @@ from app.services.provider import get_resolved_model
 from tests.factories.user import ValidUserFactory
 from tests.factories.provider import ResolvedModelFactory
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from contextlib import ExitStack
 
 import os
@@ -16,6 +18,19 @@ os.environ.setdefault("ENV", "test")
 os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 from main import app  # noqa: E402
+from app.models.base import Base  # noqa: E402
+from app.models.privileged_access_log import PrivilegedAccessLog  # noqa: E402
+
+
+@pytest.fixture
+def db():
+    """Real in-memory sqlite session covering PrivilegedAccessLog — sync,
+    matching this sink's deliberately sync design (see
+    app/services/privileged_access_audit.py). Add tables here as more tests
+    need a real DB session for this service."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=[PrivilegedAccessLog.__table__])
+    return sessionmaker(bind=engine)()
 
 
 @pytest.fixture

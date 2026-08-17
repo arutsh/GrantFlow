@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from app.services.budget_services import _can_view_budget
 from tests.factories.budget import BudgetFactory
-from tests.factories.user import make_valid_user
+from tests.factories.user import ValidUserFactory
 
 OWNER_ID = str(uuid4())
 FUNDER_ID = str(uuid4())
@@ -25,21 +25,29 @@ def _budget():
 
 class TestCanViewBudget:
     def test_owner_can_view(self):
-        assert _can_view_budget(_budget(), make_valid_user(customer_id=OWNER_ID))
+        assert _can_view_budget(_budget(), ValidUserFactory(customer_id=OWNER_ID))
 
     def test_funder_can_view(self):
-        assert _can_view_budget(_budget(), make_valid_user(customer_id=FUNDER_ID))
+        assert _can_view_budget(_budget(), ValidUserFactory(customer_id=FUNDER_ID))
 
     def test_stranger_cannot_view(self):
-        assert not _can_view_budget(_budget(), make_valid_user(customer_id=STRANGER_ID))
+        assert not _can_view_budget(_budget(), ValidUserFactory(customer_id=STRANGER_ID))
 
-    def test_superuser_can_view_regardless_of_customer_id(self):
-        user = make_valid_user(role="superuser", customer_id=STRANGER_ID)
+    def test_superuser_without_matching_session_cannot_view(self):
+        """No active impersonation session for this owner/funder means not-found."""
+        user = ValidUserFactory(role="superuser", customer_id=STRANGER_ID)
+        assert not _can_view_budget(_budget(), user)
+
+    def test_superuser_impersonating_the_owner_can_view(self):
+        user = ValidUserFactory(role="superuser", customer_id=OWNER_ID)
         assert _can_view_budget(_budget(), user)
 
     def test_missing_customer_id_cannot_view(self):
-        user = make_valid_user(customer_id=STRANGER_ID)
-        user["customer_id"] = None
+        user = ValidUserFactory(customer_id=None)
+        assert not _can_view_budget(_budget(), user)
+
+    def test_superuser_with_no_active_session_cannot_view(self):
+        user = ValidUserFactory(role="superuser", customer_id=None)
         assert not _can_view_budget(_budget(), user)
 
 

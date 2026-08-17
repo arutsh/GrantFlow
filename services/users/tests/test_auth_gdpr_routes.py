@@ -22,14 +22,17 @@ from app.api.auth_routes import (
     refresh_token,
     register_endpoint,
     revoke_one_session,
+    start_impersonation,
     verify_email,
 )
 from app.schemas.auth_schema import (
     ChangePasswordRequest,
+    ImpersonateRequest,
     LoginRequest,
     RegisterRequest,
     VerifyEmailRequest,
 )
+from app.utils.security import decode_access_token
 from tests.factories.user import UserModelFactory
 
 
@@ -156,6 +159,104 @@ class TestRegisterPassesConsentThrough:
             )
         assert mock_create_user.call_args.kwargs["consent_data_processing"] is True
         assert mock_create_user.call_args.kwargs["consent_marketing"] is True
+
+
+def _register(role_in_payload=None, **overrides):
+    kwargs = {
+        "email": "attacker@example.com",
+        "password": "Correct-Horse-1",
+        "consent_data_processing": True,
+        **overrides,
+    }
+    if role_in_payload is not None:
+        kwargs["role"] = role_in_payload  # dropped by RegisterRequest, not a real field
+    return RegisterRequest(**kwargs)
+
+
+class TestRegisterCannotSetPrivilegedRole:
+    """Closes the pentest-confirmed chain: register as role=superuser, then
+    use the issued token to self-authorize /auth/impersonate."""
+
+    def _register_and_issue_token(self, role_in_payload):
+        created_user = UserModelFactory.build(customer_id=None, role="user")
+        with (
+            patch(
+                "app.api.auth_routes.create_user", AsyncMock(return_value=created_user)
+            ) as mock_create_user,
+            patch(
+                "app.api.auth_routes.create_session",
+                return_value=SimpleNamespace(id=str(uuid4())),
+            ),
+            patch("app.api.auth_routes.get_customer", MagicMock()),
+            patch("app.api.auth_routes.set_email_verification_token", return_value="raw-token"),
+            patch("app.api.auth_routes.enqueue_verification_email"),
+        ):
+            resp = asyncio.run(
+                register_endpoint(_register(role_in_payload=role_in_payload), db=object())
+            )
+        return resp, mock_create_user
+
+    def test_superuser_in_payload_is_dropped_before_create_user(self):
+        _, mock_create_user = self._register_and_issue_token("superuser")
+        assert "role" not in mock_create_user.call_args.kwargs
+
+    def test_admin_in_payload_still_issues_a_user_role_token(self):
+        resp, _ = self._register_and_issue_token("admin")
+        assert decode_access_token(resp.access_token)["role"] == "user"
+
+    def test_registered_role_user_cannot_self_authorize_impersonation(self):
+        resp, _ = self._register_and_issue_token("superuser")
+        claims = decode_access_token(resp.access_token)
+        actor = {"user_id": claims["user_id"], "role": claims["role"]}
+
+        with pytest.raises(HTTPException) as exc_info:
+            start_impersonation(ImpersonateRequest(customer_id=uuid4()), actor, db=object())
+        assert exc_info.value.status_code == 403
+
+
+class TestRegisterLockout:
+    def test_locked_out_returns_429_before_creating_user(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=True),
+            patch("app.api.auth_routes.create_user") as mock_create_user,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(register_endpoint(_register(), db=object()))
+        assert exc_info.value.status_code == 429
+        mock_create_user.assert_not_called()
+
+    def test_duplicate_email_records_the_attempt(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch(
+                "app.api.auth_routes.create_user",
+                AsyncMock(side_effect=ValueError("Email already registered")),
+            ),
+            patch("app.api.auth_routes.record_failed_attempt") as mock_record,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(register_endpoint(_register(), db=object()))
+        assert exc_info.value.status_code == 400
+        mock_record.assert_called_once()
+        assert mock_record.call_args.kwargs.get("bucket") == "register"
+
+    def test_successful_registration_clears_failed_attempts(self):
+        created_user = UserModelFactory.build(customer_id=None, role="user")
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.create_user", AsyncMock(return_value=created_user)),
+            patch(
+                "app.api.auth_routes.create_session",
+                return_value=SimpleNamespace(id=str(uuid4())),
+            ),
+            patch("app.api.auth_routes.get_customer", MagicMock()),
+            patch("app.api.auth_routes.set_email_verification_token", return_value="raw-token"),
+            patch("app.api.auth_routes.enqueue_verification_email"),
+            patch("app.api.auth_routes.clear_failed_attempts") as mock_clear,
+        ):
+            asyncio.run(register_endpoint(_register(), db=object()))
+        mock_clear.assert_called_once()
+        assert mock_clear.call_args.kwargs.get("bucket") == "register"
 
 
 class TestChangePassword:

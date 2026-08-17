@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TopBar } from "./TopBar";
 import { AuthProvider } from "@/context/AuthContext";
 
@@ -20,14 +21,17 @@ function makeFakeJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.signature`;
 }
 
-function renderTopBar(onOpenMenu: () => void = () => {}) {
-  localStorage.setItem("token", makeFakeJwt({ is_ngo: true }));
+function renderTopBar(onOpenMenu: () => void = () => {}, claims: Record<string, unknown> = { is_ngo: true }) {
+  localStorage.setItem("token", makeFakeJwt(claims));
   localStorage.setItem("username", "Jane Doe");
+  const queryClient = new QueryClient();
   return render(
     <MemoryRouter>
-      <AuthProvider>
-        <TopBar onOpenMenu={onOpenMenu} />
-      </AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <TopBar onOpenMenu={onOpenMenu} />
+        </AuthProvider>
+      </QueryClientProvider>
     </MemoryRouter>,
   );
 }
@@ -97,5 +101,17 @@ describe("TopBar", () => {
     await user.click(screen.getByRole("button", { name: "Open navigation menu" }));
 
     expect(onOpenMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show the impersonate control for a non-superuser", () => {
+    renderTopBar(() => {}, { is_ngo: true });
+
+    expect(screen.queryByRole("button", { name: "Impersonate a customer" })).not.toBeInTheDocument();
+  });
+
+  it("shows the impersonate control for a superuser", () => {
+    renderTopBar(() => {}, { role: "superuser" });
+
+    expect(screen.getByRole("button", { name: "Impersonate a customer" })).toBeInTheDocument();
   });
 });

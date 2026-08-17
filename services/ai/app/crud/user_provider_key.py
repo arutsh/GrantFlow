@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user_provider_key import UserProviderKey
 
 
-async def get_key(user_id: str, provider_id: str, db: AsyncSession) -> UserProviderKey | None:
+async def get_key(customer_id: str, provider_id: str, db: AsyncSession) -> UserProviderKey | None:
     result = await db.execute(
         select(UserProviderKey).where(
-            UserProviderKey.user_id == user_id,
+            UserProviderKey.customer_id == customer_id,
             UserProviderKey.provider_id == provider_id,
         )
     )
@@ -37,23 +37,22 @@ async def get_active_key_for_customer(customer_id: str, db: AsyncSession) -> Use
 
 
 async def upsert_key(
+    customer_id: str,
     user_id: str,
     provider_id: str,
     encrypted_key: str | None,
     model_name: str | None,
     base_url: str | None,
     db: AsyncSession,
-    customer_id: str | None = None,
 ) -> UserProviderKey:
     now = datetime.now(timezone.utc)
-    existing = await get_key(user_id, provider_id, db)
+    existing = await get_key(customer_id, provider_id, db)
     if existing:
+        existing.user_id = user_id
         existing.encrypted_key = encrypted_key
         existing.model_name = model_name
         existing.base_url = base_url
         existing.updated_at = now
-        if customer_id is not None:
-            existing.customer_id = customer_id
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -73,8 +72,8 @@ async def upsert_key(
     return row
 
 
-async def delete_key(user_id: str, provider_id: str, db: AsyncSession) -> None:
-    existing = await get_key(user_id, provider_id, db)
+async def delete_key(customer_id: str, provider_id: str, db: AsyncSession) -> None:
+    existing = await get_key(customer_id, provider_id, db)
     if existing:
         existing.encrypted_key = None
         existing.updated_at = datetime.now(timezone.utc)

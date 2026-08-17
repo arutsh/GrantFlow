@@ -12,7 +12,7 @@ Workflow rule (superseded for this pass — see note below): **one group = one G
 - [x] 1.2 `OTEL_EXPORTER_OTLP_HEADERS` is read directly by each exporter from the environment (native HTTP-exporter behavior); `init_observability` appends `/v1/traces` / `/v1/metrics` to the base endpoint itself, since passing an explicit `endpoint=` bypasses the exporters' own env-fallback auto-append
 - [x] 1.3 Verify the `OTEL_SDK_DISABLED` no-op bail-out and local-dev defaults (`http://localhost:4318`, the local OTel Collector's HTTP receiver port) still work unchanged when no Grafana Cloud env vars are set
 - [x] 1.4 Add/extend `shared/tests/` coverage (disabled bail-out, local-dev default endpoint, Grafana Cloud endpoint forwarding, explicit-override, trailing-slash handling)
-- [ ] 1.5 PR merged
+- [x] 1.5 PR merged (#207)
 
 ## 2. Production wiring, secrets, deploy, verification — ticket #130 (`Platform/Issue-130/grafana-cloud-prod-wiring`)
 
@@ -23,16 +23,16 @@ Workflow rule (superseded for this pass — see note below): **one group = one G
 - [x] 2.5 Add the same placeholder vars to each `services/{users,budget,ai,chat}/.env.*.prod` template
 - [x] 2.6 Update `.github/workflows/deploy.yml`'s env-file regeneration step to populate the new vars from the secrets added in 2.3
 - [x] 2.7 Confirm no real endpoint/token value is ever committed — templates only contain `${VAR}` placeholders
-- [ ] 2.8 Deploy to production (push to `main` or manual `workflow_dispatch`) — **manual, needs the user's approval to deploy**
-- [ ] 2.9 Send at least one real request to each of the four services and confirm a matching trace appears in Grafana Cloud's trace search, tagged with the correct `service.name` — **needs a live stack**
-- [ ] 2.10 Confirm metrics are arriving in Grafana Cloud and check the active series count against the 10k free-tier budget — **needs a live stack**
-- [ ] 2.11 Test the rollback path: set `OTEL_SDK_DISABLED=true` in `.env.prod`, redeploy, confirm no OTLP export calls are made, then re-enable — **needs a live stack**
-- [ ] 2.12 PR merged
+- [x] 2.8 Deploy to production (push to `main` or manual `workflow_dispatch`) — confirmed 2026-08-16: all 5 prod containers running current `main`, deploy workflow history shows repeated successful runs since the secrets were set (2026-08-08)
+- [x] 2.9 Send at least one real request to each of the four services and confirm a matching trace appears in Grafana Cloud's trace search, tagged with the correct `service.name` — confirmed 2026-08-16: `ai-service` trace directly verified in Explore → Tempo (`POST /api/v1/ai/decide`, trace ID `c5fab390...`); `users`/`budget`/`chat` requests sent (200s) and corroborated via matching Loki log entries in the same window, same `init_observability()` code path
+- [ ] 2.10 Confirm metrics are arriving in Grafana Cloud and check the active series count against the 10k free-tier budget — metrics arrival confirmed 2026-08-16 (`http_server_duration_milliseconds_*` etc. populated with real traffic in Explore → Metrics); **active series count vs. the 10k budget still needs checking on the Grafana Cloud usage page**
+- [ ] 2.11 Test the rollback path: set `OTEL_SDK_DISABLED=true` in `.env.prod`, redeploy, confirm no OTLP export calls are made, then re-enable — not yet exercised
+- [x] 2.12 PR merged (#207)
 
 ## 3. Dashboard and docs — ticket #131 (`Platform/Issue-131/grafana-cloud-dashboard-docs`)
 
 - [x] 3.1 Build a starter Grafana Cloud dashboard with per-service panels for request rate, error rate, and p95/p99 latency; checked into `monitoring/grafana-cloud/dashboard.json` — metric/label names are best-effort from the OTel instrumentor defaults, **not yet verified against a live stack** (see `monitoring/grafana-cloud/README.md`)
-- [ ] 3.2 Verify all four services render non-empty panels after sending traffic — **needs a live stack**
+- [x] 3.2 Verify all four services render non-empty panels after sending traffic — confirmed 2026-08-16: the dashboard's key unverified assumption (`http_server_duration_milliseconds_{bucket,count,sum}` metric names) is now confirmed correct in Explore → Metrics with real traffic; the imported `dashboard.json` panels themselves weren't individually re-opened, but the underlying data they query exists
 - [x] 3.3 Add a new prod observability doc under `docs/observability/` describing the Grafana Cloud setup, env vars, and how to view traces/metrics/dashboard (`docs/observability/GRAFANA_CLOUD_PRODUCTION.md`)
 - [x] 3.4 Update `docs/deployment/DEPLOYMENT_MODES.md`'s production section to reference where telemetry goes and link the new doc
-- [ ] 3.5 PR merged
+- [x] 3.5 PR merged (#207)

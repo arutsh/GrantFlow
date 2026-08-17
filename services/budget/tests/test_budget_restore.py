@@ -102,12 +102,23 @@ class TestRestoreArchivedBudget:
                 restore_budget_service(budget.id, make_valid_user(customer_id=STRANGER_ID), db)
             )
 
-    def test_superuser_can_restore_any_budget(self, db):
+    def test_superuser_without_matching_session_cannot_restore(self, db):
+        """No active impersonation session for this owner means not-found."""
+        budget = _make_budget(db)
+
+        with pytest.raises(DomainError):
+            asyncio.run(
+                restore_budget_service(
+                    budget.id, make_valid_user(customer_id=STRANGER_ID, role="superuser"), db
+                )
+            )
+
+    def test_superuser_impersonating_the_owner_can_restore(self, db):
         budget = _make_budget(db)
 
         result = asyncio.run(
             restore_budget_service(
-                budget.id, make_valid_user(customer_id=STRANGER_ID, role="superuser"), db
+                budget.id, make_valid_user(customer_id=OWNER_ID, role="superuser"), db
             )
         )
 

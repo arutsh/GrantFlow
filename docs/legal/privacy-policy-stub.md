@@ -45,6 +45,19 @@ As of this change, the following are available directly in the product
   time in Settings; data-processing consent is required for the account
   to function and withdrawing it is equivalent to requesting erasure.
 
+### Administrative access
+
+Authorized GrandFlow superusers may temporarily access any
+organisation's account — including the ability to view and modify its
+data, as if logged in as that organisation — for support, demo,
+security, and compliance purposes. This is done via a time-boxed
+impersonation session (see the `customer-impersonation` capability), not
+by asking for or storing the organisation's own credentials. Every
+action taken during such a session, including page views, is logged
+with the superuser's real identity (see the `privileged-access-audit`
+capability), so administrative access is always attributable and
+auditable after the fact.
+
 ### Subprocessors
 
 See `docs/security/subprocessors.md` for the full list and what each

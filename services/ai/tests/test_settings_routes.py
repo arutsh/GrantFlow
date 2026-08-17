@@ -1,9 +1,9 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from main import app
 from app.api.settings_routes import get_db, get_validated_user
-from tests.factories.user import make_valid_user
+from tests.factories.user import ValidUserFactory
 
 client = TestClient(app)
 
@@ -19,11 +19,11 @@ _DELETE = "app.api.settings_routes.delete_key"
 
 
 def _make_admin_user():
-    return make_valid_user(role="superuser")
+    return ValidUserFactory(role="superuser")
 
 
 def _make_regular_user():
-    return make_valid_user(role="user")
+    return ValidUserFactory(role="user")
 
 
 def _make_provider(name="anthropic", has_key_prefix=True):
@@ -200,3 +200,65 @@ class TestClearAiKey:
         app.dependency_overrides[get_validated_user] = _make_regular_user
         response = client.delete("/api/v1/ai/settings/anthropic/key")
         assert response.status_code == 403
+
+
+class TestCustomerScopedLookup:
+    """Two admins of the same customer must resolve to the same UserProviderKey row."""
+
+    CUSTOMER_ID = "cccccccc-0000-0000-0000-000000000003"
+
+    def setup_method(self):
+        app.dependency_overrides[get_db] = _mock_db()
+
+    def teardown_method(self):
+        app.dependency_overrides.pop(get_validated_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    def _admin(self, user_id):
+        return ValidUserFactory(role="admin", user_id=user_id, customer_id=self.CUSTOMER_ID)
+
+    def test_get_settings_keyed_by_customer_id_regardless_of_which_admin(self):
+        admin_a = self._admin("admin-a")
+        admin_b = self._admin("admin-b")
+
+        for admin in (admin_a, admin_b):
+            app.dependency_overrides[get_validated_user] = lambda admin=admin: admin
+            with (
+                patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
+                patch(_GET_KEY, new=AsyncMock(return_value=None)) as mock_get_key,
+            ):
+                client.get("/api/v1/ai/settings")
+            mock_get_key.assert_awaited_once_with(self.CUSTOMER_ID, ANY, ANY)
+
+    def test_save_settings_upserts_keyed_by_customer_id_not_user_id(self):
+        app.dependency_overrides[get_validated_user] = lambda: self._admin("admin-b")
+        with (
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
+            patch(_VALIDATE, new=AsyncMock()),
+            patch(_ENCRYPT, return_value=_ENCRYPTED_KEY),
+            patch(_UPSERT, new=AsyncMock()) as mock_upsert,
+            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
+            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+        ):
+            client.put(
+                "/api/v1/ai/settings",
+                json={
+                    "provider": "anthropic",
+                    "key": "sk-ant-api03-x",
+                    "model": "claude-sonnet-4-6",
+                },
+            )
+        mock_upsert.assert_awaited_once()
+        assert mock_upsert.await_args is not None
+        assert mock_upsert.await_args.kwargs["customer_id"] == self.CUSTOMER_ID
+
+    def test_clear_key_deletes_keyed_by_customer_id(self):
+        app.dependency_overrides[get_validated_user] = lambda: self._admin("admin-a")
+        with (
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
+            patch(_DELETE, new=AsyncMock()) as mock_delete,
+            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
+            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+        ):
+            client.delete("/api/v1/ai/settings/anthropic/key")
+        mock_delete.assert_awaited_once_with(self.CUSTOMER_ID, ANY, ANY)

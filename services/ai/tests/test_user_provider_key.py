@@ -30,17 +30,17 @@ class TestGetKey:
     def test_returns_none_when_no_row(self):
         db = _make_mock_db()
         db.execute = AsyncMock(return_value=_scalar_result(None))
-        result = anyio.run(get_key, USER_ID, PROVIDER_ID, db)
+        result = anyio.run(get_key, CUSTOMER_ID, PROVIDER_ID, db)
         assert result is None
 
     def test_returns_row_when_found(self):
         db = _make_mock_db()
         row = UserProviderKey()
-        row.user_id = USER_ID
+        row.customer_id = CUSTOMER_ID
         row.provider_id = PROVIDER_ID
         row.encrypted_key = "enc_value"
         db.execute = AsyncMock(return_value=_scalar_result(row))
-        result = anyio.run(get_key, USER_ID, PROVIDER_ID, db)
+        result = anyio.run(get_key, CUSTOMER_ID, PROVIDER_ID, db)
         assert result is row
 
 
@@ -69,7 +69,16 @@ class TestUpsertKey:
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
 
-        anyio.run(upsert_key, USER_ID, PROVIDER_ID, "enc_key", "claude-sonnet-4-6", None, db)
+        anyio.run(
+            upsert_key,
+            CUSTOMER_ID,
+            USER_ID,
+            PROVIDER_ID,
+            "enc_key",
+            "claude-sonnet-4-6",
+            None,
+            db,
+        )
         db.add.assert_called_once()
         db.commit.assert_awaited_once()
 
@@ -82,10 +91,46 @@ class TestUpsertKey:
         db.commit = AsyncMock()
         db.refresh = AsyncMock()
 
-        anyio.run(upsert_key, USER_ID, PROVIDER_ID, "new_key", "claude-sonnet-4-6", None, db)
+        anyio.run(
+            upsert_key,
+            CUSTOMER_ID,
+            USER_ID,
+            PROVIDER_ID,
+            "new_key",
+            "claude-sonnet-4-6",
+            None,
+            db,
+        )
         assert existing.encrypted_key == "new_key"
         assert existing.model_name == "claude-sonnet-4-6"
         db.commit.assert_awaited_once()
+
+    def test_second_admin_of_same_customer_updates_the_same_row(self):
+        """Two different admin-role users of the same customer share one
+        UserProviderKey row, keyed by customer_id — not one row each."""
+        db = _make_mock_db()
+        existing = UserProviderKey()
+        existing.user_id = USER_ID
+        existing.customer_id = CUSTOMER_ID
+        existing.encrypted_key = "admin_a_key"
+        db.execute = AsyncMock(return_value=_scalar_result(existing))
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+        other_admin_id = "aaaaaaaa-0000-0000-0000-000000000099"
+        anyio.run(
+            upsert_key,
+            CUSTOMER_ID,
+            other_admin_id,
+            PROVIDER_ID,
+            "admin_b_key",
+            "claude-sonnet-4-6",
+            None,
+            db,
+        )
+        assert existing.encrypted_key == "admin_b_key"
+        assert existing.user_id == other_admin_id
+        db.add.assert_not_called()
 
 
 class TestDeleteKey:
@@ -96,7 +141,7 @@ class TestDeleteKey:
         db.execute = AsyncMock(return_value=_scalar_result(existing))
         db.commit = AsyncMock()
 
-        anyio.run(delete_key, USER_ID, PROVIDER_ID, db)
+        anyio.run(delete_key, CUSTOMER_ID, PROVIDER_ID, db)
         assert existing.encrypted_key is None
         db.commit.assert_awaited_once()
 
@@ -105,5 +150,5 @@ class TestDeleteKey:
         db.execute = AsyncMock(return_value=_scalar_result(None))
         db.commit = AsyncMock()
 
-        anyio.run(delete_key, USER_ID, PROVIDER_ID, db)
+        anyio.run(delete_key, CUSTOMER_ID, PROVIDER_ID, db)
         db.commit.assert_not_awaited()

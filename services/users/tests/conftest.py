@@ -27,6 +27,7 @@ from main import app  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.customer import CustomerModel, DonorGranteeModel  # noqa: E402
+from app.models.privileged_access_log import PrivilegedAccessLog  # noqa: E402
 from app.utils.security import get_current_user  # noqa: E402
 from shared.security.dependencies import get_validated_user  # noqa: E402
 from tests.factories.user import ValidUserFactory  # noqa: E402
@@ -34,10 +35,10 @@ from tests.factories.user import ValidUserFactory  # noqa: E402
 
 @pytest.fixture
 def db():
-    """Real in-memory sqlite session covering Customer/DonorGrantee — shared
-    by any test that needs the model's real FKs/@validates/unique constraint
-    rather than mocking the crud layer (see services/budget/tests/conftest.py
-    for the sibling pattern).
+    """Real in-memory sqlite session covering Customer/DonorGrantee/
+    PrivilegedAccessLog — shared by any test that needs the model's real
+    FKs/@validates/unique constraint rather than mocking the crud layer (see
+    services/budget/tests/conftest.py for the sibling pattern).
     """
     # TestClient runs route handlers in a worker thread, so the sqlite
     # connection needs check_same_thread=False; StaticPool keeps every
@@ -48,7 +49,14 @@ def db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine, tables=[CustomerModel.__table__, DonorGranteeModel.__table__])
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            CustomerModel.__table__,
+            DonorGranteeModel.__table__,
+            PrivilegedAccessLog.__table__,
+        ],
+    )
     return sessionmaker(bind=engine)()
 
 

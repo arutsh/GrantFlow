@@ -10,7 +10,6 @@ class RegisterRequest(BaseModel):
     first_name: Optional[str] = ""  # optional field
     last_name: Optional[str] = ""  # optional field
     password: str
-    role: Optional[str] = "user"  # default value
     customer_id: Optional[UUID] = None  # optional field
     # Unticked by default — GDPR requires an affirmative opt-in, not a
     # pre-checked box. Marketing consent is optional and separate.
@@ -48,6 +47,18 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     refresh_token: str
     status: str
+
+
+class ImpersonateRequest(BaseModel):
+    customer_id: UUID
+
+
+class ImpersonateResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    customer_id: UUID
+    customer_name: str
+    expires_in: int
 
 
 class VerifyEmailRequest(BaseModel):

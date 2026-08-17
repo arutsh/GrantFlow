@@ -23,6 +23,7 @@ from app.services.user_client import (
     close_urls as close_user_client_urls,
 )
 from app.services.event_consumer import init_consumer, close_consumer, start_consumer
+from app.services.privileged_access_audit import write_privileged_access_log
 
 from shared.observability import (
     init_logging,
@@ -30,9 +31,12 @@ from shared.observability import (
     instrument_fastapi,
     metrics_endpoint,
 )
+from shared.security.privileged_access import register_privileged_access_sink
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
+
+register_privileged_access_sink(write_privileged_access_log)
 
 init_observability("budget-service")
 init_logging("budget-service")

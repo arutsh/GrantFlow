@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.db.session import engine
 from app.services.budget_tool_registry import BudgetToolRegistry
+from app.services.privileged_access_audit import write_privileged_access_log
 from shared.ai_client import AiClient
 from shared.observability import (
     init_logging,
@@ -20,12 +21,15 @@ from shared.observability import (
     instrument_fastapi,
     metrics_endpoint,
 )
+from shared.security.privileged_access import register_privileged_access_sink
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 init_observability("chat-service")
 init_logging("chat-service")
+
+register_privileged_access_sink(write_privileged_access_log)
 
 # Async engines need explicit instrumentation — init_observability hooks into sync engine
 # creation events which don't fire for create_async_engine.

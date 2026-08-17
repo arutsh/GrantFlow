@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,8 @@ from app.schemas.auth_schema import (
     VerifyEmailRequest,
     VerifyEmailResponse,
     ResendVerificationResponse,
+    ImpersonateRequest,
+    ImpersonateResponse,
 )
 from app.schemas.session_schema import SessionSummary
 
@@ -24,6 +26,7 @@ from app.utils.security import (
     hash_token,
     verify_token_hash,
     REFRESH_TOKEN_EXPIRE_DAYS,
+    IMPERSONATION_TOKEN_EXPIRE_MINUTES,
 )
 from shared.security.password_policy import validate_password_strength
 from shared.security.session_revocation import mark_session_revoked
@@ -51,6 +54,7 @@ from app.services.login_rate_limiter import (
     clear_failed_attempts,
 )
 from shared.security.dependencies import get_validated_user
+from shared.security.privileged_access import log_privileged_access
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -101,7 +105,19 @@ def _customer_role_claims(db: Session, customer_id) -> dict:
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db)):
+async def register_endpoint(
+    req: RegisterRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    # No existing account to key on yet, so both scopes use the IP —
+    # volumetric abuse from one source is the threat, not one account.
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(client_ip, client_ip, bucket="register"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration attempts. Try again later.",
+        )
 
     try:
         user = await create_user(
@@ -110,13 +126,15 @@ async def register_endpoint(req: RegisterRequest, db: Session = Depends(get_db))
             password=req.password,
             first_name=req.first_name,
             last_name=req.last_name,
-            role=req.role,
             customer_id=req.customer_id,
             consent_data_processing=req.consent_data_processing,
             consent_marketing=req.consent_marketing,
         )
     except ValueError as e:
+        record_failed_attempt(client_ip, client_ip, bucket="register")
         raise HTTPException(status_code=400, detail=str(e))
+
+    clear_failed_attempts(client_ip, bucket="register")
 
     raw_token = set_email_verification_token(db, user)
     try:
@@ -384,3 +402,46 @@ def revoke_one_session(
     if not session.revoked:
         _revoke_session_everywhere(db, session)
     return {"revoked": True}
+
+
+@router.post("/auth/impersonate", response_model=ImpersonateResponse)
+def start_impersonation(
+    req: ImpersonateRequest,
+    current_user: dict = Depends(get_validated_user),
+    db: Session = Depends(get_db),
+    request: Request = None,  # type: ignore[assignment]
+):
+    """Stateless: no impersonation_sessions table, no refresh token — short
+    expiry + the audit log (not revocation) is the accepted mitigation."""
+    if current_user.get("role") != "superuser":
+        raise HTTPException(status_code=403, detail="Superuser role required")
+
+    customer = get_customer(db, req.customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Log the mint here — get_validated_user's audit hook won't fire for this request.
+    log_privileged_access(
+        {"user_id": str(current_user["user_id"]), "customer_id": str(customer.id)},
+        request,
+    )
+
+    expires_delta = timedelta(minutes=IMPERSONATION_TOKEN_EXPIRE_MINUTES)
+    token = create_access_token(
+        {
+            "user_id": str(current_user["user_id"]),
+            "customer_id": str(customer.id),
+            "role": "admin",
+            "is_impersonating": True,
+            **_role_flags(customer),
+            "email_verified": current_user.get("email_verified", True),
+        },
+        expires_delta=expires_delta,
+    )
+
+    return ImpersonateResponse(
+        access_token=token,
+        customer_id=customer.id,
+        customer_name=customer.name,
+        expires_in=int(expires_delta.total_seconds()),
+    )

@@ -17,6 +17,7 @@ from app.models.report import ReportModel, ReportLineModel, AttachmentModel  # n
 from app.models.currency_ledger import (  # noqa: E402
     ReportLineConversionAllocationModel,
 )
+from app.models.privileged_access_log import PrivilegedAccessLog  # noqa: E402
 from shared.security.dependencies import get_validated_user  # noqa: E402
 from tests.factories.user import ValidUserFactory  # noqa: E402
 
@@ -48,7 +49,8 @@ def make_client():
 @pytest.fixture
 def db():
     """Real in-memory sqlite session covering Budget/BudgetLine/BudgetCategory/
-    Report/ReportLine/Attachment/ReportLineConversionAllocation — shared by any
+    Report/ReportLine/Attachment/ReportLineConversionAllocation/
+    PrivilegedAccessLog — shared by any
     test that exercises budget<->report behavior against real SQLAlchemy
     relationships rather than mocking every crud call (see test_report_routes.py
     and test_budget_confirmation_lifecycle.py). Attachment/allocation tables are
@@ -66,6 +68,7 @@ def db():
             ReportLineModel.__table__,
             AttachmentModel.__table__,
             ReportLineConversionAllocationModel.__table__,
+            PrivilegedAccessLog.__table__,
         ],
     )
     return sessionmaker(bind=engine)()

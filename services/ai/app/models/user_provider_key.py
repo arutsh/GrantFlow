@@ -12,7 +12,9 @@ import shared.db.type_decorators as t
 class UserProviderKey(Base):
     __tablename__ = "user_provider_keys"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider_id", name="uq_user_provider_keys_user_provider"),
+        UniqueConstraint(
+            "customer_id", "provider_id", name="uq_user_provider_keys_customer_provider"
+        ),
     )
 
     id: Mapped[t.GUID] = mapped_column(

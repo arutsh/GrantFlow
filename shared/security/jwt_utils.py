@@ -23,6 +23,9 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "20"))
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+# Impersonation tokens: short expiry + the audit log is the mitigation, not revocation.
+IMPERSONATION_TOKEN_EXPIRE_MINUTES = int(os.getenv("IMPERSONATION_TOKEN_EXPIRE_MINUTES", "15"))
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 

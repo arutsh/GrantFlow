@@ -67,11 +67,11 @@ async def get_ai_settings(
     db: AsyncSession = Depends(get_db),
 ):
     _require_admin(valid_user)
-    user_id = str(valid_user["user_id"])
+    customer_id = resolve_customer_id(valid_user)
     providers = await list_active(db)
     statuses: list[ProviderStatus] = []
     for p in providers:
-        row = await get_key(user_id, str(p.id), db)
+        row = await get_key(customer_id, str(p.id), db)
         statuses.append(
             ProviderStatus(
                 name=p.name,
@@ -100,13 +100,13 @@ async def save_ai_settings(
     user_id = str(valid_user["user_id"])
     customer_id = resolve_customer_id(valid_user)
     await upsert_key(
+        customer_id=customer_id,
         user_id=user_id,
         provider_id=str(provider.id),
         encrypted_key=encrypted,
         model_name=body.model.value,
         base_url=body.base_url,
         db=db,
-        customer_id=customer_id,
     )
     return await get_ai_settings(valid_user=valid_user, db=db)
 
@@ -121,6 +121,6 @@ async def clear_ai_key(
     provider_row = await get_by_name(provider, db)
     if not provider_row:
         raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found")
-    user_id = str(valid_user["user_id"])
-    await delete_key(user_id, str(provider_row.id), db)
+    customer_id = resolve_customer_id(valid_user)
+    await delete_key(customer_id, str(provider_row.id), db)
     return await get_ai_settings(valid_user=valid_user, db=db)
