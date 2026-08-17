@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { acceptInvite } from "@/api/adminManagementApi";
 import Button from "@/components/ui/Button";
-import Input from "@/components/ui/Input";
+import PasswordInput from "@/components/ui/PasswordInput";
 import { XCircle } from "lucide-react";
 
 export default function AcceptInvite() {
@@ -48,10 +48,9 @@ export default function AcceptInvite() {
         </p>
 
         <form onSubmit={handleSubmit} className="w-full text-left">
-          <Input
+          <PasswordInput
             label="Password"
             name="password"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

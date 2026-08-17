@@ -1,6 +1,6 @@
 import pytest
 
-import tasks.users.send_verification_email as svc
+import tasks.email_client as svc
 from config import settings
 from shared.services.mailersend_client import MailerSendClient
 from shared.services.mailjet_client import MailjetClient

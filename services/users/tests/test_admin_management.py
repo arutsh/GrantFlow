@@ -267,6 +267,33 @@ class TestUpdateUserRole:
 
         assert resp.status_code == 400
 
+    def test_demotion_revokes_the_targets_existing_sessions(self, make_client, db):
+        # Otherwise a demoted admin's stale token could self-promote back.
+        customer = _make_customer(db)
+        _, client = _admin_client(make_client, db, customer)
+        other_admin = _make_user(db, customer, role="admin", status="active")
+        live_session = _persist(
+            db, SessionModel(user_id=other_admin.id, revoked=False)
+        )
+
+        resp = client.patch(f"/api/users/{other_admin.id}/role", json={"role": "user"})
+
+        assert resp.status_code == 200
+        db.refresh(live_session)
+        assert live_session.revoked is True
+
+    def test_promotion_revokes_the_targets_existing_sessions(self, make_client, db):
+        customer = _make_customer(db)
+        _, client = _admin_client(make_client, db, customer)
+        teammate = _make_user(db, customer, role="user", status="active")
+        live_session = _persist(db, SessionModel(user_id=teammate.id, revoked=False))
+
+        resp = client.patch(f"/api/users/{teammate.id}/role", json={"role": "admin"})
+
+        assert resp.status_code == 200
+        db.refresh(live_session)
+        assert live_session.revoked is True
+
 
 class TestUpdateCompany:
     def test_admin_updates_company_name(self, make_client, db):

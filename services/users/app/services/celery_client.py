@@ -13,3 +13,22 @@ def enqueue_verification_email(email: str, token: str, first_name: str = "") -> 
         "tasks.users.send_verification_email",
         kwargs={"email": email, "token": token, "first_name": first_name},
     )
+
+
+def enqueue_invite_email(
+    email: str,
+    token: str,
+    first_name: str = "",
+    inviter_name: str = "",
+    company_name: str = "",
+) -> None:
+    celery_client.send_task(
+        "tasks.users.send_invite_email",
+        kwargs={
+            "email": email,
+            "token": token,
+            "first_name": first_name,
+            "inviter_name": inviter_name,
+            "company_name": company_name,
+        },
+    )

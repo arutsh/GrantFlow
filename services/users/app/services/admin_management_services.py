@@ -111,6 +111,8 @@ async def update_user_role_service(
     ):
         raise DomainError("Cannot demote the last admin of a company", status.HTTP_400_BAD_REQUEST)
 
+    # Otherwise a still-live token keeps its stale role claim.
+    _revoke_user_sessions(session, target.id)
     return await update_user(session, target, {"role": new_role})
 
 

@@ -38,7 +38,7 @@ from app.services.admin_management_services import (
     update_user_role_service,
 )
 from app.services.budget_client import get_financial_record_refs
-from app.services.celery_client import enqueue_verification_email
+from app.services.celery_client import enqueue_verification_email, enqueue_invite_email
 from shared.security.dependencies import get_validated_user
 from shared.security.jwt_utils import REFRESH_TOKEN_EXPIRE_DAYS
 from shared.security.session_revocation import mark_session_revoked
@@ -273,8 +273,21 @@ async def invite_user_endpoint(
         role=req.role,
     )
 
+    inviter = get_user(db, valid_user["user_id"])
+    inviter_name = (
+        f"{inviter.first_name or ''} {inviter.last_name or ''}".strip() or inviter.email
+        if inviter
+        else ""
+    )
+    company = get_customer(db, user.customer_id)
     try:
-        enqueue_verification_email(user.email, raw_token, user.first_name)
+        enqueue_invite_email(
+            user.email,
+            raw_token,
+            user.first_name,
+            inviter_name=inviter_name,
+            company_name=company.name if company else "",
+        )
     except Exception:
         logger.exception("invite_email_enqueue_failed", user_id=str(user.id))
 
