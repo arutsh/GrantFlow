@@ -8,6 +8,7 @@ context: |
   GitHub tickets are created with scripts/new-issue.sh; branch naming is <ServiceName>/Issue-<number>/<short-desc> (ServiceName in Platform, Frontend, Shared, Budget, Users, AI, Chat).
   Code comments: keep to short one- or two-liners explaining WHY, not WHAT; no multi-line rationale blocks in source files.
   Never `git commit`, `git push`, or open a PR without the user's explicit go-ahead for that specific action — a prior approval (e.g. "commit and push this one") authorizes only that instance, not standing permission for later commits/pushes in the same session or change.
+  Priority convention: `.openspec.yaml` gets `priority: HIGH|MED|LOW`, and the change dir is prefixed to match, e.g. `HIGH-fix-registration-privilege-escalation`. Default MED.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

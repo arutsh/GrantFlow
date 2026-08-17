@@ -64,15 +64,14 @@ async def create_budget_service(
 
     if valid_user["role"] == "superuser":
         if not budget.owner_id:
-            # FIXME: Temp workaround to allow superusers to create budgets
-            # without specifying an owner_id.
-            budget.owner_id = "444b3399-88ef-454f-b353-f160d3c9b44e"
-            # raise DomainError(
-            #     "Superuser must specify owner_id (not associated with a customer).",
-            #     status.HTTP_422_UNPROCESSABLE_ENTITY,
-            # )
-        # TODO revisit this, do we really need to validate if user is ngo or donor?
-        # validate_customer_type(budget.owner_id, "ngo", raise_domain_error=True)
+            raise DomainError(
+                "Superuser must specify owner_id (not associated with a customer).",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        # A bare superuser (no impersonation session) must not be able to
+        # create a budget under an arbitrary customer_id — mirrors the same
+        # check in update_budget_service.
+        validate_customer_can_own(budget.owner_id, raise_domain_error=True)
 
         owner_id = budget.owner_id
 
@@ -241,12 +240,10 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
             status.HTTP_400_BAD_REQUEST,
         )
 
+    # No role-based owner-reassignment branch: impersonation issues role="admin", not
+    # "superuser", so gating on role here would bypass the impersonation requirement.
     owner_id = None
-    if valid_user["role"] == "superuser" and budget.owner_id:
-        validate_customer_can_own(budget.owner_id, raise_domain_error=True)
-        owner_id = budget.owner_id
-
-    elif valid_user["role"] != "superuser" and not is_funder_confirm:
+    if not is_funder_confirm:
         # checks if customer has right to update the budget
         if (budget.owner_id and str(valid_budget.owner_id) != str(budget.owner_id)) or (
             str(valid_user["customer_id"]) != str(valid_budget.owner_id)

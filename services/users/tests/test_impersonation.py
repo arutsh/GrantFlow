@@ -92,3 +92,21 @@ class TestStartImpersonation:
 
         with pytest.raises(ValueError, match="expired"):
             decode_access_token(resp.access_token)
+
+    def test_mint_itself_is_audited(self):
+        """get_validated_user's own audit hook never fires for this request."""
+        customer = CustomerFactory.build()
+        req = ImpersonateRequest(customer_id=customer.id)
+        superuser = _superuser()
+        fake_request = object()
+
+        with (
+            patch("app.api.auth_routes.get_customer", return_value=customer),
+            patch("app.api.auth_routes.log_privileged_access") as mock_log,
+        ):
+            start_impersonation(req, superuser, db=object(), request=fake_request)
+
+        mock_log.assert_called_once_with(
+            {"user_id": str(superuser["user_id"]), "customer_id": str(customer.id)},
+            fake_request,
+        )

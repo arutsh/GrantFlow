@@ -1,7 +1,6 @@
 from fastapi import status
 from app.crud.budget_crud import (
     get_budget,
-    list_budgets,
     recalculate_budget_total,
 )
 from app.crud.budget_line_crud import (
@@ -112,13 +111,6 @@ def get_budget_line_by_id_service(
         raise PermissionDenied()
 
     return budget_line
-
-
-def list_budget_service(valid_user, db):
-    if valid_user["role"] == "superuser":
-        return list_budgets(db)
-
-    return list_budgets(db, customer_id=valid_user["customer_id"])
 
 
 def update_budget_line_service(

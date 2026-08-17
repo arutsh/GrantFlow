@@ -54,6 +54,7 @@ from app.services.login_rate_limiter import (
     clear_failed_attempts,
 )
 from shared.security.dependencies import get_validated_user
+from shared.security.privileged_access import log_privileged_access
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -394,6 +395,7 @@ def start_impersonation(
     req: ImpersonateRequest,
     current_user: dict = Depends(get_validated_user),
     db: Session = Depends(get_db),
+    request: Request = None,  # type: ignore[assignment]
 ):
     """Stateless: no impersonation_sessions table, no refresh token — short
     expiry + the audit log (not revocation) is the accepted mitigation."""
@@ -403,6 +405,12 @@ def start_impersonation(
     customer = get_customer(db, req.customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Log the mint here — get_validated_user's audit hook won't fire for this request.
+    log_privileged_access(
+        {"user_id": str(current_user["user_id"]), "customer_id": str(customer.id)},
+        request,
+    )
 
     expires_delta = timedelta(minutes=IMPERSONATION_TOKEN_EXPIRE_MINUTES)
     token = create_access_token(
