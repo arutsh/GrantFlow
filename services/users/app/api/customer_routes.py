@@ -66,9 +66,7 @@ def update_customer_endpoint(
     db: Session = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return update_company_service(
-        db, valid_user, customer_id, req.model_dump(exclude_unset=True)
-    )
+    return update_company_service(db, valid_user, customer_id, req.model_dump(exclude_unset=True))
 
 
 @router.post("/customers/{customer_id}/deactivate", response_model=Customer)

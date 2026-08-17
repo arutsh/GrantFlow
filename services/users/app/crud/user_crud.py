@@ -282,9 +282,7 @@ def accept_invite(session: Session, user: UserModel, password: str) -> UserModel
     return user
 
 
-def count_admins(
-    session: Session, customer_id: UUID, exclude_user_id: UUID | None = None
-) -> int:
+def count_admins(session: Session, customer_id: UUID, exclude_user_id: UUID | None = None) -> int:
     query = session.query(UserModel).filter(
         UserModel.customer_id == customer_id,
         UserModel.role == "admin",
