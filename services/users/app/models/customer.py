@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Boolean, String, ForeignKey, UniqueConstraint
+from datetime import datetime
+from sqlalchemy import Boolean, DateTime, String, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped, mapped_column, validates
 from app.models.base import Base
 from app.utils.db import GUID
@@ -20,6 +21,10 @@ class CustomerModel(Base):
     is_ngo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_donor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     currency = mapped_column(String, nullable=False)
+    # Deactivation (admin-management-page design.md decision 5): blocks
+    # login/token-issuance for this company's users. Not a hard delete —
+    # cross-service enforcement in budget/reports is a follow-on.
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     users = relationship("UserModel", back_populates="customer")
 
 

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.schemas.customer_schema import Customer
+from app.schemas.admin_management_schema import CompanyUpdateRequest
 from app.db.session import get_db
 from app.crud.customer_crud import (
     create_customer,
@@ -8,7 +9,12 @@ from app.crud.customer_crud import (
     get_customer,
     get_customers_by_ids,
 )
+from app.services.admin_management_services import (
+    deactivate_company_service,
+    update_company_service,
+)
 from app.utils.security import get_current_user
+from shared.security.dependencies import get_validated_user
 from uuid import UUID
 
 router = APIRouter()
@@ -51,6 +57,27 @@ def get_customer_endpoint(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     return customer
+
+
+@router.patch("/customers/{customer_id}", response_model=Customer)
+def update_customer_endpoint(
+    customer_id: UUID,
+    req: CompanyUpdateRequest,
+    db: Session = Depends(get_db),
+    valid_user: dict = Depends(get_validated_user),
+):
+    return update_company_service(
+        db, valid_user, customer_id, req.model_dump(exclude_unset=True)
+    )
+
+
+@router.post("/customers/{customer_id}/deactivate", response_model=Customer)
+def deactivate_customer_endpoint(
+    customer_id: UUID,
+    db: Session = Depends(get_db),
+    valid_user: dict = Depends(get_validated_user),
+):
+    return deactivate_company_service(db, valid_user, customer_id)
 
 
 @router.post("/customers/by_ids/", response_model=list[Customer])

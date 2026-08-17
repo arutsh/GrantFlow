@@ -141,6 +141,42 @@ describe("DashboardLayout", () => {
     expect(screen.getByRole("button", { name: "Exit impersonation" })).toBeInTheDocument();
   });
 
+  it("hides the Company nav link for a plain (non-admin, non-superuser) user", () => {
+    renderLayout();
+
+    expect(screen.queryByText("Company")).not.toBeInTheDocument();
+  });
+
+  it("shows the Company nav link for a company admin", () => {
+    useAuthMock.mockReturnValue({
+      isDonor: false,
+      isAdmin: true,
+      isSuperuser: false,
+      isImpersonating: false,
+      impersonatedCustomerName: null,
+      exitImpersonation: vi.fn(),
+    });
+
+    renderLayout();
+
+    expect(screen.getByText("Company")).toBeInTheDocument();
+  });
+
+  it("shows the Company nav link for a superuser", () => {
+    useAuthMock.mockReturnValue({
+      isDonor: false,
+      isAdmin: false,
+      isSuperuser: true,
+      isImpersonating: false,
+      impersonatedCustomerName: null,
+      exitImpersonation: vi.fn(),
+    });
+
+    renderLayout();
+
+    expect(screen.getByText("Company")).toBeInTheDocument();
+  });
+
   it("keeps the banner mounted across a route change, since it's rendered above the swapped page content", () => {
     useAuthMock.mockReturnValue({
       isDonor: false,

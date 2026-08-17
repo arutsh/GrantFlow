@@ -10,6 +10,8 @@ import Register from "./pages/Register";
 import Onboarding from "./pages/OnBoarding";
 import ConfirmEmail from "./pages/ConfirmEmail";
 import VerifyEmail from "./pages/VerifyEmail";
+import AcceptInvite from "./pages/AcceptInvite";
+import CompanyManagementPage from "./pages/CompanyManagement/CompanyManagement";
 import BudgetsPage from "./pages/Budgets/budgets";
 import { SingleBudgetViewContainer } from "./pages/Budgets/SingleBudgetView";
 import ReportDetailView from "./pages/Budgets/ReportDetailView";
@@ -57,6 +59,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route
               path="/confirm-email"
               element={
@@ -91,6 +94,7 @@ export default function App() {
                 element={<ReportDetailView />}
               />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/company-management" element={<CompanyManagementPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

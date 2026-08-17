@@ -9,6 +9,7 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
+  Building2,
 } from "lucide-react";
 import { AIChatPanel } from "@/pages/Budgets/components/AIChatPanel";
 import { useAiChat } from "@/context/AiChatContext";
@@ -33,7 +34,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isGranteesExpanded, setIsGranteesExpanded] = useState(false);
   const { isAiOpen, toggleAi } = useAiChat();
-  const { isDonor } = useAuth();
+  const { isDonor, isAdmin, isSuperuser } = useAuth();
 
   return (
     <div className="flex w-full h-screen bg-gray-50">
@@ -91,6 +92,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                 <span>Reports</span>
               </Link>
             </li>
+            {(isAdmin || isSuperuser) && (
+              <li>
+                <Link
+                  to="/company-management"
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-blue-600/60 rounded transition-colors"
+                >
+                  <Building2 size={20} />
+                  <span>Company</span>
+                </Link>
+              </li>
+            )}
             {isDonor && <li className="my-2 border-t border-slate-600" />}
             {isDonor && (
               <li>
