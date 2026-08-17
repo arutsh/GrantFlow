@@ -2,32 +2,35 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 1. Resolve open design questions
 
-- [ ] 1.1 Decide the invite mechanism (pending `UserModel` row vs. separate invite-token table; reuse `email_verification_token_hash`/`email-verification` capability or a new token type) — update design.md
-- [ ] 1.2 Decide user-removal semantics (hard delete vs. reuse the GDPR soft-delete/anonymization path on `UserModel`) — update design.md
-- [ ] 1.3 Decide company-delete semantics (hard delete, soft-delete/deactivate, or blocked while active users/budgets/reports exist across services) — update design.md
-- [ ] 1.4 Decide role boundaries (can an admin remove/demote another admin, including self; is at least one admin required per company) — update design.md
-- [ ] 1.5 Decide which company fields are admin-editable vs. superuser-only (e.g. `is_ngo`/`is_donor`) — update design.md
-- [ ] 1.6 Decide whether `superuser-tenant-administration` is implemented as dedicated superuser-scoped endpoints or as impersonation (from `superuser-cross-tenant-access`) plus reuse of `company-user-administration` endpoints — update design.md and, if it changes scope, the `superuser-tenant-administration` spec
-- [ ] 1.7 PR merged (docs-only: design.md + spec updates)
+- [x] 1.1 Decide the invite mechanism — pending `UserModel` row + reused email-verification token pattern, new accept-invite endpoint (design.md decision 3)
+- [x] 1.2 Decide user-removal semantics — reuse the GDPR soft-delete/anonymization path (design.md decision 4)
+- [x] 1.3 Decide company-delete semantics — soft-delete/deactivate, login-block only this pass, cross-service enforcement is a follow-on (design.md decision 5)
+- [x] 1.4 Decide role boundaries — admin can remove/demote another admin; last-admin protection required (design.md decision 6)
+- [x] 1.5 Decide which company fields are admin-editable vs. superuser-only — all fields, including `is_ngo`/`is_donor`, are admin-editable (design.md decision 7)
+- [x] 1.6 Decide the `superuser-tenant-administration` mechanism — impersonation + reuse of `company-user-administration` endpoints for invite/remove/promote-demote/update-company; a dedicated superuser-scoped endpoint only for company deactivation (design.md decision 2)
+- [ ] 1.7 Create the `donor-grantee-relationship` delta spec (new requirement: reject `donor_id == grantee_id`) via `/opsx:continue` — surfaced by decision 7, not yet a file under this change
+- [ ] 1.8 PR merged (docs-only: design.md + spec updates)
 
 ## 2. Backend: company-user-administration — depends on 1
 
-- [ ] 2.1 Add admin-scoped invite endpoint in `services/users/app/api/user_routes.py` per the mechanism decided in 1.1
-- [ ] 2.2 Add admin-scoped user-removal endpoint (distinct from the existing self-service `DELETE /users/{user_id}`), scoped to the admin's own `customer_id`, per semantics decided in 1.2
-- [ ] 2.3 Add company-update endpoint in `services/users/app/api/customer_routes.py`, scoped to the admin's own `customer_id`, restricted to the fields decided in 1.5
-- [ ] 2.4 Tests: admin can invite/remove users and update company details within their own `customer_id`; cannot act on another company's users/details; non-admin roles are rejected
-- [ ] 2.5 Run users-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
+- [ ] 2.1 Add admin-scoped invite endpoint + accept-invite endpoint in `services/users/app/api/user_routes.py`, reusing `email_verification_token_hash`/`email_verification_expires_at`
+- [ ] 2.2 Add admin-scoped user-removal endpoint (distinct from the existing self-service `DELETE /users/{user_id}`), scoped to the admin's own `customer_id`, reusing the GDPR soft-delete path, rejecting removal that would leave zero admins
+- [ ] 2.3 Add admin-scoped role-update endpoint (promote/demote between `admin`/`user` within the admin's own company), rejecting a demotion that would leave zero admins, rejecting any attempt to set `role: superuser`
+- [ ] 2.4 Add company-update endpoint in `services/users/app/api/customer_routes.py`, scoped to the admin's own `customer_id`, covering `name`/`country`/`currency`/`is_ngo`/`is_donor`
+- [ ] 2.5 Add guard in `services/users/app/crud/donor_grantee_crud.py` rejecting `donor_id == grantee_id`
+- [ ] 2.6 Tests: admin can invite/remove/promote/demote users and update company details (including `is_ngo`/`is_donor`) within their own `customer_id`; cannot act on another company's users/details; non-admin roles are rejected; last-admin protection holds; self-referential donor-grantee is rejected
+- [ ] 2.7 Run users-service test suite and flake8 (`--max-line-length=100`) clean; PR merged
 
 ## 3. Frontend: Company Management page (admin) — depends on 2
 
-- [ ] 3.1 Add an admin-only "Company Management" page listing the company's users, with invite and remove actions
-- [ ] 3.2 Add a form to update the company's own editable details
+- [ ] 3.1 Add an admin-only "Company Management" page listing the company's users, with invite, remove, and promote/demote actions
+- [ ] 3.2 Add a form to update the company's own editable details, including `is_ngo`/`is_donor`
 - [ ] 3.3 Tests: page and actions are hidden/inaccessible for non-admin roles
 - [ ] 3.4 Run frontend test suite and lint clean; PR merged
 
 ## 4. Superuser tenant administration — depends on 1, 2, 3
 
-- [ ] 4.1 Implement per the mechanism decided in 1.6: either dedicated superuser-scoped endpoints (mirroring 2.1-2.3 but unbound from `customer_id`) and UI (company picker + reuse of the page from group 3), or the impersonation-session path plus a company picker only
-- [ ] 4.2 Add company-delete capability (superuser-only per current spec) per semantics decided in 1.3
-- [ ] 4.3 Tests: superuser can act on any company's users/details, including delete; non-superuser roles are rejected
+- [ ] 4.1 Frontend: add a superuser-only company picker that starts an impersonation session (`POST /auth/impersonate`) and routes into the existing Company Management page from group 3 — no new backend endpoints needed for invite/remove/promote-demote/update-company
+- [ ] 4.2 Add company-deactivate endpoint in `services/users/app/api/customer_routes.py`, gated on `role == "superuser" or is_impersonating`, setting the deactivation flag/timestamp on `CustomerModel` and blocking login/token-issuance for that company's users
+- [ ] 4.3 Tests: superuser can act on any company's users/details via impersonation; a plain admin cannot deactivate their own company; superuser can deactivate directly or while impersonating; deactivated company's users cannot log in; non-superuser roles are rejected on deactivate
 - [ ] 4.4 Run affected services' test suites, flake8 (`--max-line-length=100`), and frontend lint clean; PR merged
