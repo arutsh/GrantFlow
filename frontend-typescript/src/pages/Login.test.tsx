@@ -6,6 +6,8 @@ import Login from "./Login";
 import * as usersApi from "@/api/usersApi";
 import * as authContext from "@/context/AuthContext";
 
+const mockNavigate = vi.fn();
+
 vi.mock("@/api/usersApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/api/usersApi")>();
   return { ...actual, loginUser: vi.fn() };
@@ -14,6 +16,11 @@ vi.mock("@/api/usersApi", async (importOriginal) => {
 vi.mock("@/context/AuthContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/context/AuthContext")>();
   return { ...actual, useAuth: vi.fn() };
+});
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
 });
 
 function renderLogin() {
@@ -54,5 +61,18 @@ describe("Login error messages", () => {
     renderLogin();
     await submit();
     expect(await screen.findByText("Invalid username or password")).toBeInTheDocument();
+  });
+
+  it("routes to /confirm-email on a 403 email_not_verified response", async () => {
+    vi.mocked(usersApi.loginUser).mockRejectedValue({
+      response: { status: 403, data: { detail: "email_not_verified" } },
+    });
+    renderLogin();
+    await submit();
+    await vi.waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/confirm-email", {
+        state: { email: "user@example.com" },
+      });
+    });
   });
 });

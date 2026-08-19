@@ -73,6 +73,12 @@ def get_validated_user(
     """
     payload = dict(user["payload"])
     payload["token"] = user["token"]
+    # Defense-in-depth; 403 (not 401) so clients know to verify, not re-login.
+    if not payload.get("email_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="email_not_verified",
+        )
     set_span_attributes(user_id=payload.get("user_id"))
     if payload.get("is_impersonating"):
         log_privileged_access(payload, request)

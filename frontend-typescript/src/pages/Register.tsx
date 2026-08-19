@@ -3,7 +3,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { registerUser } from "@/api/usersApi";
-import { useAuth } from "@/context/AuthContext";
 import { Eye, EyeOff, UserPlus } from "lucide-react";
 
 export default function Register() {
@@ -17,22 +16,13 @@ export default function Register() {
   const [consentDataProcessing, setConsentDataProcessing] = useState(false);
   const [consentMarketing, setConsentMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
 
   const mutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
       registerUser(email, password, consentDataProcessing, consentMarketing),
     onSuccess: (data) => {
-      login(
-        data.access_token,
-        email,
-        false,
-        data.status,
-        data.refresh_token || "",
-      );
-      // A brand-new account is never email-verified yet — go straight to
-      // the confirm-email screen instead of onboarding.
-      navigate("/confirm-email");
+      // Registration no longer authenticates.
+      navigate("/confirm-email", { state: { email: data.email } });
     },
     onError: (error: any) => {
       setError(error?.response?.data?.detail || "Registration failed. Please try again.");

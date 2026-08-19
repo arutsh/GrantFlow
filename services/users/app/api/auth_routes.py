@@ -6,11 +6,13 @@ from zoneinfo import ZoneInfo
 
 from app.schemas.auth_schema import (
     RegisterRequest,
+    RegisterResponse,
     LoginRequest,
     TokenResponse,
     ChangePasswordRequest,
     VerifyEmailRequest,
     VerifyEmailResponse,
+    ResendVerificationRequest,
     ResendVerificationResponse,
     ImpersonateRequest,
     ImpersonateResponse,
@@ -104,7 +106,7 @@ def _customer_role_claims(db: Session, customer_id) -> dict:
     return _role_flags(customer)
 
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register", response_model=RegisterResponse)
 async def register_endpoint(
     req: RegisterRequest,
     request: Request = None,  # type: ignore[assignment]
@@ -145,25 +147,11 @@ async def register_endpoint(
         # can self-serve via /auth/resend-verification either way.
         logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
 
-    refresh_token = create_refresh_token()
-    session = create_session(
-        session=db,
-        user_id=user.id,
-        refresh_token_hash=refresh_token,
+    # No session/token here — unauthenticated until verify-email succeeds.
+    return RegisterResponse(
+        message="Check your email to confirm your account.",
+        email=user.email,
     )
-
-    token = create_access_token(
-        {
-            "user_id": user.id,
-            "session_id": session.id,
-            "role": user.role,
-            "customer_id": user.customer_id,
-            **_customer_role_claims(db, user.customer_id),
-            **_email_verified_claim(user),
-        }
-    )
-
-    return TokenResponse(access_token=token, refresh_token=refresh_token, status=user.status)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -192,6 +180,10 @@ def login(
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     clear_failed_attempts(req.email)
+
+    if not user.email_verified:
+        # Valid credentials, but no session until the account is verified.
+        raise HTTPException(status_code=403, detail="email_not_verified")
 
     refresh_token = create_refresh_token()
 
@@ -285,28 +277,60 @@ def verify_email(
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
     clear_failed_attempts(req.email, bucket="verify_email")
-    mark_email_verified(db, user)
-    return VerifyEmailResponse(email_verified=True)
+    user = mark_email_verified(db, user)
+
+    # This is the account's first session — verification is the login moment.
+    refresh_token = create_refresh_token()
+    session = create_session(
+        session=db,
+        user_id=user.id,
+        refresh_token_hash=refresh_token,
+    )
+    token = create_access_token(
+        {
+            "user_id": user.id,
+            "session_id": session.id,
+            "role": user.role,
+            "customer_id": user.customer_id,
+            **_customer_role_claims(db, user.customer_id),
+            **_email_verified_claim(user),
+        }
+    )
+
+    return VerifyEmailResponse(
+        email_verified=True,
+        access_token=token,
+        refresh_token=refresh_token,
+        status=user.status,
+    )
 
 
 @router.post("/auth/resend-verification", response_model=ResendVerificationResponse)
 def resend_verification(
-    current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)
+    req: ResendVerificationRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
 ):
-    user = get_user(db, current_user["user_id"])
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    """Anonymous and enumeration-safe: same response regardless of account state."""
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(req.email, client_ip, bucket="resend_verification"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many resend attempts. Try again later.",
+        )
+    record_failed_attempt(req.email, client_ip, bucket="resend_verification")
 
-    if user.email_verified:
-        return ResendVerificationResponse(sent=False)
+    debug_token = None
+    user = get_user_by_email(db, req.email)
+    if user and not user.email_verified:
+        raw_token = set_email_verification_token(db, user)
+        try:
+            enqueue_verification_email(user.email, raw_token, user.first_name)
+        except Exception:
+            logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
+        if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS:
+            debug_token = raw_token
 
-    raw_token = set_email_verification_token(db, user)
-    try:
-        enqueue_verification_email(user.email, raw_token, user.first_name)
-    except Exception:
-        logger.exception("verification_email_enqueue_failed", user_id=str(user.id))
-
-    debug_token = raw_token if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS else None
     return ResendVerificationResponse(sent=True, debug_token=debug_token)
 
 

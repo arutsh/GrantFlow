@@ -84,3 +84,42 @@ describe("axiosConfig silent refresh write-back", () => {
     expect(sessionStorage.getItem("token")).toBeNull();
   });
 });
+
+describe("axiosConfig email-not-verified handling", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    mockPost.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // jsdom can't observe real navigation, so this only checks the no-refresh part.
+  it("does not attempt a silent refresh on a 403 email_not_verified response", async () => {
+    localStorage.setItem("refreshToken", "some-refresh-token");
+    const instance = createAxiosInstance("http://api.test") as any;
+
+    await instance
+      ._responseRejected({
+        response: { status: 403, data: { detail: "email_not_verified" } },
+        config: { url: "/some/protected/endpoint", headers: {} },
+      })
+      .catch(() => {});
+
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("does not intercept a 403 with an unrelated detail", async () => {
+    const instance = createAxiosInstance("http://api.test") as any;
+
+    const rejection = instance._responseRejected({
+      response: { status: 403, data: { detail: "some_other_reason" } },
+      config: { url: "/some/protected/endpoint", headers: {} },
+    });
+
+    await expect(rejection).rejects.toMatchObject({ response: { status: 403 } });
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});

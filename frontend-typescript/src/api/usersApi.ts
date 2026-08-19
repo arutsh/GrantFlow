@@ -28,8 +28,8 @@ export const verifyEmail = async (email: string, token: string) => {
   return data;
 };
 
-export const resendVerification = async () => {
-  const { data } = await gatewayApi.post("/auth/resend-verification", {});
+export const resendVerification = async (email: string) => {
+  const { data } = await gatewayApi.post("/auth/resend-verification", { email });
   return data;
 };
 

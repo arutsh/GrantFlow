@@ -57,6 +57,17 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
       const originalRequest = error.config as any;
 
       if (
+        error.response?.status === 403 &&
+        (error.response.data as { detail?: string })?.detail === "email_not_verified"
+      ) {
+        // Valid token, just unverified — go confirm, don't try to refresh.
+        if (window.location.pathname !== "/confirm-email") {
+          window.location.href = "/confirm-email";
+        }
+        return Promise.reject(error);
+      }
+
+      if (
         error.response?.status === 401 &&
         !originalRequest?._retry &&
         !isAuthExempt(originalRequest?.url)

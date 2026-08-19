@@ -4,7 +4,6 @@ import { loginUser } from "@/api/usersApi";
 import { useNavigate } from "react-router-dom";
 import Button from "@/components/ui/Button";
 import { LogIn } from "lucide-react";
-import { safeDecodeToken } from "@/utils/token";
 
 export default function Login() {
   const { isAuthenticated, isRegistering, login } = useAuth();
@@ -27,12 +26,7 @@ export default function Login() {
         res.status,
         res.refresh_token,
       );
-      const claims = safeDecodeToken<{ email_verified?: boolean }>(
-        res.access_token,
-      );
-      if (!claims?.email_verified) {
-        navigate("/confirm-email");
-      } else if (res.status === STATUS.PENDING) {
+      if (res.status === STATUS.PENDING) {
         navigate("/onboarding");
       } else {
         navigate("/dashboard");
@@ -40,7 +34,10 @@ export default function Login() {
     } catch (err: any) {
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
-      if (status === 429) {
+      if (status === 403 && detail === "email_not_verified") {
+        // Valid credentials, but no session — route to confirm-email.
+        navigate("/confirm-email", { state: { email: username } });
+      } else if (status === 429) {
         setError(detail || "Too many failed login attempts. Try again later.");
       } else if (status === 401) {
         setError("Invalid username or password");
