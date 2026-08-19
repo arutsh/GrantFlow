@@ -17,8 +17,13 @@ class TestListCustomers:
         client = make_client(db=db)
         app = client.app
         from app.utils.security import get_current_user
+        from shared.security.dependencies import get_validated_user
 
+        # get_validated_user's real implementation still delegates to
+        # get_current_user for the actual decode, so both overrides need to
+        # come off to exercise the unauthenticated path.
         del app.dependency_overrides[get_current_user]
+        del app.dependency_overrides[get_validated_user]
 
         response = client.get("/api/customers/")
 
@@ -66,8 +71,13 @@ class TestCreateCustomer:
         client = make_client(db=db)
         app = client.app
         from app.utils.security import get_current_user
+        from shared.security.dependencies import get_validated_user
 
+        # get_validated_user's real implementation still delegates to
+        # get_current_user for the actual decode, so both overrides need to
+        # come off to exercise the unauthenticated path.
         del app.dependency_overrides[get_current_user]
+        del app.dependency_overrides[get_validated_user]
 
         response = client.post(
             "/api/customers/",

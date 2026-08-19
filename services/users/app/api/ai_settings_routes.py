@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.utils.security import get_current_user
+from shared.security.dependencies import get_validated_user
 
 router = APIRouter(prefix="/users/me")
 
@@ -22,7 +22,7 @@ def _forward_error(response: httpx.Response) -> None:
 
 
 @router.get("/ai-settings")
-async def get_ai_settings(current_user: dict = Depends(get_current_user)):
+async def get_ai_settings(current_user: dict = Depends(get_validated_user)):
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"{settings.AI_SERVICE_URL}/ai/settings",
@@ -33,7 +33,7 @@ async def get_ai_settings(current_user: dict = Depends(get_current_user)):
 
 
 @router.put("/ai-settings")
-async def save_ai_settings(request: Request, current_user: dict = Depends(get_current_user)):
+async def save_ai_settings(request: Request, current_user: dict = Depends(get_validated_user)):
     body = await request.json()
     async with httpx.AsyncClient() as client:
         response = await client.put(
@@ -46,7 +46,7 @@ async def save_ai_settings(request: Request, current_user: dict = Depends(get_cu
 
 
 @router.delete("/ai-settings/{provider}/key")
-async def clear_ai_key(provider: str, current_user: dict = Depends(get_current_user)):
+async def clear_ai_key(provider: str, current_user: dict = Depends(get_validated_user)):
     async with httpx.AsyncClient() as client:
         response = await client.delete(
             f"{settings.AI_SERVICE_URL}/ai/settings/{provider}/key",

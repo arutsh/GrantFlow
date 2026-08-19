@@ -13,7 +13,6 @@ from app.services.admin_management_services import (
     get_company_service,
     update_company_service,
 )
-from app.utils.security import get_current_user
 from shared.security.dependencies import get_validated_user
 from uuid import UUID
 
@@ -25,7 +24,7 @@ def list_customers(
     is_ngo: bool | None = None,
     search: str | None = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    valid_user: dict = Depends(get_validated_user),
 ):
     return get_customers(session=db, is_ngo=is_ngo, search=search)
 
@@ -34,7 +33,7 @@ def list_customers(
 def create_customer_endpoint(
     customer: Customer,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    valid_user: dict = Depends(get_validated_user),
 ):
     db_customer = create_customer(
         session=db,

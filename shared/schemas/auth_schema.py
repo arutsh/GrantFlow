@@ -71,14 +71,10 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
-class VerifyEmailResponse(BaseModel):
-    email_verified: bool
+class VerifyEmailResponse(TokenResponse):
     # Verification is now the first point identity is confirmed, so it
     # issues the account's first session — same shape as TokenResponse.
-    access_token: str
-    token_type: str = "bearer"
-    refresh_token: str
-    status: str
+    email_verified: bool
 
 
 class ResendVerificationRequest(BaseModel):

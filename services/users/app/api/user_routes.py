@@ -16,7 +16,6 @@ from app.schemas.admin_management_schema import (
 from app.models.user import UserModel
 from app.models.customer import CustomerModel
 from app.db.session import SessionLocal
-from app.utils.security import get_current_user
 from app.crud.user_crud import (
     get_users_query,
     is_superuser,
@@ -124,11 +123,11 @@ async def update_user_endpoint(
     user_id: UUID,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: dict = Depends(get_validated_user),
 ):
     is_current_user_superuser = is_superuser(db, current_user["user_id"])
 
-    if current_user["user_id"] != user_id and not is_current_user_superuser:
+    if str(current_user["user_id"]) != str(user_id) and not is_current_user_superuser:
         raise HTTPException(status_code=403, detail="Not authorized to update this user")
 
     db_user = get_user(db, user_id)

@@ -13,6 +13,17 @@ The system SHALL allow an authenticated user to view their active sessions and r
 
 ## ADDED Requirements
 
+### Requirement: Session Superseded On Email Reverification
+When `/auth/verify-email` succeeds for an account that already has one or more non-revoked sessions at the time of the request, the system SHALL revoke those pre-existing sessions before issuing the new session. This covers the case where verification is reused to confirm an email-address change on an already-authenticated account, rather than a first-time registration verification.
+
+#### Scenario: Email-change confirmation revokes prior sessions
+- **WHEN** an already-verified user with an active session changes their email address and confirms it via `/auth/verify-email`
+- **THEN** their previously active session(s) are revoked and only the newly issued session remains valid
+
+#### Scenario: First-time verification has no prior sessions to revoke
+- **WHEN** a newly registered user verifies their email for the first time
+- **THEN** there are no pre-existing non-revoked sessions for the account, and the new session is issued without revoking anything
+
 ### Requirement: Expired Session Purge
 The system SHALL periodically delete session records whose expiration time has passed, so that expired sessions do not accumulate indefinitely in storage.
 
