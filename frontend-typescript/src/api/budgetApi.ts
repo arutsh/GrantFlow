@@ -3,6 +3,7 @@ import {
   Budget,
   BudgetPatched,
   CreateBudgetWithLinesRequest,
+  DonorTemplate,
 } from "@/pages/Budgets/types/budget";
 import gatewayApi from "@/api/gatewayApi";
 
@@ -42,5 +43,22 @@ export const createBudgetWithLines = async (
   req: CreateBudgetWithLinesRequest
 ): Promise<Budget> => {
   const { data } = await gatewayApi.post("/budgets/with-lines", req);
+  return data;
+};
+
+export const importBudgetFromExcel = async (file: File): Promise<Budget> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const { data } = await gatewayApi.post("/budgets/import-excel", formData);
+  return data;
+};
+
+export const saveBudgetAsTemplate = async (
+  budgetId: string,
+  name: string
+): Promise<DonorTemplate> => {
+  const { data } = await gatewayApi.post(`/budgets/${budgetId}/save-as-template`, {
+    name,
+  });
   return data;
 };
