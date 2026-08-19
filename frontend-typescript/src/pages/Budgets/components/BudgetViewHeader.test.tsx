@@ -14,6 +14,7 @@ vi.mock("@/api/budgetApi", async (importOriginal) => {
   return {
     ...actual,
     editBudget: vi.fn(),
+    saveBudgetAsTemplate: vi.fn(),
   };
 });
 
@@ -47,6 +48,9 @@ vi.mock("@/api/customerApi", async (importOriginal) => {
 });
 
 const editBudgetMock = budgetApi.editBudget as unknown as ReturnType<typeof vi.fn>;
+const saveBudgetAsTemplateMock = budgetApi.saveBudgetAsTemplate as unknown as ReturnType<
+  typeof vi.fn
+>;
 const getCurrentCustomerIdMock = roleAccess.getCurrentCustomerId as unknown as ReturnType<
   typeof vi.fn
 >;
@@ -196,6 +200,101 @@ describe("BudgetViewHeader confirm action", () => {
     );
     expect(onBudgetUpdated).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /confirm budget/i })).toBeInTheDocument();
+  });
+});
+
+describe("BudgetViewHeader save-as-template prompt", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentCustomerIdMock.mockReturnValue("owner-1");
+    isBudgetOwnerMock.mockReturnValue(true);
+    isBudgetFunderMock.mockReturnValue(false);
+  });
+
+  async function confirmBudget(canSaveAsTemplate: boolean) {
+    const user = userEvent.setup();
+    editBudgetMock.mockResolvedValue(
+      makeBudget({
+        status: "confirmed",
+        start_date: "2026-08-01",
+        can_save_as_template: canSaveAsTemplate,
+      }),
+    );
+
+    renderHeader(<BudgetViewHeader budget={makeBudget()} isLocked={false} />);
+    await user.type(screen.getByLabelText(/start date/i), "2026-08-01");
+    await user.click(screen.getByRole("button", { name: /confirm budget/i }));
+    await waitFor(() => expect(editBudgetMock).toHaveBeenCalled());
+    return user;
+  }
+
+  it("shows the prompt when the confirm response says the budget is eligible", async () => {
+    await confirmBudget(true);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/save this layout as a reusable template/i),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show the prompt when the confirm response says the budget is not eligible", async () => {
+    await confirmBudget(false);
+
+    await waitFor(() => expect(editBudgetMock).toHaveBeenCalled());
+    expect(
+      screen.queryByText(/save this layout as a reusable template/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves the template with the entered name and shows a confirmation", async () => {
+    const user = await confirmBudget(true);
+    saveBudgetAsTemplateMock.mockResolvedValue({ id: 1, name: "Acme Donor" });
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Template name")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByPlaceholderText("Template name"), "Acme Donor");
+    await user.click(screen.getByRole("button", { name: "Save Template" }));
+
+    await waitFor(() =>
+      expect(saveBudgetAsTemplateMock).toHaveBeenCalledWith("b1", "Acme Donor"),
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/saved as a reusable template/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("shows an error and does not dismiss the prompt when saving the template fails", async () => {
+    const user = await confirmBudget(true);
+    saveBudgetAsTemplateMock.mockRejectedValue({
+      response: { data: { detail: "This budget isn't eligible" } },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Template name")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByPlaceholderText("Template name"), "Acme Donor");
+    await user.click(screen.getByRole("button", { name: "Save Template" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("This budget isn't eligible")).toBeInTheDocument(),
+    );
+    expect(screen.getByPlaceholderText("Template name")).toBeInTheDocument();
+  });
+
+  it("dismisses the prompt without saving", async () => {
+    const user = await confirmBudget(true);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
+    expect(saveBudgetAsTemplateMock).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(/save this layout as a reusable template/i),
+    ).not.toBeInTheDocument();
   });
 });
 

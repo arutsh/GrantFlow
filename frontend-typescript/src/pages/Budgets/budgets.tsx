@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import Button from "@/components/ui/Button";
 import {
   useMutation,
@@ -12,6 +13,7 @@ import {
   HiXMark,
   HiMagnifyingGlass,
   HiAdjustmentsHorizontal,
+  HiArrowUpTray,
 } from "react-icons/hi2";
 import { TableView } from "./components/TableView";
 import { CardsView } from "./components/CardsView";
@@ -21,12 +23,15 @@ import { Budget, BudgetPatched } from "./types/budget";
 import { archiveBudget, restoreBudget } from "@/api/budgetApi";
 import { AddBudgetModal } from "./components/AddBudget";
 import { EditBudgetModal } from "./components/EditBudget";
+import { ImportExcelModal } from "./components/ImportExcelModal";
 import { STATUS_STYLES } from "./constants/budgetStatus";
 
 const BudgetsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [view, setView] = useState<"cards" | "table">();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -95,6 +100,16 @@ const BudgetsPage: React.FC = () => {
       });
     }
     setIsAddOpen(false);
+  };
+
+  const closeImportModal = (importedBudget: Budget | null) => {
+    setIsImportOpen(false);
+    if (importedBudget) {
+      // Land on the created ai_draft budget's review/confirm view, same as
+      // the chat-based AI creation flow — rather than mutating the cached
+      // list here, since the list page is about to be navigated away from.
+      navigate(`/budgets/${importedBudget.id}`);
+    }
   };
 
   const closeEditModal = (updatedBudget: BudgetPatched | null) => {
@@ -243,6 +258,12 @@ const BudgetsPage: React.FC = () => {
           onClose={(val) => closeAddModal(val)}
         />
       )}
+      {isImportOpen && (
+        <ImportExcelModal
+          isOpen={isImportOpen}
+          onClose={(val) => closeImportModal(val)}
+        />
+      )}
       <div className="-m-8 flex h-screen overflow-hidden">
         {/* Main scrollable area */}
         <div className="flex-1 min-w-0 overflow-auto p-8 bg-gray-50 flex flex-col">
@@ -276,6 +297,13 @@ const BudgetsPage: React.FC = () => {
                 className="flex items-center gap-2"
               >
                 <HiPlus size={18} /> Add Budget
+              </Button>
+              <Button
+                onClick={() => setIsImportOpen(!isImportOpen)}
+                variant="secondary"
+                className="flex items-center gap-2"
+              >
+                <HiArrowUpTray size={18} /> Import from Excel
               </Button>
             </div>
             {!isMobile && view && (
