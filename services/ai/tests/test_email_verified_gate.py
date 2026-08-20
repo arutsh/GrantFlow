@@ -3,9 +3,14 @@ via a real TestClient/JWT (no `get_validated_user` override)."""
 
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from main import app
+from app.api.settings_routes import get_db
+from app.models.ai_provider import AIProvider
+from app.models.base import Base
 from shared.security.jwt_utils import create_access_token
 
 
@@ -21,6 +26,23 @@ def _token(email_verified: bool) -> str:
     )
 
 
+@pytest.fixture
+async def sessions_db():
+    # settings_routes.py declares its own module-local get_db (see
+    # project_user_routes_duplicate_get_db in memory for the sibling case) —
+    # this fixture exists only so
+    # test_verified_token_is_not_blocked_by_the_verification_gate doesn't
+    # need a real Postgres reachable at settings.ai_database_url, which isn't
+    # resolvable outside docker-compose.local.yml (or CI).
+    engine = create_async_engine("sqlite+aiosqlite://")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[AIProvider.__table__])
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
+
+
 class TestAiSettingsEndpointRequiresVerifiedEmail:
     def test_unverified_token_rejected_with_403(self):
         client = TestClient(app)
@@ -31,10 +53,19 @@ class TestAiSettingsEndpointRequiresVerifiedEmail:
         assert resp.status_code == 403
         assert resp.json()["detail"] == "email_not_verified"
 
-    def test_verified_token_is_not_blocked_by_the_verification_gate(self):
-        client = TestClient(app)
-        resp = client.get(
-            "/api/v1/ai/settings",
-            headers={"Authorization": f"Bearer {_token(email_verified=True)}"},
-        )
+    @pytest.mark.anyio
+    async def test_verified_token_is_not_blocked_by_the_verification_gate(self, sessions_db):
+        # get_validated_user is deliberately left unmocked (see module
+        # docstring) so the gate itself runs for real; only get_db is
+        # overridden, so this stays a real end-to-end check of the
+        # verification gate without needing a live database.
+        app.dependency_overrides[get_db] = lambda: sessions_db
+        try:
+            client = TestClient(app)
+            resp = client.get(
+                "/api/v1/ai/settings",
+                headers={"Authorization": f"Bearer {_token(email_verified=True)}"},
+            )
+        finally:
+            del app.dependency_overrides[get_db]
         assert resp.status_code != 403

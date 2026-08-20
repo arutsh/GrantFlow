@@ -94,9 +94,7 @@ class TestGetValidatedUserRequiresVerifiedEmail:
 
     def test_verified_token_behaves_as_before(self):
         user_id = "10101010-1010-1010-1010-101010101010"
-        current_user = get_current_user(
-            token=_token_for(user_id, "session-j", email_verified=True)
-        )
+        current_user = get_current_user(token=_token_for(user_id, "session-j", email_verified=True))
 
         payload = get_validated_user(user=current_user)
         assert payload["user_id"] == user_id
