@@ -30,15 +30,13 @@ test("register, onboard, log in through the form, then drive the budget CRUD cha
   // resend-verification field (EXPOSE_VERIFICATION_TOKEN_FOR_TESTS, set in
   // services/users/.env.users.local — never enabled in prod) and drive the
   // real /verify-email page with it, same as a user clicking the emailed
-  // link would.
+  // link would. Registration issues no session, so this call is identified
+  // by email in the body, not a bearer token.
   await page.waitForURL("/confirm-email");
 
-  const accessToken = await page.evaluate(
-    () => sessionStorage.getItem("token") || localStorage.getItem("token"),
-  );
   const resendRes = await page.request.post(
     `${GATEWAY_URL}/api/v1/auth/resend-verification`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    { data: { email } },
   );
   expect(resendRes.status()).toBe(200);
   const { debug_token: debugToken } = await resendRes.json();

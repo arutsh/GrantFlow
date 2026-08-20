@@ -57,6 +57,21 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
       const originalRequest = error.config as any;
 
       if (
+        error.response?.status === 403 &&
+        (error.response.data as { detail?: string })?.detail === "email_not_verified" &&
+        !isAuthExempt(originalRequest?.url)
+      ) {
+        // Valid token, just unverified — go confirm, don't try to refresh.
+        // /auth/login itself is exempt: Login.tsx already routes this case
+        // via a SPA navigate() that carries the typed email as router state,
+        // which a hard redirect here would otherwise race and destroy.
+        if (window.location.pathname !== "/confirm-email") {
+          window.location.href = "/confirm-email";
+        }
+        return Promise.reject(error);
+      }
+
+      if (
         error.response?.status === 401 &&
         !originalRequest?._retry &&
         !isAuthExempt(originalRequest?.url)

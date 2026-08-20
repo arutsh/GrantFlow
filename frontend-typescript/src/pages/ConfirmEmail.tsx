@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { resendVerification } from "@/api/usersApi";
 import { useAuth } from "@/context/AuthContext";
@@ -6,11 +7,14 @@ import Button from "@/components/ui/Button";
 import { MailCheck } from "lucide-react";
 
 export default function ConfirmEmail() {
-  const { username, logout } = useAuth();
+  // Reachable unauthenticated now, so prefer the email passed via navigation.
+  const location = useLocation();
+  const { username, isAuthenticated, logout } = useAuth();
+  const email = (location.state as { email?: string } | null)?.email || username;
   const [justSent, setJustSent] = useState(false);
 
   const mutation = useMutation({
-    mutationFn: resendVerification,
+    mutationFn: () => resendVerification(email as string),
     onSuccess: () => setJustSent(true),
   });
 
@@ -28,7 +32,7 @@ export default function ConfirmEmail() {
         </h1>
         <p className="text-gray-500 mb-8">
           We sent a confirmation link to{" "}
-          {username ? <strong>{username}</strong> : "your email address"}.
+          {email ? <strong>{email}</strong> : "your email address"}.
           Click it to finish setting up your account.
         </p>
 
@@ -44,7 +48,7 @@ export default function ConfirmEmail() {
           type="button"
           variant="primary"
           className="w-full disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-          disabled={mutation.isPending || justSent}
+          disabled={!email || mutation.isPending || justSent}
           onClick={() => mutation.mutate()}
         >
           {justSent
@@ -54,16 +58,28 @@ export default function ConfirmEmail() {
               : "Resend confirmation email"}
         </Button>
 
-        <p className="text-center text-gray-600 mt-6">
-          Wrong account?{" "}
-          <button
-            type="button"
-            onClick={logout}
-            className="text-slate-700 font-semibold hover:text-slate-900 hover:underline"
-          >
-            Log out
-          </button>
-        </p>
+        {isAuthenticated ? (
+          <p className="text-center text-gray-600 mt-6">
+            Wrong account?{" "}
+            <button
+              type="button"
+              onClick={logout}
+              className="text-slate-700 font-semibold hover:text-slate-900 hover:underline"
+            >
+              Log out
+            </button>
+          </p>
+        ) : (
+          <p className="text-center text-gray-600 mt-6">
+            Wrong account?{" "}
+            <a
+              href="/register"
+              className="text-slate-700 font-semibold hover:text-slate-900 hover:underline"
+            >
+              Register again
+            </a>
+          </p>
+        )}
       </div>
     </div>
   );

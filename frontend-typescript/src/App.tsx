@@ -20,17 +20,6 @@ import FundedReportsPage from "./pages/Budgets/FundedReportsPage";
 import DashboardLayout from "./pages/Dashboard/DashboardLayout";
 import SettingsPage from "./pages/Settings/Settings";
 
-// Authenticated, but doesn't require a verified email — used for the
-// confirm-email screen itself, which must stay reachable by unverified
-// users (otherwise PrivateRoute's redirect target would loop back to
-// itself).
-function AuthOnlyRoute({ children }: { children: JSX.Element }) {
-  const { isAuthenticated, loading } = useAuth();
-  if (loading) return <div>Loading...</div>;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return children;
-}
-
 function PrivateRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated, loading, emailVerified } = useAuth();
   if (loading) return <div>Loading...</div>;
@@ -59,14 +48,7 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
-            <Route
-              path="/confirm-email"
-              element={
-                <AuthOnlyRoute>
-                  <ConfirmEmail />
-                </AuthOnlyRoute>
-              }
-            />
+            <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route
               path="/onboarding"
               element={

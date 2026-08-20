@@ -17,6 +17,7 @@ def _impersonation_token(user_id: str, customer_id: str, session_id: str) -> str
             "session_id": session_id,
             "role": "admin",
             "is_impersonating": True,
+            "email_verified": True,
         }
     )
 
@@ -28,8 +29,15 @@ def fake_redis(monkeypatch):
     return fake
 
 
-def _token_for(user_id: str, session_id: str) -> str:
-    return create_access_token({"user_id": user_id, "session_id": session_id, "role": "user"})
+def _token_for(user_id: str, session_id: str, email_verified: bool = True) -> str:
+    return create_access_token(
+        {
+            "user_id": user_id,
+            "session_id": session_id,
+            "role": "user",
+            "email_verified": email_verified,
+        }
+    )
 
 
 class TestGetCurrentUserRevocation:
@@ -68,6 +76,28 @@ class TestGetCurrentUserRevocation:
         # Session d is untouched.
         result = get_current_user(token=token_b)
         assert result["session_id"] == "session-d"
+
+
+class TestGetValidatedUserRequiresVerifiedEmail:
+    """Rejects an unverified token with 403, distinct from get_current_user's 401s."""
+
+    def test_unverified_token_rejected_with_403(self):
+        user_id = "99999999-9999-9999-9999-999999999999"
+        current_user = get_current_user(
+            token=_token_for(user_id, "session-i", email_verified=False)
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_validated_user(user=current_user)
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == "email_not_verified"
+
+    def test_verified_token_behaves_as_before(self):
+        user_id = "10101010-1010-1010-1010-101010101010"
+        current_user = get_current_user(token=_token_for(user_id, "session-j", email_verified=True))
+
+        payload = get_validated_user(user=current_user)
+        assert payload["user_id"] == user_id
 
 
 class TestGetValidatedUserSpanAttribute:

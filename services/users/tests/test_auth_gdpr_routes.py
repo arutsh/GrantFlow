@@ -59,7 +59,7 @@ class TestLoginLockout:
         mock_record.assert_called_once()
 
     def test_successful_login_clears_failed_attempts(self):
-        user = UserModelFactory.build(customer_id=None)
+        user = UserModelFactory.build(customer_id=None, email_verified=True)
         user.customer = None
         with (
             patch("app.api.auth_routes.is_locked_out", return_value=False),
@@ -86,6 +86,41 @@ class TestLoginLockout:
             with pytest.raises(HTTPException) as exc_info:
                 login(LoginRequest(email=user.email, password="whatever"), db=MagicMock())
         assert exc_info.value.status_code == 401
+
+
+class TestLoginGatedOnVerification:
+    """Correct credentials alone no longer issue a session for an unverified account."""
+
+    def test_unverified_account_gets_no_session(self):
+        user = UserModelFactory.build(customer_id=None, email_verified=False)
+        user.customer = None
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch("app.api.auth_routes.verify_password", return_value=True),
+            patch("app.api.auth_routes.create_session") as mock_create_session,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                login(LoginRequest(email=user.email, password="pw"), db=MagicMock())
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.detail == "email_not_verified"
+        mock_create_session.assert_not_called()
+
+    def test_verified_account_logs_in_as_before(self):
+        user = UserModelFactory.build(customer_id=None, email_verified=True)
+        user.customer = None
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch("app.api.auth_routes.verify_password", return_value=True),
+            patch(
+                "app.api.auth_routes.create_session",
+                return_value=SimpleNamespace(id=str(uuid4())),
+            ),
+        ):
+            resp = login(LoginRequest(email=user.email, password="pw"), db=MagicMock())
+        assert resp.access_token
+        assert decode_access_token(resp.access_token)["email_verified"] is True
 
 
 class TestVerifyEmailLockout:
@@ -117,13 +152,19 @@ class TestVerifyEmailLockout:
 
     def test_successful_verification_clears_failed_attempts(self):
         user = UserModelFactory.build(
+            customer_id=None,
             email_verification_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
-            + timedelta(hours=1)
+            + timedelta(hours=1),
         )
         with (
             patch("app.api.auth_routes.is_locked_out", return_value=False),
             patch("app.api.auth_routes.get_user_by_verification_token", return_value=user),
-            patch("app.api.auth_routes.mark_email_verified"),
+            patch("app.api.auth_routes.mark_email_verified", return_value=user),
+            patch(
+                "app.api.auth_routes.create_session",
+                return_value=SimpleNamespace(id=str(uuid4())),
+            ),
+            patch("app.api.auth_routes.get_customer", MagicMock()),
             patch("app.api.auth_routes.clear_failed_attempts") as mock_clear,
         ):
             verify_email(VerifyEmailRequest(email=user.email, token="x"), db=MagicMock())
@@ -174,39 +215,52 @@ def _register(role_in_payload=None, **overrides):
 
 
 class TestRegisterCannotSetPrivilegedRole:
-    """Closes the pentest-confirmed chain: register as role=superuser, then
-    use the issued token to self-authorize /auth/impersonate."""
+    """Register as superuser, then check the role verify-email's session issues."""
 
-    def _register_and_issue_token(self, role_in_payload):
+    def _register_then_verify(self, role_in_payload):
         created_user = UserModelFactory.build(customer_id=None, role="user")
         with (
             patch(
                 "app.api.auth_routes.create_user", AsyncMock(return_value=created_user)
             ) as mock_create_user,
+            patch("app.api.auth_routes.set_email_verification_token", return_value="raw-token"),
+            patch("app.api.auth_routes.enqueue_verification_email"),
+        ):
+            asyncio.run(
+                register_endpoint(_register(role_in_payload=role_in_payload), db=object())
+            )
+
+        created_user.email_verification_expires_at = datetime.now(timezone.utc).replace(
+            tzinfo=None
+        ) + timedelta(hours=1)
+        with (
+            patch(
+                "app.api.auth_routes.get_user_by_verification_token", return_value=created_user
+            ),
+            patch("app.api.auth_routes.mark_email_verified", return_value=created_user),
             patch(
                 "app.api.auth_routes.create_session",
                 return_value=SimpleNamespace(id=str(uuid4())),
             ),
             patch("app.api.auth_routes.get_customer", MagicMock()),
-            patch("app.api.auth_routes.set_email_verification_token", return_value="raw-token"),
-            patch("app.api.auth_routes.enqueue_verification_email"),
         ):
-            resp = asyncio.run(
-                register_endpoint(_register(role_in_payload=role_in_payload), db=object())
+            verify_resp = verify_email(
+                VerifyEmailRequest(email=created_user.email, token="raw-token"), db=object()
             )
-        return resp, mock_create_user
+        return created_user, verify_resp, mock_create_user
 
     def test_superuser_in_payload_is_dropped_before_create_user(self):
-        _, mock_create_user = self._register_and_issue_token("superuser")
+        _, _, mock_create_user = self._register_then_verify("superuser")
         assert "role" not in mock_create_user.call_args.kwargs
 
-    def test_admin_in_payload_still_issues_a_user_role_token(self):
-        resp, _ = self._register_and_issue_token("admin")
-        assert decode_access_token(resp.access_token)["role"] == "user"
+    def test_admin_in_payload_still_persists_and_issues_a_user_role(self):
+        created_user, verify_resp, _ = self._register_then_verify("admin")
+        assert created_user.role == "user"
+        assert decode_access_token(verify_resp.access_token)["role"] == "user"
 
     def test_registered_role_user_cannot_self_authorize_impersonation(self):
-        resp, _ = self._register_and_issue_token("superuser")
-        claims = decode_access_token(resp.access_token)
+        _, verify_resp, _ = self._register_then_verify("superuser")
+        claims = decode_access_token(verify_resp.access_token)
         actor = {"user_id": claims["user_id"], "role": claims["role"]}
 
         with pytest.raises(HTTPException) as exc_info:

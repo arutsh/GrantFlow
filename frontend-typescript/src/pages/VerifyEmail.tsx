@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { verifyEmail } from "@/api/usersApi";
-import { refreshToken as refreshTokenApi } from "@/api/gatewayApi";
 import { useAuth } from "@/context/AuthContext";
 import Button from "@/components/ui/Button";
 import { CheckCircle2, XCircle } from "lucide-react";
@@ -12,31 +11,13 @@ export default function VerifyEmail() {
   const token = searchParams.get("token");
   const email = searchParams.get("email");
   const navigate = useNavigate();
-  const { username, login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated } = useAuth();
 
   const mutation = useMutation({
     mutationFn: () => verifyEmail(email as string, token as string),
-    onSuccess: async () => {
-      // The JWT's email_verified claim is only correct as of issuance —
-      // this request verified the account after the current token was
-      // handed out, so the client must refresh to pick up the new claim
-      // rather than relying on a stale one already in storage.
-      const storedRefreshToken =
-        sessionStorage.getItem("refreshToken") ||
-        localStorage.getItem("refreshToken");
-      if (!storedRefreshToken) return;
-      try {
-        const data = await refreshTokenApi(storedRefreshToken);
-        login(
-          data.access_token,
-          username || "",
-          !!localStorage.getItem("refreshToken"),
-          data.status,
-          data.refresh_token || ""
-        );
-      } catch (e) {
-        console.error("Token refresh after email verification failed", e);
-      }
+    onSuccess: (data) => {
+      // Verification is the account's first session.
+      login(data.access_token, email || "", false, data.status, data.refresh_token || "");
     },
   });
 

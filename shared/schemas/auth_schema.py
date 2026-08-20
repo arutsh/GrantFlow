@@ -49,6 +49,11 @@ class TokenResponse(BaseModel):
     status: str
 
 
+class RegisterResponse(BaseModel):
+    message: str
+    email: EmailStr
+
+
 class ImpersonateRequest(BaseModel):
     customer_id: UUID
 
@@ -66,8 +71,14 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
-class VerifyEmailResponse(BaseModel):
+class VerifyEmailResponse(TokenResponse):
+    # Verification is now the first point identity is confirmed, so it
+    # issues the account's first session — same shape as TokenResponse.
     email_verified: bool
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class ResendVerificationResponse(BaseModel):

@@ -13,16 +13,7 @@ vi.mock("@/api/usersApi", async (importOriginal) => {
   };
 });
 
-vi.mock("@/api/gatewayApi", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/api/gatewayApi")>();
-  return {
-    ...actual,
-    refreshToken: vi.fn(),
-  };
-});
-
 import { verifyEmail } from "@/api/usersApi";
-import { refreshToken } from "@/api/gatewayApi";
 
 function renderAt(path: string) {
   const queryClient = new QueryClient({
@@ -46,7 +37,6 @@ describe("VerifyEmail", () => {
     localStorage.clear();
     sessionStorage.clear();
     vi.mocked(verifyEmail).mockReset();
-    vi.mocked(refreshToken).mockReset();
   });
 
   it("shows an invalid-link message when the URL has no token", async () => {
@@ -64,7 +54,12 @@ describe("VerifyEmail", () => {
   });
 
   it("shows success and continues on a valid token+email", async () => {
-    vi.mocked(verifyEmail).mockResolvedValue({ email_verified: true });
+    vi.mocked(verifyEmail).mockResolvedValue({
+      email_verified: true,
+      access_token: "new-access-token",
+      refresh_token: "new-refresh-token",
+      status: "pending",
+    });
 
     renderAt("/verify-email?token=good-token&email=user%40example.com");
 
@@ -74,10 +69,9 @@ describe("VerifyEmail", () => {
     expect(verifyEmail).toHaveBeenCalledWith("user@example.com", "good-token");
   });
 
-  it("refreshes the token after a successful verification so the client's claim is current", async () => {
-    localStorage.setItem("refreshToken", "stored-refresh-token");
-    vi.mocked(verifyEmail).mockResolvedValue({ email_verified: true });
-    vi.mocked(refreshToken).mockResolvedValue({
+  it("logs the user in with the tokens returned by verify-email", async () => {
+    vi.mocked(verifyEmail).mockResolvedValue({
+      email_verified: true,
       access_token: "new-access-token",
       refresh_token: "new-refresh-token",
       status: "pending",
@@ -86,8 +80,9 @@ describe("VerifyEmail", () => {
     renderAt("/verify-email?token=good-token&email=user%40example.com");
 
     await waitFor(() => {
-      expect(refreshToken).toHaveBeenCalledWith("stored-refresh-token");
+      expect(sessionStorage.getItem("token")).toBe("new-access-token");
     });
+    expect(sessionStorage.getItem("refreshToken")).toBe("new-refresh-token");
   });
 
   it("shows an error state when the token is expired or already used", async () => {

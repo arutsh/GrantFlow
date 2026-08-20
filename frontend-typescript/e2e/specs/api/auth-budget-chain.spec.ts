@@ -12,12 +12,16 @@ interface JwtPayload {
   user_id: string;
 }
 
-// Register issues a token for a "pending" user with no org attached yet;
-// budgets require an owner_id (customer_id), so the chain onboards the user
+// Register no longer issues a session — the account stays unauthenticated
+// until /verify-email succeeds, which is now the first login moment. There's
+// no real inbox in e2e, so the verification token is pulled via the
+// debug-only resend-verification field (EXPOSE_VERIFICATION_TOKEN_FOR_TESTS,
+// set in services/users/.env.users.local — never enabled in prod). Budgets
+// require an owner_id (customer_id), so the chain onboards the user
 // (creating an org) before logging back in to pick up a token whose claims
-// actually carry that customer_id — mirrors the real Register -> Onboarding
-// -> Dashboard flow in the frontend (see src/pages/OnBoarding.tsx).
-test("register, onboard, login, then drive the budget CRUD chain", async ({
+// actually carry that customer_id — mirrors the real Register -> Verify ->
+// Onboarding -> Dashboard flow in the frontend (see src/pages/OnBoarding.tsx).
+test("register, verify, onboard, login, then drive the budget CRUD chain", async ({
   request,
   baseURL,
 }) => {
@@ -35,15 +39,27 @@ test("register, onboard, login, then drive the budget CRUD chain", async ({
     },
   });
   expect(registerRes.status()).toBe(200);
-  const registerBody: TokenResponse = await registerRes.json();
-  expect(registerBody.access_token).toBeTruthy();
 
-  const userId = jwtDecode<JwtPayload>(registerBody.access_token).user_id;
+  const resendRes = await request.post("/api/v1/auth/resend-verification", {
+    data: { email },
+  });
+  expect(resendRes.status()).toBe(200);
+  const { debug_token: debugToken } = await resendRes.json();
+  expect(debugToken).toBeTruthy();
+
+  const verifyRes = await request.post("/api/v1/auth/verify-email", {
+    data: { email, token: debugToken },
+  });
+  expect(verifyRes.status()).toBe(200);
+  const verifyBody: TokenResponse = await verifyRes.json();
+  expect(verifyBody.access_token).toBeTruthy();
+
+  const userId = jwtDecode<JwtPayload>(verifyBody.access_token).user_id;
   expect(userId).toBeTruthy();
 
   const registerContext = await pwRequest.newContext({
     baseURL,
-    extraHTTPHeaders: { Authorization: `Bearer ${registerBody.access_token}` },
+    extraHTTPHeaders: { Authorization: `Bearer ${verifyBody.access_token}` },
   });
   const onboardRes = await registerContext.patch(`/api/v1/users/${userId}/`, {
     data: { new_customer_name: `E2E Org ${unique}` },
