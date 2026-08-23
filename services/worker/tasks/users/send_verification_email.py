@@ -37,6 +37,7 @@ def send_verification_email(self, email: str, token: str, first_name: str = ""):
                 "expiry_hours": 24,
                 "support_email": client.sender_email,
                 "account_name": client.sender_name,
+                "privacy_url": f"{settings.FRONTEND_BASE_URL}/legal#privacy",
             },
         )
     except EmailProviderError as exc:

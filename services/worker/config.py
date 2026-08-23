@@ -11,12 +11,14 @@ from pathlib import Path
 #   MAILERSEND_SENDER_DOMAIN — trial domain in dev/staging, verified domain in prod
 #   MAILERSEND_SENDER_EMAIL — from-address sent with each email (must belong to the sender domain)
 #   MAILERSEND_VERIFICATION_TEMPLATE_ID — MailerSend dashboard template ID for the
-#                                          verification email
+#                                          verification email. Personalization vars: name,
+#                                          verify_url, expiry_hours, support_email,
+#                                          account_name, privacy_url
 #   MAILERSEND_INVITE_TEMPLATE_ID — MailerSend dashboard template ID for the admin-invite
 #                                    email (distinct from verification: welcomes the invitee,
 #                                    names the inviter/company, links to /accept-invite).
 #                                    Personalization vars: name, inviter_name, org_name,
-#                                    invite_url, expiry_hours, support_email
+#                                    invite_url, expiry_hours, support_email, privacy_url
 #   MAILERSEND_API_URL — override for the MailerSend Email API endpoint; blank uses the real
 #                         MailerSend API (only set this to point at a local mock in dev)
 #   MAILJET_API_KEY / MAILJET_SECRET_KEY — Mailjet Send API v3.1 Basic Auth credentials
