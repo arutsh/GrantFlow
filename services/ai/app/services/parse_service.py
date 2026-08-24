@@ -7,7 +7,7 @@ from pydantic_ai import Agent
 from app.schemas.ai_schema import LLMBudgetOutput, ParseBudgetResponse
 from app.services.audit import write_audit_log
 from app.services.prompt_loader import load_prompt
-from app.services.provider import ResolvedModel
+from app.services.provider import ResolvedModel, build_agent
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -67,7 +67,7 @@ async def _run_parse_agent(
     try:
         yield 'event: progress\ndata: {"status": "Analyzing your description..."}\n\n'
 
-        agent: Agent[None, LLMBudgetOutput] = Agent(
+        agent: Agent[None, LLMBudgetOutput] = build_agent(
             resolved.model,
             output_type=LLMBudgetOutput,
             system_prompt=system_prompt,

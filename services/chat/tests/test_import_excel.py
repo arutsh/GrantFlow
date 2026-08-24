@@ -56,9 +56,7 @@ class TestFingerprintMatch:
                     "matched": True,
                     "donor_template_id": 7,
                     "donor_template_name": "USAID Template",
-                    "lines": [
-                        {"category_name": "Travel", "description": "Flights", "amount": 500}
-                    ],
+                    "lines": [{"category_name": "Travel", "description": "Flights", "amount": 500}],
                     "currency": "USD",
                 },
             )
@@ -105,7 +103,10 @@ class TestNoMatchCallsAi:
                 local_currency_confidence=0.9,
                 lines=[
                     ExcelExtractionLine(
-                        category_name="Travel", description="Flights", amount=500, confidence=0.9
+                        category_name="Travel",
+                        description="Flights",
+                        local_amount=500,
+                        confidence=0.9,
                     )
                 ],
                 column_map=ExcelExtractionColumnMap(
@@ -147,7 +148,7 @@ class TestNoMatchCallsAi:
                 local_currency=None,
                 lines=[
                     ExcelExtractionLine(
-                        category_name="?", description="?", amount=None, confidence=0.2
+                        category_name="?", description="?", local_amount=None, confidence=0.2
                     )
                 ],
                 column_map=ExcelExtractionColumnMap(),
@@ -162,6 +163,41 @@ class TestNoMatchCallsAi:
         line = registry.call_tool.call_args.args[1]["lines"][0]
         assert line["amount"] == 0.0
         assert line["extra_fields"]["amount_unresolved"] is True
+
+    async def test_high_confidence_line_drops_model_supplied_extra_fields(self):
+        """A cleanly resolved line never carries model-supplied extra_fields
+        through — e.g. a donor-currency value the model tucked in alongside
+        a correctly-extracted local-currency amount is redundant with the
+        platform's own estimated-rate conversion, not something to persist."""
+        http = _http(
+            _http_response(200, {"matched": False, "fingerprint": "fp-6", "rows": [["a", "b"]]})
+        )
+        ai_client = MagicMock()
+        ai_client.extract_budget_excel_lines = AsyncMock(
+            return_value=ExcelExtractionResult(
+                local_currency="AMD",
+                local_currency_confidence=0.95,
+                lines=[
+                    ExcelExtractionLine(
+                        category_name="Activities",
+                        description="Coffee Break",
+                        local_amount=225000.0,
+                        confidence=0.9,
+                        extra_fields={"costs_in_euro": 500},
+                    )
+                ],
+                column_map=ExcelExtractionColumnMap(),
+            )
+        )
+        registry = _tool_registry(ToolResult(success=True, message="ok", created_resource_id="b-6"))
+
+        await run_import_excel(
+            _upload_file(), token="tok", http=http, ai_client=ai_client, tool_registry=registry
+        )
+
+        line = registry.call_tool.call_args.args[1]["lines"][0]
+        assert line["amount"] == 225000.0
+        assert line["extra_fields"] is None
 
     async def test_dual_currency_sheet_uses_local_amount_and_derives_exchange_rate(self):
         """See budget-export-from-excel design.md Decision 8: line amounts come
@@ -190,12 +226,13 @@ class TestNoMatchCallsAi:
                     ExcelExtractionLine(
                         category_name="Activities",
                         description="Coffee Break",
-                        amount=450.0,
+                        local_amount=450.0,
+                        target_amount=100.0,
                         confidence=0.9,
                     )
                 ],
                 column_map=ExcelExtractionColumnMap(
-                    category_col=0, description_col=1, amount_col=2
+                    category_col=0, description_col=1, amount_col=2, target_amount_col=3
                 ),
             )
         )
@@ -212,6 +249,67 @@ class TestNoMatchCallsAi:
         assert params["duration_months"] == 12
         assert params["estimated_exchange_rate"] == 4.5  # 450 local / 100 target
 
+    async def test_swaps_local_and_target_when_model_mislabels_them(self):
+        """Regression test: even with local_currency/target_currency
+        identified correctly, the model has been observed putting the
+        donor-currency figures under local_amount and vice versa. Detected
+        and corrected by checking which assignment's summed target_amount
+        actually matches the sheet's own donor_total_amount — see
+        design.md Decision 11."""
+        http = _http(
+            _http_response(
+                200,
+                {
+                    "matched": False,
+                    "fingerprint": "fp-7",
+                    "rows": [
+                        ["Activities", "Coffee", "225000", "500"],
+                        ["Activities", "Rent", "180000", "400"],
+                    ],
+                },
+            )
+        )
+        ai_client = MagicMock()
+        ai_client.extract_budget_excel_lines = AsyncMock(
+            return_value=ExcelExtractionResult(
+                local_currency="AMD",
+                local_currency_confidence=0.95,
+                target_currency="EUR",
+                donor_total_amount=900.0,
+                lines=[
+                    # Mislabeled: local_amount/target_amount are swapped
+                    # relative to the sheet (225000/500 and 180000/400).
+                    ExcelExtractionLine(
+                        category_name="Activities",
+                        description="Coffee",
+                        local_amount=500.0,
+                        target_amount=225000.0,
+                        confidence=0.9,
+                    ),
+                    ExcelExtractionLine(
+                        category_name="Activities",
+                        description="Rent",
+                        local_amount=400.0,
+                        target_amount=180000.0,
+                        confidence=0.9,
+                    ),
+                ],
+                column_map=ExcelExtractionColumnMap(
+                    category_col=0, description_col=1, amount_col=3, target_amount_col=2
+                ),
+            )
+        )
+        registry = _tool_registry(ToolResult(success=True, message="ok", created_resource_id="b-7"))
+
+        await run_import_excel(
+            _upload_file(), token="tok", http=http, ai_client=ai_client, tool_registry=registry
+        )
+
+        params = registry.call_tool.call_args.args[1]
+        amounts = [line["amount"] for line in params["lines"]]
+        assert amounts == [225000.0, 180000.0]
+        assert params["excel_import_structure"]["amount_col"] == 2
+
     async def test_low_confidence_local_currency_falls_back_to_unset(self):
         """Below the confidence threshold, local_currency is passed through as
         unset rather than trusted — budget service applies the org's own
@@ -226,7 +324,7 @@ class TestNoMatchCallsAi:
                 local_currency_confidence=0.3,
                 lines=[
                     ExcelExtractionLine(
-                        category_name="A", description="B", amount=10.0, confidence=0.9
+                        category_name="A", description="B", local_amount=10.0, confidence=0.9
                     )
                 ],
                 column_map=ExcelExtractionColumnMap(),
@@ -282,9 +380,7 @@ class TestPrepareImportFailure:
 
 class TestNoLinesExtracted:
     async def test_matched_but_empty_lines_raises_400(self):
-        http = _http(
-            _http_response(200, {"matched": True, "lines": [], "donor_template_id": 1})
-        )
+        http = _http(_http_response(200, {"matched": True, "lines": [], "donor_template_id": 1}))
         ai_client = MagicMock()
         registry = _tool_registry(ToolResult(success=True, message="ok"))
 

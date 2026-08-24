@@ -1,5 +1,4 @@
 import os
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
@@ -25,12 +24,9 @@ class Settings(BaseSettings):
     donor_grantee_service_url: str
     user_service_url: str
     user_all_services_url: str
-    AI_SERVICE_URL: str = "http://localhost:8002/api/v1"
-    # Outbound call to ai's excel extraction endpoint waits on LLM inference —
-    # same reasoning as chat's identical setting.
-    HTTP_CLIENT_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0)
     # Databases
     budget_database_url: str
+    REDIS_URL: str
     # Object storage (S3-compatible: MinIO locally, Cloudflare R2 in production)
     STORAGE_ENDPOINT_URL: str
     STORAGE_ACCESS_KEY: str

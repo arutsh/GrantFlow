@@ -1,14 +1,21 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import Depends
+from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from app.core.logging import get_logger
 from app.utils.security import get_validated_user, resolve_customer_id
 
 logger = get_logger(__name__)
+
+# Cheapest current Claude model — used only for the GrantFlow-funded fallback
+# path (no BYOK key configured), never the user's own choice of model.
+_PLATFORM_FUNDED_MODEL = "claude-haiku-4-5-20251001"
 
 
 @dataclass
@@ -18,6 +25,20 @@ class ResolvedModel:
     model: AnthropicModel | OpenAIChatModel
     provider_name: str
     model_name: str
+
+
+def build_agent(model: AnthropicModel | OpenAIChatModel, **kwargs: Any) -> Agent:
+    """Construct a PydanticAI Agent with OTEL instrumentation enabled.
+
+    Every Agent in this service must go through here — `agent.run()` produces
+    no spans at all unless `instrument = True` is set, so a forgotten call site
+    turns the entire model call (provider request, retries, errors) into a gap
+    in the trace with no explanation. See excel-import trace investigation,
+    2026-08-21.
+    """
+    agent = Agent(model, **kwargs)
+    agent.instrument = True
+    return agent
 
 
 class ProviderAdapter(ABC):
@@ -84,6 +105,25 @@ def resolve_model(user_key=None, *, customer_id: str = "") -> ResolvedModel | No
         model=resolved.model_name,
     )
     return resolved
+
+
+def resolve_platform_funded_model() -> ResolvedModel | None:
+    """GrantFlow-funded fallback for organizations with no configured provider
+    key. A deliberate, scoped carve-out from the platform's BYOK-only/no-fallback
+    policy — see budget-export-from-excel design.md Decision 5. Returns None if
+    the platform's own key isn't configured, so callers can fail closed."""
+    from app.core.config import settings
+
+    if not settings.ANTHROPIC_API_KEY:
+        return None
+    return ResolvedModel(
+        model=AnthropicModel(
+            _PLATFORM_FUNDED_MODEL,
+            provider=AnthropicProvider(api_key=settings.ANTHROPIC_API_KEY),
+        ),
+        provider_name="anthropic",
+        model_name=_PLATFORM_FUNDED_MODEL,
+    )
 
 
 async def get_resolved_model(

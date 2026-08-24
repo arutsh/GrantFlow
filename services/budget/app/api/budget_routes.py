@@ -1,5 +1,5 @@
 # /services/budget/app/api/budget_routes.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from uuid import uuid4, UUID  # noqa: F401
@@ -15,12 +15,15 @@ from app.schemas.budget_schema import (
     GranteeDashboardSummary,
 )
 from app.schemas.budget_line_schema import BudgetLine
+from app.schemas.excel_import_schema import ExcelPrepareImportResult
+from app.schemas.mapping_schema import DonorTemplate, DonorTemplateCreate
 from app.schemas.with_lines_schema import CreateBudgetWithLinesRequest
 from app.services.budget_line_services import get_viewable_budget_lines_service
 from app.services.budget_services import (
     create_budget_service,
     create_budget_with_lines_service,
     get_viewable_budget_service,
+    save_budget_as_template_service,
     update_budget_service,
     restore_budget_service,
     list_budget_service,
@@ -31,6 +34,7 @@ from app.services.budget_services import (
     get_grantee_dashboard_summary_service,
 )
 from app.services.customer_client import require_donor
+from app.services.excel_import_service import prepare_excel_import_service
 from app.crud.budget_crud import get_budgets_by_creator
 from shared.observability import set_span_attributes
 from shared.security.dependencies import get_validated_user
@@ -130,6 +134,19 @@ async def update_budget_endpoint(
     return updated_budget
 
 
+@router.post("/{budget_id}/save-as-template", response_model=DonorTemplate)
+async def save_budget_as_template_endpoint(
+    budget_id: UUID,
+    payload: DonorTemplateCreate,
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    set_span_attributes(budget_id=budget_id)
+    template = await save_budget_as_template_service(budget_id, payload.name, valid_user, db)
+    set_span_attributes(donor_template_id=template.id)
+    return template
+
+
 @router.post("/{budget_id}/restore", response_model=BudgetUpdate)
 async def restore_budget_endpoint(
     budget_id: UUID,
@@ -158,6 +175,15 @@ async def create_budget_with_lines_endpoint(
     valid_user=Depends(get_validated_user),
 ):
     return await create_budget_with_lines_service(request, valid_user, db)
+
+
+@router.post("/excel/prepare-import", response_model=ExcelPrepareImportResult)
+async def prepare_excel_import_endpoint(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    valid_user=Depends(get_validated_user),
+):
+    return await prepare_excel_import_service(db, valid_user, file)
 
 
 @router.delete("/{budget_id}")

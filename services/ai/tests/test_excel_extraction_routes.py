@@ -22,7 +22,10 @@ def _result() -> ExcelExtractionResult:
         local_currency_confidence=0.9,
         lines=[
             ExcelExtractionLine(
-                category_name="Personnel", description="Salaries", amount=1000.0, confidence=0.9
+                category_name="Personnel",
+                description="Salaries",
+                local_amount=1000.0,
+                confidence=0.9,
             )
         ],
         column_map=ExcelExtractionColumnMap(category_col=0, description_col=0, amount_col=1),

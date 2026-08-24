@@ -31,7 +31,7 @@ def _test_model() -> TestModel:
                 {
                     "category_name": "Personnel",
                     "description": "Salaries",
-                    "amount": 1000.0,
+                    "local_amount": 1000.0,
                     "confidence": 0.9,
                     "extra_fields": None,
                 }

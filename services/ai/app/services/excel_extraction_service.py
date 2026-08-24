@@ -7,10 +7,13 @@ from pydantic_ai import Agent
 from app.core.logging import get_logger
 from app.services.audit import write_audit_log
 from app.services.prompt_loader import load_prompt
-from app.services.provider import ResolvedModel
+from app.services.provider import ResolvedModel, build_agent
 from shared.ai_client.schemas import ExcelExtractionResult
 
 logger = get_logger(__name__)
+
+# pydantic_ai's Anthropic default (4096) truncates output on larger sheets.
+_MAX_OUTPUT_TOKENS = 8192 * 2
 
 
 async def run_excel_extraction(
@@ -40,10 +43,11 @@ async def run_excel_extraction(
     output_tokens = 0
 
     try:
-        agent: Agent[None, ExcelExtractionResult] = Agent(
+        agent: Agent[None, ExcelExtractionResult] = build_agent(
             resolved.model,
             output_type=ExcelExtractionResult,
             system_prompt=loaded_prompt.system_prompt,
+            model_settings={"max_tokens": _MAX_OUTPUT_TOKENS},
         )
         result = await agent.run(user_message)
 
@@ -70,7 +74,7 @@ async def run_excel_extraction(
             await write_audit_log(
                 customer_id=customer_id,
                 user_id=user_id,
-                prompt_version=loaded_prompt.version,
+                prompt_version=f"excel-extract {loaded_prompt.version}",
                 input_text=input_text,
                 output_json=output_json,
                 provider=resolved.provider_name,

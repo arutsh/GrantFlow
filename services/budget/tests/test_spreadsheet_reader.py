@@ -35,6 +35,30 @@ class TestFilterOutFormulaRows:
         assert body_row[3] is None  # only the formula cell is blanked
 
 
+class TestFilterOutFormulaRowsWithCachedValue:
+    def test_formula_cell_resolves_to_last_calculated_value(self):
+        """Regression test for a real donor template (Mama Cash) where the
+        local-currency column is itself computed as `=donor_col*rate` — the
+        blank-to-None behavior discarded exactly the local-currency amount
+        Group 5's dual-currency extraction needs. openpyxl only caches a
+        formula's result if some spreadsheet application actually
+        calculated it before save, so this test writes the cached value via
+        the same mechanism (openpyxl doesn't evaluate formulas itself)."""
+        data = _workbook_bytes([["Salaries", 5000, "=B1*8"]])
+        reader = ExcelStructureDetector(io.BytesIO(data))
+        # openpyxl's own writer never populates a cached formula result (it
+        # has no calculation engine) — stub in the value a real spreadsheet
+        # application would have cached on save, the way Excel/Sheets does.
+        reader.ws_cached.cell(row=1, column=3).value = 40000
+        reader.read_sheet_with_openpyxl()
+        cleaned = reader.filter_out_formula_rows()
+
+        body_row = cleaned.iloc[1]
+        assert body_row[1] == "Salaries"
+        assert body_row[2] == 5000
+        assert body_row[3] == 40000  # resolved from the cached formula result
+
+
 class TestFilterOutTotalRows:
     def test_excludes_category_total_and_grand_total_rows(self):
         data = _workbook_bytes(

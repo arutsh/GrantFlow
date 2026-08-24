@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { importBudgetFromExcel } from "@/api/budgetApi";
 import Button from "@/components/ui/Button";
@@ -11,6 +11,19 @@ import { Budget } from "../types/budget";
 const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 const ACCEPT_ATTR =
   ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// Advances on a timer, not real progress — the backend call has no progress events.
+const STATUS_MESSAGES = [
+  "Uploading your file…",
+  "Reading your spreadsheet…",
+  "Finding the budget lines…",
+  "Extracting amounts and categories…",
+  "Double-checking the currencies…",
+  "Still crunching the numbers…",
+  "Good spreadsheets take a little patience…",
+  "Almost there…",
+];
+const STATUS_INTERVAL_MS = 2500;
 
 function isXlsxFile(file: File): boolean {
   return file.name.toLowerCase().endsWith(".xlsx");
@@ -26,6 +39,7 @@ export function ImportExcelModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState("");
+  const [statusIndex, setStatusIndex] = useState(0);
 
   const mutation = useMutation({
     mutationFn: importBudgetFromExcel,
@@ -39,6 +53,17 @@ export function ImportExcelModal({
       setError(detail || "Failed to import the spreadsheet. Please try again.");
     },
   });
+
+  useEffect(() => {
+    if (!mutation.isPending) {
+      setStatusIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setStatusIndex((i) => Math.min(i + 1, STATUS_MESSAGES.length - 1));
+    }, STATUS_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [mutation.isPending]);
 
   const validateAndUpload = (file: File) => {
     setError("");
@@ -62,6 +87,7 @@ export function ImportExcelModal({
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
+    if (mutation.isPending) return;
     const file = e.dataTransfer.files?.[0];
     if (file) validateAndUpload(file);
   };
@@ -76,7 +102,7 @@ export function ImportExcelModal({
         <div
           onDragOver={(e) => {
             e.preventDefault();
-            setIsDragging(true);
+            if (!mutation.isPending) setIsDragging(true);
           }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
@@ -84,18 +110,23 @@ export function ImportExcelModal({
             isDragging ? "border-slate-500 bg-slate-50" : "border-slate-300"
           }`}
         >
-          <p className="text-slate-500 mb-2">Drag & drop your .xlsx file here, or</p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            aria-label="Import budget from Excel"
-            accept={ACCEPT_ATTR}
-            onChange={handleFileChange}
-            disabled={mutation.isPending}
-            className="text-xs text-slate-600"
-          />
-          {mutation.isPending && (
-            <p className="text-xs text-slate-500 mt-2">Reading your spreadsheet...</p>
+          {mutation.isPending ? (
+            <div className="flex flex-col items-center gap-2 py-2" aria-live="polite">
+              <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              <p className="text-slate-600">{STATUS_MESSAGES[statusIndex]}</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-slate-500 mb-2">Drag & drop your .xlsx file here, or</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                aria-label="Import budget from Excel"
+                accept={ACCEPT_ATTR}
+                onChange={handleFileChange}
+                className="text-xs text-slate-600"
+              />
+            </>
           )}
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}

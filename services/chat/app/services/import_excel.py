@@ -27,13 +27,45 @@ def _default_budget_name(source: str) -> str:
     return name.replace("_", " ").replace("-", " ").strip() or "Imported Budget"
 
 
-def _lines_from_extraction(extraction: ExcelExtractionResult) -> list[dict]:
+def _should_swap_local_and_target(extraction: ExcelExtractionResult) -> bool:
+    """True when local_amount/target_amount are collectively a better match
+    for the sheet's own donor_total_amount if swapped — i.e. the model
+    reported the donor-currency figures under local_amount and vice versa.
+    Asking the model to pick which raw number is "the" local-currency
+    amount proved unreliable even when it identified the currencies
+    themselves correctly, so this cross-checks both reported columns
+    against a figure the sheet already computed rather than trusting the
+    model's per-line label. See design.md Decision 11."""
+    donor_total = extraction.donor_total_amount
+    if not donor_total:
+        return False
+
+    target_sum = sum(ln.target_amount for ln in extraction.lines if ln.target_amount is not None)
+    if not target_sum:
+        return False
+    local_sum = sum(ln.local_amount for ln in extraction.lines if ln.local_amount is not None)
+
+    err_as_is = abs(target_sum - donor_total) / donor_total
+    err_swapped = abs(local_sum - donor_total) / donor_total if local_sum else float("inf")
+    return err_swapped < err_as_is
+
+
+def _lines_from_extraction(extraction: ExcelExtractionResult, *, swap: bool) -> list[dict]:
     lines: list[dict] = []
     for line in extraction.lines:
-        extra_fields = dict(line.extra_fields) if line.extra_fields else None
-        amount = line.amount
+        local_amount, target_amount = line.local_amount, line.target_amount
+        if swap:
+            local_amount, target_amount = target_amount, local_amount
+        amount = local_amount if local_amount is not None else target_amount
+
+        # A cleanly resolved line never keeps model-supplied extra_fields —
+        # e.g. a donor-currency value the model tucked in alongside a
+        # correctly-extracted local-currency amount, redundant with the
+        # platform's own estimated-rate conversion. Only a genuinely
+        # low-confidence/unresolved line preserves raw data for review.
+        extra_fields = None
         if line.confidence < CONFIDENCE_THRESHOLD or amount is None:
-            extra_fields = extra_fields or {}
+            extra_fields = dict(line.extra_fields) if line.extra_fields else {}
             extra_fields.setdefault("raw_category", line.category_name)
             extra_fields.setdefault("raw_description", line.description)
             extra_fields.setdefault("confidence", line.confidence)
@@ -104,9 +136,7 @@ async def run_import_excel(
         try:
             extraction = await ai_client.extract_budget_excel_lines(prepared.rows or [], token)
         except AiUnavailableError as exc:
-            raise ImportExcelError(
-                "AI extraction is unavailable. Try again later.", 503
-            ) from exc
+            raise ImportExcelError("AI extraction is unavailable. Try again later.", 503) from exc
         except AiRateLimitedError as exc:
             raise ImportExcelError(
                 "AI extraction rate limit exceeded. Try again later.", 429
@@ -114,7 +144,8 @@ async def run_import_excel(
         except AiClientError as exc:
             raise ImportExcelError("AI extraction failed. Try again later.", 502) from exc
 
-        line_dicts = _lines_from_extraction(extraction)
+        swap = _should_swap_local_and_target(extraction)
+        line_dicts = _lines_from_extraction(extraction, swap=swap)
         # A low-confidence (or missing) local currency is passed through as
         # unset rather than trusted — budget service falls back to the
         # owning org's own default currency. See budget-export-from-excel
@@ -131,10 +162,16 @@ async def run_import_excel(
             estimated_exchange_rate = line_total / donor_total_amount
         donor_template_id = None
         excel_import_fingerprint = prepared.fingerprint
+        # amount_col is swap-corrected so a later fingerprint-matched replay
+        # (which mechanically trusts this column index, no AI/no swap-check
+        # involved) reads the same, now-verified local-currency column.
+        amount_col = extraction.column_map.amount_col
+        if swap:
+            amount_col = extraction.column_map.target_amount_col
         excel_import_structure = {
             "category_col": extraction.column_map.category_col,
             "description_col": extraction.column_map.description_col,
-            "amount_col": extraction.column_map.amount_col,
+            "amount_col": amount_col,
             "currency": local_currency,
         }
         excel_import_lines_locked_count = len(line_dicts)

@@ -14,16 +14,40 @@ def create_budget(
     external_funder_name: str | None = None,
     owner_id: UUID | None = None,
     status: BudgetStatus | None = None,
+    local_currency: str | None = None,
+    actual_currency: str | None = None,
+    start_date: date | None = None,
+    duration_months: int | None = None,
+    total_amount: float | None = None,
+    donor_total_amount: float | None = None,
+    estimated_exchange_rate: float | None = None,
 ) -> BudgetModel:
-    budget = BudgetModel(
-        name=name,
-        owner_id=owner_id,
-        funding_customer_id=funding_customer_id,
-        external_funder_name=external_funder_name,
-        created_by=user_id,
-        updated_by=user_id,
-        status=status or BudgetStatus.draft,
-    )
+    kwargs = {
+        "name": name,
+        "owner_id": owner_id,
+        "funding_customer_id": funding_customer_id,
+        "external_funder_name": external_funder_name,
+        "created_by": user_id,
+        "updated_by": user_id,
+        "status": status or BudgetStatus.draft,
+        # Only set when provided — omitting a key lets the model's own
+        # column default (e.g. local_currency="GBP") apply, same as before
+        # this function accepted these fields at all.
+        **{
+            k: v
+            for k, v in {
+                "local_currency": local_currency,
+                "actual_currency": actual_currency,
+                "start_date": start_date,
+                "duration_months": duration_months,
+                "total_amount": total_amount,
+                "donor_total_amount": donor_total_amount,
+                "estimated_exchange_rate": estimated_exchange_rate,
+            }.items()
+            if v is not None
+        },
+    }
+    budget = BudgetModel(**kwargs)
     session.add(budget)
     session.commit()
     session.refresh(budget)

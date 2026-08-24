@@ -244,3 +244,4 @@ terraform/terraform.tfvars
 terraform/*.auto.tfvars
 frontend-typescript/tsconfig.tsbuildinfo
 .vscode/settings.json
+uploads/

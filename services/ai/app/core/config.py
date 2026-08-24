@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     OLLAMA_URL: str | None = None
     OLLAMA_MODEL: str = "llama3.2"
     AI_RATE_LIMIT_PER_HOUR: int = 100
+    # Separate, much tighter cap on the GrantFlow-funded Excel-import
+    # fallback specifically (see budget-export-from-excel design.md Decision
+    # 5/Risks) — a real, currently-uncapped cost center distinct from the
+    # general BYOK-covered AI_RATE_LIMIT_PER_HOUR above. Starting value, not
+    # yet informed by real usage data.
+    AI_EXCEL_IMPORT_PLATFORM_RATE_LIMIT_PER_HOUR: int = 10
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")
 

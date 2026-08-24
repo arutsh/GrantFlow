@@ -117,11 +117,21 @@ ParseEvent = Union[ParseProgress, ParseDone, ParseError, ParseUnavailable]
 class ExcelExtractionLine(BaseModel):
     """One extracted budget line. `confidence` below the caller's threshold
     means the caller should route the raw row into `extra_fields` instead of
-    trusting `category_name`/`description`/`amount` as clean values."""
+    trusting `category_name`/`description`/`local_amount` as clean values.
+
+    `local_amount`/`target_amount` are reported separately, each read
+    verbatim from its own column, rather than the model being asked to
+    decide which single number is "the" amount — a per-line semantic
+    currency-role judgment call proved unreliable in practice even with
+    the currency identified correctly elsewhere. The caller cross-checks
+    the two against the sheet's own `donor_total_amount` and swaps them if
+    the model mislabeled which column is which — see budget-export-from-
+    excel design.md Decision 11."""
 
     category_name: str
     description: str
-    amount: float | None = None
+    local_amount: float | None = None
+    target_amount: float | None = None
     confidence: float
     extra_fields: dict | None = None
 
@@ -137,6 +147,7 @@ class ExcelExtractionColumnMap(BaseModel):
     category_col: int | None = None
     description_col: int | None = None
     amount_col: int | None = None
+    target_amount_col: int | None = None
 
 
 class ExcelExtractionRequest(BaseModel):
