@@ -42,6 +42,7 @@ def send_invite_email(
                 # Must track EMAIL_VERIFICATION_TOKEN_TTL_HOURS in user_crud.py.
                 "expiry_hours": "24 hours",
                 "support_email": client.sender_email,
+                "privacy_url": f"{settings.FRONTEND_BASE_URL}/legal#privacy",
             },
         )
     except EmailProviderError as exc:

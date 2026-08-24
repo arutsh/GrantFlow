@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { brand } from "@/lib/brand";
 import ogfIcon from "@/assets/logos/ogf-icon.svg";
 
-const LAST_UPDATED = "July 2026";
+const LAST_UPDATED = "August 2026";
 
 export default function LegalPage() {
   return (
@@ -36,6 +36,16 @@ export default function LegalPage() {
             </p>
 
             <div>
+              <h2 className="font-semibold mb-2">Legal status</h2>
+              <p>
+                Open Grant Flow is operated by its maintainer as an
+                open-source project and is not yet a registered legal entity
+                (company or nonprofit). This may change as the project
+                develops.
+              </p>
+            </div>
+
+            <div>
               <h2 className="font-semibold mb-2">Information we collect</h2>
               <p>
                 When you submit our contact form, we collect your name,
@@ -64,9 +74,40 @@ export default function LegalPage() {
             </div>
 
             <div>
+              <h2 className="font-semibold mb-2">How long we keep it</h2>
+              <p>
+                We retain your information only for as long as needed to
+                provide the service, respond to your enquiry, or meet legal
+                and institutional record-keeping obligations. We don't yet
+                publish a fixed retention schedule; this is being finalized
+                as the platform matures.
+              </p>
+            </div>
+
+            <div>
+              <h2 className="font-semibold mb-2">Third-party processors</h2>
+              <p>
+                We use a small number of third-party services to operate the
+                hosted platform: Hetzner (infrastructure, EU), Mailjet and
+                MailerSend (transactional email, EU), Anthropic (AI-assisted
+                features, when you supply your own API key — this involves a
+                transfer of data outside the EU/EEA to the US), and Grafana
+                Cloud (operational monitoring). Each only receives the data
+                needed to provide its service.
+              </p>
+            </div>
+
+            <div>
               <h2 className="font-semibold mb-2">Contact</h2>
               <p>
-                Questions about this policy can be sent through our{" "}
+                Questions about this policy can be sent to{" "}
+                <a
+                  href="mailto:privacy@opengrantflow.com"
+                  className="underline hover:opacity-70"
+                >
+                  privacy@opengrantflow.com
+                </a>{" "}
+                or through our{" "}
                 <a href="/#contact" className="underline hover:opacity-70">
                   contact form
                 </a>
