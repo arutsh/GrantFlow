@@ -3,7 +3,7 @@ import { Archive } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { editBudget } from "@/api/budgetApi";
+import { editBudget, saveBudgetAsTemplate } from "@/api/budgetApi";
 import { useFunderPicker } from "@/hooks/useFunderPicker";
 import {
   getCurrentCustomerId,
@@ -66,6 +66,9 @@ export function BudgetViewHeader({
   const [durationMonths, setDurationMonths] = useState<number | "">(
     budget.duration_months ?? "",
   );
+  const [localCurrency, setLocalCurrency] = useState(
+    budget.local_currency ?? "",
+  );
   const [actualCurrency, setActualCurrency] = useState(
     budget.actual_currency ?? "",
   );
@@ -121,6 +124,7 @@ export function BudgetViewHeader({
     setName(budget.name ?? "");
     resetFunderPicker({ donorId: budget.funder?.id, donorName: budget.funder?.name });
     setDurationMonths(budget.duration_months ?? "");
+    setLocalCurrency(budget.local_currency ?? "");
     setActualCurrency(budget.actual_currency ?? "");
     setDonorTotalAmount(budget.donor_total_amount ?? "");
     setEstimatedExchangeRate(budget.estimated_exchange_rate ?? "");
@@ -184,6 +188,7 @@ export function BudgetViewHeader({
               funding_customer_id: selectedDonorId || null,
               duration_months:
                 durationMonths !== "" ? Number(durationMonths) : undefined,
+              local_currency: localCurrency.trim() || undefined,
               actual_currency: actualCurrency.trim() || undefined,
               // Explicit `null` (not `undefined`) when the user blanks the
               // field — `undefined` is dropped from the JSON body entirely,
@@ -377,6 +382,32 @@ export function BudgetViewHeader({
               )}
             </div>
             <div>
+              <div className="text-micro-label">Currency</div>
+              {isEditMode && !isCurrencyOnlyEdit ? (
+                <select
+                  value={localCurrency}
+                  onChange={(e) => setLocalCurrency(e.target.value)}
+                  disabled={isSaving}
+                  className="mt-0.5 border border-slate-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                >
+                  {/* Always offer the current value, even if off-list. */}
+                  {localCurrency &&
+                    !CURRENCY_CODES.includes(localCurrency) && (
+                      <option value={localCurrency}>{localCurrency}</option>
+                    )}
+                  {CURRENCY_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-sm font-semibold text-slate-700 mt-0.5">
+                  {budget.local_currency ?? "—"}
+                </div>
+              )}
+            </div>
+            <div>
               <div className="text-micro-label">Original currency</div>
               {isEditMode ? (
                 <select
@@ -503,6 +534,13 @@ function BudgetConfirmAction({
   const [startDate, setStartDate] = useState(budget.start_date ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  // Set once a confirm response says this budget is eligible for the
+  // optional "save as reusable template" prompt (budget-excel-import spec,
+  // group 2) — kept in local state so it survives isConfirmable flipping to
+  // false on the very next render once the budget is confirmed.
+  const [templatePromptBudgetId, setTemplatePromptBudgetId] = useState<
+    string | null
+  >(null);
 
   const currentCustomerId = getCurrentCustomerId();
   const isConfirmable =
@@ -518,8 +556,6 @@ function BudgetConfirmAction({
     if (isConfirmable) setStartDate(budget.start_date ?? "");
   }, [isConfirmable, budget.start_date]);
 
-  if (!isConfirmable || !canConfirm) return null;
-
   const handleConfirm = async () => {
     if (!startDate) return;
     setIsSaving(true);
@@ -531,6 +567,9 @@ function BudgetConfirmAction({
         status: "confirmed",
       });
       onConfirmed?.(updated);
+      if (updated.can_save_as_template) {
+        setTemplatePromptBudgetId(updated.id);
+      }
     } catch {
       setError("Failed to confirm budget. Please try again.");
     } finally {
@@ -539,31 +578,125 @@ function BudgetConfirmAction({
     }
   };
 
+  // Rendered independent of isConfirmable/canConfirm below — set from this
+  // component's own handleConfirm result, not derived from the budget prop,
+  // so it doesn't depend on (or race) the parent re-rendering with a fresh
+  // budget after the confirm PATCH resolves.
+  const templatePrompt = templatePromptBudgetId ? (
+    <SaveAsTemplatePrompt
+      budgetId={templatePromptBudgetId}
+      onDone={() => setTemplatePromptBudgetId(null)}
+    />
+  ) : null;
+
+  if (!isConfirmable || !canConfirm) {
+    return templatePrompt;
+  }
+
+  return (
+    <>
+      <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex flex-wrap items-center justify-end gap-2">
+        <span className="text-xs text-slate-400 mr-auto">
+          Confirm to unlock reporting
+        </span>
+        <label htmlFor="start_date" className="text-xs text-slate-500">
+          Start date
+        </label>
+        <div className="[&>div]:mb-0">
+          <Input
+            name="start_date"
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            disabled={isSaving}
+            showLabel={false}
+          />
+        </div>
+        <Button
+          variant="primary"
+          onClick={handleConfirm}
+          disabled={!startDate || isSaving}
+          className="text-sm"
+        >
+          {isSaving ? "Confirming..." : "Confirm Budget"}
+        </Button>
+        {error && (
+          <p className="text-sm text-red-600 w-full text-right">{error}</p>
+        )}
+      </div>
+      {templatePrompt}
+    </>
+  );
+}
+
+function SaveAsTemplatePrompt({
+  budgetId,
+  onDone,
+}: {
+  budgetId: string;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setIsSaving(true);
+    setError("");
+    try {
+      await saveBudgetAsTemplate(budgetId, name.trim());
+      setSaved(true);
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      setError(detail || "Failed to save template. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (saved) {
+    return (
+      <div className="mt-4 pt-3 border-t border-dashed border-slate-200 text-sm text-emerald-700">
+        Saved as a reusable template — future imports of this donor's layout
+        will skip AI extraction.
+      </div>
+    );
+  }
+
   return (
     <div className="mt-4 pt-3 border-t border-dashed border-slate-200 flex flex-wrap items-center justify-end gap-2">
       <span className="text-xs text-slate-400 mr-auto">
-        Confirm to unlock reporting
+        Save this layout as a reusable template for future imports?
       </span>
-      <label htmlFor="start_date" className="text-xs text-slate-500">
-        Start date
-      </label>
       <div className="[&>div]:mb-0">
         <Input
-          name="start_date"
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
+          name="template_name"
+          type="text"
+          placeholder="Template name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           disabled={isSaving}
           showLabel={false}
         />
       </div>
       <Button
         variant="primary"
-        onClick={handleConfirm}
-        disabled={!startDate || isSaving}
+        onClick={handleSave}
+        disabled={!name.trim() || isSaving}
         className="text-sm"
       >
-        {isSaving ? "Confirming..." : "Confirm Budget"}
+        {isSaving ? "Saving..." : "Save Template"}
+      </Button>
+      <Button
+        variant="secondary"
+        onClick={onDone}
+        disabled={isSaving}
+        className="text-sm"
+      >
+        Dismiss
       </Button>
       {error && (
         <p className="text-sm text-red-600 w-full text-right">{error}</p>

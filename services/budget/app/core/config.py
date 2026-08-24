@@ -1,4 +1,5 @@
 import os
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
@@ -24,9 +25,10 @@ class Settings(BaseSettings):
     donor_grantee_service_url: str
     user_service_url: str
     user_all_services_url: str
-    REDIS_URL: str
-    RULE_BASED_MAPPING_ENABLED: bool = False
-    USE_SEMANTIC_EMBEDDINGS: bool = True  # Use Sentence Transformers for embeddings
+    AI_SERVICE_URL: str = "http://localhost:8002/api/v1"
+    # Outbound call to ai's excel extraction endpoint waits on LLM inference —
+    # same reasoning as chat's identical setting.
+    HTTP_CLIENT_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0)
     # Databases
     budget_database_url: str
     # Object storage (S3-compatible: MinIO locally, Cloudflare R2 in production)
@@ -48,7 +50,4 @@ print(f"Base dir: {BASE_DIR}")
 print(f"settings.debug: {settings.debug}")
 print(f"settings.budget_database_url: {settings.budget_database_url}")
 print(f"settings.customer_service_url: {settings.customer_service_url}")
-print(f"settings.REDIS_URL: {settings.REDIS_URL}")
-print(f"settings.RULE_BASED_MAPPING_ENABLED: {settings.RULE_BASED_MAPPING_ENABLED}")
-print(f"settings.USE_SEMANTIC_EMBEDDINGS: {settings.USE_SEMANTIC_EMBEDDINGS}")
 # print(f"Allowed origins: {settings.ALLOWED_ORIGINS}")

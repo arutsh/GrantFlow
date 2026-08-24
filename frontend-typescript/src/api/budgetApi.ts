@@ -47,9 +47,10 @@ export const createBudgetWithLines = async (
 };
 
 export const importBudgetFromExcel = async (file: File): Promise<Budget> => {
+  // Chat service orchestrates this now, not budget — the drop-box UI itself is unchanged.
   const formData = new FormData();
   formData.append("file", file);
-  const { data } = await gatewayApi.post("/budgets/import-excel", formData);
+  const { data } = await gatewayApi.post("/chat/import-excel", formData);
   return data;
 };
 

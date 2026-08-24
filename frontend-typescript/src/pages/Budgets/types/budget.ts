@@ -60,6 +60,8 @@ export interface Budget {
   confirmed_at?: string | null; // ISO date string
   // Read-only, computed backend-side as donor_total_amount * estimated_exchange_rate; null when either input is unset.
   estimated_local_cap?: number | null;
+  // Gates the "save as reusable template" prompt on confirm.
+  can_save_as_template?: boolean;
   owner?: CustomerOut;
   funder?: CustomerOut | { name?: string; id?: string };
   trace?: TraceOut;
@@ -78,6 +80,7 @@ export interface BudgetUpdate {
   external_funder_name?: string;
   duration_months?: number;
   status?: string;
+  local_currency?: string;
   actual_currency?: string;
   start_date?: string;
   // Explicit `null` clears the field on save; `undefined` (the key omitted
@@ -99,6 +102,7 @@ export interface BudgetPatched {
   start_date?: string | null;
   donor_total_amount?: number | null;
   estimated_exchange_rate?: number | null;
+  can_save_as_template?: boolean;
 }
 
 // Reports
@@ -261,4 +265,10 @@ export interface CreateBudgetWithLinesRequest {
   external_funder_name: string;
   duration_months?: number | null;
   lines: BudgetLinePreview[];
+}
+
+export interface DonorTemplate {
+  id: number;
+  name: string;
+  categories?: BudgetCategory[];
 }

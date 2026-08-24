@@ -702,6 +702,54 @@ describe("BudgetViewHeader metadata edit", () => {
     expect(screen.getByText("10000 EUR")).toBeInTheDocument();
     expect(screen.getByText("0.8")).toBeInTheDocument();
   });
+
+  it("shows the budget's local_currency read-only outside edit mode", () => {
+    renderHeader(
+      <BudgetViewHeader budget={makeBudget({ local_currency: "EUR" })} isLocked={false} />,
+    );
+
+    expect(screen.getByText("Currency").nextElementSibling).toHaveTextContent("EUR");
+  });
+
+  it("saves an edited local_currency", async () => {
+    const user = userEvent.setup();
+    const updated = makeBudget({ local_currency: "USD" });
+    editBudgetMock.mockResolvedValue(updated);
+
+    renderHeader(
+      <BudgetViewHeader
+        budget={makeBudget({ local_currency: "EUR" })}
+        isLocked={false}
+        onBudgetUpdated={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const currencySelect = screen.getByText("Currency").nextElementSibling as HTMLSelectElement;
+    await user.selectOptions(currencySelect, "USD");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(editBudgetMock).toHaveBeenCalledWith(
+        "b1",
+        expect.objectContaining({ local_currency: "USD" }),
+      ),
+    );
+  });
+
+  it("shows local currency as read-only text, not a select, during a currency-only edit", () => {
+    const budget = makeBudget({ status: "confirmed", local_currency: "EUR" });
+
+    const { rerender } = renderHeader(
+      <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={vi.fn()} />,
+    );
+    rerender(
+      <BudgetViewHeader budget={budget} isLocked onBudgetUpdated={vi.fn()} editTrigger={1} />,
+    );
+
+    expect(screen.getByText("Currency").nextElementSibling).toHaveTextContent("EUR");
+    expect(screen.getByText("Currency").nextElementSibling?.tagName).not.toBe("SELECT");
+  });
 });
 
 describe("BudgetViewHeader funder picker", () => {

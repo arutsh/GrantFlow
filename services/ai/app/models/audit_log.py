@@ -20,6 +20,10 @@ class AIAuditLog(Base):
     output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     provider: Mapped[str] = mapped_column(String, nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False, default="")
+    # "byok" (organization's own provider key) or "platform" (GrantFlow-funded
+    # fallback, e.g. Excel import when no key is configured). Historical BYOK-only
+    # rows predate this column and default to "byok" via server_default.
+    funding_source: Mapped[str] = mapped_column(String, nullable=False, default="byok")
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)

@@ -17,12 +17,27 @@ pytestmark = pytest.mark.anyio
 # model is told it can do.
 _CURATED_REQUIRED = {
     "create_budget": {"budget_name", "external_funder_name"},
+    "create_budget_with_lines": {"budget_name", "external_funder_name", "lines"},
     "add_budget_line": {"category_name", "amount", "description"},
     "update_budget": set(),
     "get_budget_summary": set(),
 }
 _CURATED_PROPERTIES = {
     "create_budget": {"budget_name", "external_funder_name", "duration_months"},
+    "create_budget_with_lines": {
+        "budget_name",
+        "external_funder_name",
+        "duration_months",
+        "local_currency",
+        "actual_currency",
+        "donor_total_amount",
+        "estimated_exchange_rate",
+        "lines",
+        "donor_template_id",
+        "excel_import_fingerprint",
+        "excel_import_structure",
+        "excel_import_lines_locked_count",
+    },
     "add_budget_line": {"category_name", "amount", "description"},
     "update_budget": {"name", "external_funder_name", "duration_months", "local_currency"},
     "get_budget_summary": set(),
@@ -38,7 +53,7 @@ async def _schema_tools() -> dict:
 
 
 class TestSchemaParity:
-    async def test_all_four_curated_tools_present(self):
+    async def test_all_curated_tools_present(self):
         tools = await _schema_tools()
         assert tools.keys() == _CURATED_REQUIRED.keys()
 
@@ -49,14 +64,23 @@ class TestSchemaParity:
             assert actual == expected_required, f"{name}: {actual} != {expected_required}"
 
     async def test_no_extra_properties_beyond_curated_plus_local_currency(self):
-        """create_budget legitimately gains one field the old curated
-        version didn't have (local_currency) — a deliberate superset, not a
-        leak, since it's a plain user-controllable field with nothing
-        sensitive about it. Every other property must be an exact subset
-        match; nothing internal/sensitive may appear anywhere.
+        """create_budget legitimately gains fields the old curated version
+        didn't have (local_currency, donor_total_amount, estimated_exchange_rate)
+        — a deliberate superset, not a leak, since these are plain
+        user-controllable budget-economics fields with nothing sensitive
+        about them. Every other property must be an exact subset match;
+        nothing internal/sensitive may appear anywhere.
         """
         tools = await _schema_tools()
-        allowed_extra = {"create_budget": {"local_currency"}}
+        _budget_economics_fields = {
+            "local_currency",
+            "donor_total_amount",
+            "estimated_exchange_rate",
+        }
+        allowed_extra = {
+            "create_budget": _budget_economics_fields,
+            "update_budget": _budget_economics_fields - {"local_currency"},
+        }
         for name, curated in _CURATED_PROPERTIES.items():
             actual = set(tools[name].parameters.get("properties", {}).keys())
             extra = actual - curated

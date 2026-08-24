@@ -10,11 +10,21 @@ accepted here from the model.
 
 from pydantic import BaseModel, model_validator
 
+from shared.schemas.budget_with_lines_schema import BudgetLineInput
+
 
 class CreateBudgetParams(BaseModel):
     budget_name: str
     external_funder_name: str
     duration_months: int | None = None
+
+
+class CreateBudgetWithLinesParams(BaseModel):
+    budget_name: str
+    external_funder_name: str
+    duration_months: int | None = None
+    local_currency: str | None = None
+    lines: list[BudgetLineInput]
 
 
 class AddBudgetLineParams(BaseModel):
@@ -45,6 +55,7 @@ class GetBudgetSummaryParams(BaseModel):
 
 TOOL_PARAM_MODELS: dict[str, type[BaseModel]] = {
     "create_budget": CreateBudgetParams,
+    "create_budget_with_lines": CreateBudgetWithLinesParams,
     "add_budget_line": AddBudgetLineParams,
     "update_budget": UpdateBudgetParams,
     "get_budget_summary": GetBudgetSummaryParams,
