@@ -1,4 +1,4 @@
-"""Registry base shared by every domain; see budget_tool_registry.py for the pattern subclasses follow."""
+"""Registry base shared by every domain; see budget_tool_registry.py for the subclass pattern."""
 
 from dataclasses import dataclass
 

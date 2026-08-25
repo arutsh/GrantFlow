@@ -8,7 +8,7 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 1.4 Frontend: registration submit no longer stores a token/logs in; show a static "check your email" confirmation page instead
 - [x] 1.5 Frontend: `/verify-email` page consumes the access/refresh tokens now returned by the verify endpoint, logs the user in via `AuthContext`, and routes to the dashboard/onboarding on success
 - [x] 1.6 Tests: registration issues no session; verify-email issues a valid session with `email_verified: true`; expired/already-used/invalid tokens still rejected as before
-- [ ] 1.7 Run users-service test suite and flake8 (`--max-line-length=100`), and frontend test suite and lint, clean; PR merged
+- [x] 1.7 Run users-service test suite and flake8 (`--max-line-length=100`), and frontend test suite and lint, clean; PR merged
 
 ## 2. Anonymous, rate-limited resend-verification — depends on 1
 
@@ -17,14 +17,14 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 2.3 Make the response identical in shape and content regardless of whether the account exists, is already verified, or is pending (generic "if that account exists, check your email" message); only issue a new token and enqueue an email for an existing, pending account
 - [x] 2.4 Frontend: update the resend-verification call site to no longer require an authenticated session (e.g. usable directly from the "check your email" / confirm-email screens)
 - [x] 2.5 Tests: resend works without auth for a pending account; resend for an already-verified or nonexistent email returns the same generic response and performs no token/email action; repeated requests past the threshold are rate-limited with 429
-- [ ] 2.6 Run users-service test suite and flake8 clean, and frontend test suite and lint clean; PR merged
+- [x] 2.6 Run users-service test suite and flake8 clean, and frontend test suite and lint clean; PR merged
 
 ## 3. Login gating for unverified accounts — depends on 1, 2
 
 - [x] 3.1 Update `login_endpoint` to check `user.email_verified` after credential validation; if false, skip session issuance and return a distinct, non-authenticating response directing the user to resend-verification
 - [x] 3.2 Frontend: handle the new login response for unverified accounts — route to the confirm-email / resend screen instead of treating it as a login failure or a successful session
 - [x] 3.3 Tests: login with correct credentials for an unverified account issues no session and returns the distinct response; login for a verified account is unchanged
-- [ ] 3.4 Run users-service test suite and flake8 clean, and frontend test suite and lint clean; PR merged
+- [x] 3.4 Run users-service test suite and flake8 clean, and frontend test suite and lint clean; PR merged
 
 ## 4. Server-side session enforcement + rollout migration — depends on 1, 2, 3
 
@@ -33,5 +33,5 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 4.3 Write a one-time rollout migration/script that revokes all existing sessions belonging to users with `email_verified = false`, using the same revocation mechanism as the logout endpoint
 - [x] 4.4 Frontend: handle the new 403 `email_not_verified` response distinctly from 401 in the API client/interceptor (route to confirm-email rather than logging out / attempting silent refresh)
 - [x] 4.5 Tests: a request with a valid but unverified token is rejected with 403 on a representative protected endpoint in each of users/budget/ai services (shared dependency, but verify it's actually wired the same way in each); a verified token behaves exactly as before
-- [ ] 4.6 Manually verify the two known-affected accounts (`toby@sansome.org`, `avnikmelikian@gmail.com`) can complete verification via the group-2 resend flow post-rollout (once the underlying Mailjet outage is separately resolved)
-- [ ] 4.7 Run affected services' test suites and flake8 clean, and frontend test suite and lint clean; PR merged
+- [x] 4.6 Manually verify the two known-affected accounts (`toby@sansome.org`, `avnikmelikian@gmail.com`) can complete verification via the group-2 resend flow post-rollout (once the underlying Mailjet outage is separately resolved)
+- [x] 4.7 Run affected services' test suites and flake8 clean, and frontend test suite and lint clean; PR merged

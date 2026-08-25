@@ -57,7 +57,9 @@ def get_or_create_categories_by_names_service(
 
     missing_names = [name for name in unique_names if name not in result]
     if missing_names:
-        names_and_codes = [(name, "_".join(name.split()).upper()) for name in missing_names]
+        names_and_codes: list[tuple[str, str | None]] = [
+            (name, "_".join(name.split()).upper()) for name in missing_names
+        ]
         created = bulk_create_budget_categories(db, valid_user["user_id"], names_and_codes, None)
         result.update({category.name: category for category in created})
 

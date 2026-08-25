@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import Depends
 from pydantic_ai import Agent
+from pydantic_ai.output import OutputSpec
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -27,16 +28,19 @@ class ResolvedModel:
     model_name: str
 
 
-def build_agent(model: AnthropicModel | OpenAIChatModel, **kwargs: Any) -> Agent:
-    """Construct a PydanticAI Agent with OTEL instrumentation enabled.
+OutputDataT = TypeVar("OutputDataT")
 
-    Every Agent in this service must go through here — `agent.run()` produces
-    no spans at all unless `instrument = True` is set, so a forgotten call site
-    turns the entire model call (provider request, retries, errors) into a gap
-    in the trace with no explanation. See excel-import trace investigation,
-    2026-08-21.
-    """
-    agent = Agent(model, **kwargs)
+
+def build_agent(
+    model: AnthropicModel | OpenAIChatModel,
+    *,
+    output_type: OutputSpec[OutputDataT] = str,  # type: ignore[assignment]
+    **kwargs: Any,
+) -> Agent[None, OutputDataT]:
+    """Construct a PydanticAI Agent with OTEL instrumentation enabled — every Agent in this
+    service must go through here so `agent.run()` produces spans (see 2026-08-21 trace
+    investigation)."""
+    agent: Agent[None, OutputDataT] = Agent(model, output_type=output_type, **kwargs)
     agent.instrument = True
     return agent
 

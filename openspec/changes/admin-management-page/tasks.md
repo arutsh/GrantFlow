@@ -9,7 +9,7 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 1.5 Decide which company fields are admin-editable vs. superuser-only — all fields, including `is_ngo`/`is_donor`, are admin-editable (design.md decision 7)
 - [x] 1.6 Decide the `superuser-tenant-administration` mechanism — impersonation + reuse of `company-user-administration` endpoints for invite/remove/promote-demote/update-company; a dedicated superuser-scoped endpoint only for company deactivation (design.md decision 2)
 - [x] 1.7 Create the `donor-grantee-relationship` delta spec (new requirement: reject `donor_id == grantee_id`) via `/opsx:continue` — surfaced by decision 7, not yet a file under this change
-- [ ] 1.8 PR merged (docs-only: design.md + spec updates) — N/A this pass: implementing all groups on one branch per user instruction, not one-PR-per-group
+- [x] 1.8 PR merged (docs-only: design.md + spec updates) — N/A this pass: implementing all groups on one branch per user instruction, not one-PR-per-group
 
 ## 2. Backend: company-user-administration — depends on 1
 

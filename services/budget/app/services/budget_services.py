@@ -602,9 +602,7 @@ async def create_budget_with_lines_service(
         categories_by_name = get_or_create_categories_by_names_service(
             db, valid_user, [line_input.category_name for line_input in request.lines]
         )
-        category_ids_by_name = {
-            name: category.id for name, category in categories_by_name.items()
-        }
+        category_ids_by_name = {name: category.id for name, category in categories_by_name.items()}
         line_specs = []
         for line_input in request.lines:
             line_specs.append(
