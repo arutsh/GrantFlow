@@ -180,3 +180,10 @@ The system SHALL let a grantee editing an already-created budget choose the fund
 - **WHEN** a grantee selects an approved donor on a budget that previously had a free-text funder, then saves
 - **THEN** the budget's `funding_customer_id` is set to that donor's id and `external_funder_name` is cleared
 
+### Requirement: A customer cannot be its own donor-grantee relationship
+The system SHALL reject creating a `donor_grantees` record where `donor_id` equals `grantee_id`. This closes a gap surfaced by `company-user-administration`'s "Admin can update their own company's details" requirement, which lets a company self-service-configure `is_ngo` and `is_donor` simultaneously — making a self-referential donor-grantee relationship reachable for the first time.
+
+#### Scenario: Creating a donor-grantee relationship with the same customer on both sides is rejected
+- **WHEN** a request to create a donor-grantee relationship supplies the same `customer_id` for both `donor_id` and `grantee_id`
+- **THEN** the system rejects the request with a 400 error and no relationship is created
+

@@ -21,9 +21,9 @@ Once a founder holds `role: admin`, every existing capability already gated on `
 - **WHEN** a founder who just created their company refreshes their access token and calls an endpoint under `/ai/settings` (gated on `role in {"admin", "superuser"}` in `services/ai/app/api/settings_routes.py`)
 - **THEN** the request succeeds on the strength of the `admin` role claim alone, with no change needed in the AI service
 
-#### Scenario: Inviting other teammates is not part of this capability
+#### Scenario: Inviting other teammates is now covered by a dedicated capability
 - **WHEN** a company admin wants to add a teammate to their company
-- **THEN** no self-service invitation mechanism exists yet — only a superuser can assign another user's `customer_id`/`role` — and that gap is explicitly out of scope for this capability, tracked as separate follow-on work
+- **THEN** the admin uses the invitation mechanism defined by the `company-user-administration` capability, rather than requiring a superuser to assign the teammate's `customer_id`/`role` directly
 
 ### Requirement: Joining an existing company does not change role
 When a user attaches to an already-existing company by supplying `customer_id` (rather than `new_customer_name`) during onboarding, the system SHALL leave their role unchanged.
