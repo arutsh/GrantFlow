@@ -310,6 +310,55 @@ class TestNoMatchCallsAi:
         assert amounts == [225000.0, 180000.0]
         assert params["excel_import_structure"]["amount_col"] == 2
 
+    async def test_swap_without_target_amount_col_skips_fingerprint(self):
+        """Regression test: swap-correction can trigger from per-line values alone,
+        independently of column_map. If target_amount_col is missing there's no
+        reliable column to replay from, so no fingerprint/structure is saved
+        rather than persisting amount_col=None, which would break every future
+        replay of that layout (extracting zero lines forever)."""
+        http = _http(
+            _http_response(
+                200,
+                {
+                    "matched": False,
+                    "fingerprint": "fp-8",
+                    "rows": [["Activities", "Coffee", "225000", "500"]],
+                },
+            )
+        )
+        ai_client = MagicMock()
+        ai_client.extract_budget_excel_lines = AsyncMock(
+            return_value=ExcelExtractionResult(
+                local_currency="AMD",
+                local_currency_confidence=0.95,
+                target_currency="EUR",
+                donor_total_amount=225000.0,
+                lines=[
+                    # Mislabeled (local_sum matches donor_total, not target_sum) so
+                    # _should_swap_local_and_target returns True.
+                    ExcelExtractionLine(
+                        category_name="Activities",
+                        description="Coffee",
+                        local_amount=225000.0,
+                        target_amount=500.0,
+                        confidence=0.9,
+                    )
+                ],
+                column_map=ExcelExtractionColumnMap(
+                    category_col=0, description_col=1, amount_col=3, target_amount_col=None
+                ),
+            )
+        )
+        registry = _tool_registry(ToolResult(success=True, message="ok", created_resource_id="b-8"))
+
+        await run_import_excel(
+            _upload_file(), token="tok", http=http, ai_client=ai_client, tool_registry=registry
+        )
+
+        params = registry.call_tool.call_args.args[1]
+        assert params["excel_import_fingerprint"] is None
+        assert params["excel_import_structure"] is None
+
     async def test_low_confidence_local_currency_falls_back_to_unset(self):
         """Below the confidence threshold, local_currency is passed through as
         unset rather than trusted — budget service applies the org's own

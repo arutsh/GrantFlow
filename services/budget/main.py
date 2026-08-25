@@ -2,7 +2,19 @@
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.api import (
+
+# Must run before any app.* import — app.db.session creates the engine at import time.
+from shared.observability import (
+    init_logging,
+    init_observability,
+    instrument_fastapi,
+    metrics_endpoint,
+)
+from shared.security.privileged_access import register_privileged_access_sink
+
+init_observability("budget-service")
+
+from app.api import (  # noqa: E402
     budget_routes,
     budget_line_routes,
     mapping_routes,
@@ -13,32 +25,26 @@ from app.api import (
     currency_conversion_routes,
     health_routes,
 )
-from fastapi.openapi.utils import get_openapi
-from app.core.exceptions import DomainError, PermissionDenied
-from shared.exceptions.error_handlers import domain_error_handler, unhandled_exception_handler
-from app.core.config import settings
-from app.core.logging import setup_logging, get_logger
-from app.services.user_client import (
+from fastapi.openapi.utils import get_openapi  # noqa: E402
+from app.core.exceptions import DomainError, PermissionDenied  # noqa: E402
+from shared.exceptions.error_handlers import (  # noqa: E402
+    domain_error_handler,
+    unhandled_exception_handler,
+)
+from app.core.config import settings  # noqa: E402
+from app.core.logging import setup_logging, get_logger  # noqa: E402
+from app.services.user_client import (  # noqa: E402
     init_urls as user_client_init_urls,
     close_urls as close_user_client_urls,
 )
-from app.services.event_consumer import init_consumer, close_consumer, start_consumer
-from app.services.privileged_access_audit import write_privileged_access_log
-
-from shared.observability import (
-    init_logging,
-    init_observability,
-    instrument_fastapi,
-    metrics_endpoint,
-)
-from shared.security.privileged_access import register_privileged_access_sink
+from app.services.event_consumer import init_consumer, close_consumer, start_consumer  # noqa: E402
+from app.services.privileged_access_audit import write_privileged_access_log  # noqa: E402
 
 setup_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
 
 register_privileged_access_sink(write_privileged_access_log)
 
-init_observability("budget-service")
 init_logging("budget-service")
 
 # Only enable debugpy when running in VSCode

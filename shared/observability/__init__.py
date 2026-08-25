@@ -1,5 +1,6 @@
 """Shared observability setup using OTLP exporter for traces, metrics, and logs."""
 
+import inspect
 import logging
 import os
 from functools import wraps
@@ -183,13 +184,25 @@ def init_logging(service_name: str, otlp_endpoint: str | None = None) -> None:
 
 
 def traced(span_name: str | None = None):
-    """Decorator to create a span for a function."""
+    """Decorator to create a span for a function. Works on sync and async functions."""
 
     def decorator(func):
+        name = span_name or func.__name__
+
+        if inspect.iscoroutinefunction(func):
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                tracer = trace.get_tracer(__name__)
+                with tracer.start_as_current_span(name):
+                    return await func(*args, **kwargs)
+
+            return async_wrapper
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span(span_name or func.__name__):
+            with tracer.start_as_current_span(name):
                 return func(*args, **kwargs)
 
         return wrapper

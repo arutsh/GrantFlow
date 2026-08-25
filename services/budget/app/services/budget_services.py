@@ -13,8 +13,10 @@ from app.crud.budget_crud import (
     delete_budget,
     get_funded_budgets_summary,
     get_funded_grantees,
+    recalculate_budget_total,
 )
-from app.crud.budget_line_crud import delete_budget_line
+from app.crud.budget_line_crud import delete_budget_line, bulk_create_budget_lines
+from app.services.budget_category_services import get_or_create_categories_by_names_service
 from app.crud.dashboard_crud import (
     count_budgets_by_status,
     sum_committed_by_currency,
@@ -28,7 +30,6 @@ from app.services.customer_client import (
     validate_customer_can_fund,
     validate_customer_can_own,
     get_customer_cached,
-    CustomerServiceError,
 )
 from app.services.donor_grantee_client import validate_donor_grantee_relationship
 from app.schemas.budget_schema import (
@@ -562,15 +563,15 @@ async def delete_budget_service(budget_id: UUID, valid_user: dict, db):
     return False
 
 
+# from shared.observability import traced
+
+
+# @traced("create_budget_with_lines_service")
 async def create_budget_with_lines_service(
     request: CreateBudgetWithLinesRequest,
     valid_user: dict,
     db,
 ):
-    # Deferred import to avoid circular dependency
-    from app.services.budget_line_services import create_budget_line_service
-    from app.schemas import BudgetLineCreate
-
     new_budget = None
     created_lines = []
     try:
@@ -578,14 +579,8 @@ async def create_budget_with_lines_service(
 
         local_currency = request.local_currency
         if not local_currency:
-            # Excel extraction couldn't resolve (or wasn't confident enough
-            # about) the local currency — fall back to the owning org's own
-            # default rather than the model's hardcoded "GBP" column
-            # default. See budget-export-from-excel design.md Decision 8.
-            try:
-                local_currency = get_customer_cached(owner_id).get("currency")
-            except CustomerServiceError:
-                local_currency = None
+            # Fall back to the org's default currency (Decision 8); errors propagate, no silent GBP.
+            local_currency = get_customer_cached(owner_id).get("currency")
 
         new_budget = await create_budget_service(
             BudgetCreate(
@@ -604,19 +599,27 @@ async def create_budget_with_lines_service(
         )
         set_span_attributes(budget_id=new_budget.id)
 
+        categories_by_name = get_or_create_categories_by_names_service(
+            db, valid_user, [line_input.category_name for line_input in request.lines]
+        )
+        category_ids_by_name = {
+            name: category.id for name, category in categories_by_name.items()
+        }
+        line_specs = []
         for line_input in request.lines:
-            line = create_budget_line_service(
-                db,
-                valid_user,
-                BudgetLineCreate(
-                    budget_id=new_budget.id,
-                    description=line_input.description,
-                    amount=line_input.amount,
-                    category_name=line_input.category_name,
-                    extra_fields=line_input.extra_fields,
-                ),
+            line_specs.append(
+                {
+                    "category_id": category_ids_by_name[line_input.category_name],
+                    "description": line_input.description,
+                    "amount": line_input.amount,
+                    "extra_fields": line_input.extra_fields,
+                }
             )
-            created_lines.append(line)
+
+        created_lines = bulk_create_budget_lines(
+            db, valid_user["user_id"], new_budget.id, line_specs
+        )
+        recalculate_budget_total(db, new_budget.id)
 
         # Excel-import provenance, set only by chat's import-excel orchestration.
         if any(

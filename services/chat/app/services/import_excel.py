@@ -161,19 +161,22 @@ async def run_import_excel(
             line_total = sum(line["amount"] for line in line_dicts)
             estimated_exchange_rate = line_total / donor_total_amount
         donor_template_id = None
-        excel_import_fingerprint = prepared.fingerprint
-        # amount_col is swap-corrected so a later fingerprint-matched replay
-        # (which mechanically trusts this column index, no AI/no swap-check
-        # involved) reads the same, now-verified local-currency column.
+        # Swap-corrected so a fingerprint-matched replay reads the verified local-currency column.
         amount_col = extraction.column_map.amount_col
         if swap:
             amount_col = extraction.column_map.target_amount_col
-        excel_import_structure = {
-            "category_col": extraction.column_map.category_col,
-            "description_col": extraction.column_map.description_col,
-            "amount_col": amount_col,
-            "currency": local_currency,
-        }
+        if amount_col is None:
+            # No reliable column to replay from — skip persisting a fingerprint/structure.
+            excel_import_fingerprint = None
+            excel_import_structure = None
+        else:
+            excel_import_fingerprint = prepared.fingerprint
+            excel_import_structure = {
+                "category_col": extraction.column_map.category_col,
+                "description_col": extraction.column_map.description_col,
+                "amount_col": amount_col,
+                "currency": local_currency,
+            }
         excel_import_lines_locked_count = len(line_dicts)
 
     if not line_dicts:

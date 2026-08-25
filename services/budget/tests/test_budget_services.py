@@ -26,9 +26,6 @@ client = TestClient(app)
 
 USER_ID = str(uuid4())
 CUSTOMER_ID = str(uuid4())
-_CATEGORY_LOOKUP = (
-    "app.services.budget_category_services.get_budget_category_by_name_and_template_id"
-)
 
 
 def _mock_valid_user():
@@ -323,20 +320,20 @@ class TestAiDraftBudgetStatus:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
-            patch("app.services.budget_line_services.get_budget", return_value=budget),
             patch(
-                _CATEGORY_LOOKUP,
-                return_value=line.category,
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
             ),
-            patch(
-                "app.services.budget_line_services.create_budget_line",
-                return_value=line,
-            ),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
                 return_value=_enriched(budget),
+            ),
+            patch(
+                "app.services.budget_services.get_customer_cached",
+                return_value={"currency": "GBP"},
             ),
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
@@ -397,10 +394,12 @@ class TestCreateBudgetFieldsPersist:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
-            patch("app.services.budget_line_services.get_budget", return_value=budget),
-            patch(_CATEGORY_LOOKUP, return_value=line.category),
-            patch("app.services.budget_line_services.create_budget_line", return_value=line),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -471,10 +470,12 @@ class TestCreateBudgetFieldsPersist:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
-            patch("app.services.budget_line_services.get_budget", return_value=budget),
-            patch(_CATEGORY_LOOKUP, return_value=line.category),
-            patch("app.services.budget_line_services.create_budget_line", return_value=line),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -503,10 +504,12 @@ class TestCreateBudgetFieldsPersist:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
-            patch("app.services.budget_line_services.get_budget", return_value=budget),
-            patch(_CATEGORY_LOOKUP, return_value=line.category),
-            patch("app.services.budget_line_services.create_budget_line", return_value=line),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -523,6 +526,19 @@ class TestCreateBudgetFieldsPersist:
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs.get("local_currency") == "AMD"
         mock_get_customer.assert_called_once_with(CUSTOMER_ID)
+
+    def test_with_lines_fails_when_currency_fallback_unreachable(self):
+        """A CustomerServiceError while resolving the org's default currency
+        propagates as a 500 rather than silently defaulting to GBP."""
+        from app.services.customer_client import CustomerServiceError
+
+        with patch(
+            "app.services.budget_services.get_customer_cached",
+            side_effect=CustomerServiceError("unreachable"),
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 500
 
 
 class TestDeleteBudgetIntegrityGuard:

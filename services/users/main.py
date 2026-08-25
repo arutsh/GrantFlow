@@ -3,7 +3,24 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
-from app.api import (
+
+# Must run before any app.* import — app.db.session creates the engine at import time.
+from app.core.config import settings
+from app.core.logging import setup_logging, get_logger
+from shared.observability import (
+    init_logging,
+    init_observability,
+    instrument_fastapi,
+    metrics_endpoint,
+)
+
+setup_logging(settings.LOG_LEVEL)
+logger = get_logger(__name__)
+
+init_observability("users-service")
+init_logging("users-service")
+
+from app.api import (  # noqa: E402
     user_routes,
     customer_routes,
     auth_routes,
@@ -11,28 +28,17 @@ from app.api import (
     donor_grantee_routes,
     health_routes,
 )
-from app.db.init_db import init_db
-from fastapi.openapi.utils import get_openapi
-from app.core.config import settings
-from app.core.exceptions import DomainError, PermissionDenied
-from shared.exceptions.error_handlers import domain_error_handler, unhandled_exception_handler
-from app.core.logging import setup_logging, get_logger
-from app.services.event_publisher import init_publisher, close_publisher
-from app.services.privileged_access_audit import write_privileged_access_log
-from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
-from shared.observability import (
-    init_logging,
-    init_observability,
-    instrument_fastapi,
-    metrics_endpoint,
+from app.db.init_db import init_db  # noqa: E402
+from fastapi.openapi.utils import get_openapi  # noqa: E402
+from app.core.exceptions import DomainError, PermissionDenied  # noqa: E402
+from shared.exceptions.error_handlers import (  # noqa: E402
+    domain_error_handler,
+    unhandled_exception_handler,
 )
-from shared.security.privileged_access import register_privileged_access_sink
-
-setup_logging(settings.LOG_LEVEL)
-logger = get_logger(__name__)
-
-init_observability("users-service")
-init_logging("users-service")
+from app.services.event_publisher import init_publisher, close_publisher  # noqa: E402
+from app.services.privileged_access_audit import write_privileged_access_log  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider  # noqa: E402
+from shared.security.privileged_access import register_privileged_access_sink  # noqa: E402
 
 register_privileged_access_sink(write_privileged_access_log)
 

@@ -22,15 +22,12 @@ VALID_PAYLOAD: dict[str, Any] = {
     "budget_name": "Youth Program 2025",
     "external_funder_name": "Smith Foundation",
     "duration_months": 12,
+    "local_currency": "GBP",
     "lines": [
         {"category_name": "Personnel", "description": "2 FTE staff", "amount": 100000.0},
         {"category_name": "Supplies", "description": "Program supplies", "amount": 5000.0},
     ],
 }
-
-_CATEGORY_LOOKUP = (
-    "app.services.budget_category_services" ".get_budget_category_by_name_and_template_id"
-)
 
 
 def _mock_valid_user():
@@ -72,6 +69,10 @@ def _mock_category(name="Personnel"):
     return BudgetCategoryFactory.build(id=CATEGORY_ID, name=name, code=name.upper())
 
 
+def _mock_categories_by_name(*names):
+    return {name: _mock_category(name) for name in names}
+
+
 def _mock_enriched_budget(lines=None) -> dict:
     return {
         "id": BUDGET_ID,
@@ -100,10 +101,14 @@ class TestCreateBudgetWithLinesEndpoint:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
-            patch("app.services.budget_line_services.create_budget_line", side_effect=mock_lines),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Personnel", "Supplies"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines
+            ),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -123,10 +128,14 @@ class TestCreateBudgetWithLinesEndpoint:
         payload = {**VALID_PAYLOAD, "lines": [VALID_PAYLOAD["lines"][0]]}
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
-            patch("app.services.budget_line_services.create_budget_line", return_value=mock_line),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Personnel"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines", return_value=[mock_line]
+            ),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -148,45 +157,38 @@ class TestCreateBudgetWithLinesEndpoint:
         assert response.status_code == 401
         app.dependency_overrides[get_validated_user] = _mock_valid_user
 
-    def test_rolls_back_on_second_line_failure(self):
-        """If the second line fails, the first line and budget are cleaned up."""
+    def test_rolls_back_budget_if_category_resolution_fails(self):
+        """Category resolution fails before the bulk insert runs — no lines to clean up."""
         mock_budget = _mock_budget()
-        first_line = _mock_line(LINE_ID_1)
-        call_count = {"n": 0}
-
-        def line_side_effect(*args, **kwargs):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return first_line
-            raise Exception("DB error on second line")
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
             patch(
-                "app.services.budget_line_services.create_budget_line", side_effect=line_side_effect
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                side_effect=Exception("DB error"),
             ),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
             patch("app.services.budget_services.delete_budget_line") as mock_delete_line,
             patch("app.services.budget_services.delete_budget") as mock_delete_budget,
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
 
         assert response.status_code == 500
-        mock_delete_line.assert_called_once()
+        mock_delete_line.assert_not_called()
         mock_delete_budget.assert_called_once()
 
-    def test_rolls_back_budget_if_first_line_fails(self):
-        """If the very first line fails, no lines to clean up — only budget is deleted."""
+    def test_rolls_back_budget_if_bulk_line_insert_fails(self):
+        """The bulk insert is one commit for all lines, so a failure there is
+        all-or-nothing — no partially-created lines to clean up, only the budget."""
         mock_budget = _mock_budget()
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
             patch(
-                "app.services.budget_line_services.create_budget_line",
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Personnel", "Supplies"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines",
                 side_effect=Exception("DB error"),
             ),
             patch("app.services.budget_services.delete_budget_line") as mock_delete_line,
@@ -202,6 +204,7 @@ class TestCreateBudgetWithLinesEndpoint:
         payload = {
             "budget_name": "Simple Budget",
             "external_funder_name": "Donor Corp",
+            "local_currency": "GBP",
             "lines": [{"category_name": "Travel", "description": "Transport", "amount": 2000.0}],
         }
         mock_budget = _mock_budget()
@@ -209,10 +212,14 @@ class TestCreateBudgetWithLinesEndpoint:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category("Travel")),
-            patch("app.services.budget_line_services.create_budget_line", return_value=mock_line),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Travel"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines", return_value=[mock_line]
+            ),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -239,10 +246,14 @@ class TestCreateBudgetWithLinesEndpoint:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
-            patch("app.services.budget_line_services.create_budget_line", side_effect=mock_lines),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Personnel", "Supplies"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines
+            ),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
@@ -273,10 +284,12 @@ class TestCreateBudgetWithLinesEndpoint:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=mock_budget),
-            patch("app.services.budget_line_services.get_budget", return_value=mock_budget),
-            patch(_CATEGORY_LOOKUP, return_value=_mock_category()),
             patch(
-                "app.services.budget_line_services.create_budget_line",
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value=_mock_categories_by_name("Personnel", "Supplies"),
+            ),
+            patch(
+                "app.services.budget_services.bulk_create_budget_lines",
                 side_effect=Exception("DB error"),
             ),
             patch("app.services.budget_services.delete_budget_line"),
