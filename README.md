@@ -1,10 +1,10 @@
 # GrantFlow
 
-**Version:** 0.1.0 · **Last updated:** 2026-08-07
+**Version:** 0.1.0 · **Last updated:** 2026-08-25
 
 GrantFlow is an open-source platform for budget management and financial reporting in NGOs and donor organizations. It was born from 20 years of watching organizations manage grant budgets in incompatible Excel files — and a belief that modern software engineering can fix that.
 
-> **Status:** Active development — not yet production-ready.
+> **Status:** Active development — live in production.
 
 → **[Product Overview](docs/PRODUCT.md)** — what GrantFlow does, who it's for, and why it exists.
 
@@ -88,7 +88,8 @@ graph TB
 | Messaging | RabbitMQ 3 (aio-pika) |
 | Auth | JWT (HS256) · refresh token rotation via Redis |
 | AI | Anthropic API (BYOK) · Ollama (local dev) · pydantic-ai |
-| Observability | OpenTelemetry (OTLP) · Jaeger · Prometheus · Grafana |
+| Email | MailerSend · Mailjet (transactional, dual-provider) |
+| Observability | OpenTelemetry (OTLP) · Jaeger/Prometheus/Grafana (dev) · Grafana Cloud (prod) |
 | Gateway | Nginx |
 | Containerization | Docker · Docker Compose |
 | CI | GitHub Actions (lint + tests per service) |
@@ -293,15 +294,16 @@ GrantFlow/
 │   ├── observability/      # OpenTelemetry setup
 │   ├── schemas/            # Pydantic schemas (cross-service)
 │   ├── security/           # JWT utils, FastAPI auth dependencies
-│   ├── services/           # Currency service
+│   ├── services/           # Currency service, transactional email (MailerSend/Mailjet)
 │   ├── storage/            # S3-compatible storage service (report attachments)
 │   └── utils/              # HTTP client wrapper
-└── services/
-    ├── users/              # FastAPI: users, customers, auth
-    ├── budget/             # FastAPI: budgets, budget lines
-    ├── ai/                 # FastAPI: stateless LLM reasoning (/ai/decide), rate limiting, audit logs
-    ├── chat/               # FastAPI: agent host — conversations, tool registry, dispatch loop, SSE streaming
-    └── worker/             # Celery: background jobs (RabbitMQ broker, Redis result backend)
+├── services/
+│   ├── users/              # FastAPI: users, customers, auth
+│   ├── budget/             # FastAPI: budgets, budget lines
+│   ├── ai/                 # FastAPI: stateless LLM reasoning (/ai/decide), rate limiting, audit logs
+│   ├── chat/               # FastAPI: agent host — conversations, tool registry, dispatch loop, SSE streaming
+│   └── worker/             # Celery: background jobs (RabbitMQ broker, Redis result backend)
+└── terraform/              # Prod infra provisioning (Hetzner Cloud)
 ```
 
 Each service follows the same internal layout:
