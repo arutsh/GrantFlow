@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from main import app  # noqa: E402
 from app.models.base import Base  # noqa: E402
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel  # noqa: E402
+from app.models.mapping import DonorTemplateModel  # noqa: E402
 from app.models.report import ReportModel, ReportLineModel, AttachmentModel  # noqa: E402
 from app.models.currency_ledger import (  # noqa: E402
     ReportLineConversionAllocationModel,
@@ -20,6 +21,16 @@ from app.models.currency_ledger import (  # noqa: E402
 from app.models.privileged_access_log import PrivilegedAccessLog  # noqa: E402
 from shared.security.dependencies import get_validated_user  # noqa: E402
 from tests.factories.user import ValidUserFactory  # noqa: E402
+
+
+@pytest.fixture
+def anyio_backend():
+    """Run @pytest.mark.anyio tests on asyncio only.
+
+    anyio's built-in fixture parametrizes every anyio test over both asyncio
+    and trio, but this service is asyncio-only and trio isn't installed.
+    """
+    return "asyncio"
 
 
 @pytest.fixture
@@ -64,6 +75,7 @@ def db():
             BudgetModel.__table__,
             BudgetLineModel.__table__,
             BudgetCategoryModel.__table__,
+            DonorTemplateModel.__table__,
             ReportModel.__table__,
             ReportLineModel.__table__,
             AttachmentModel.__table__,

@@ -17,6 +17,7 @@ from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserProm
 from app.core.logging import get_logger
 from app.services.audit import write_audit_log
 from app.services.provider import ResolvedModel
+from app.services.provider import build_agent as build_instrumented_agent
 from shared.ai_client.schemas import AiDecision, ChatTurn, Reply, ToolCall, ToolDef
 
 logger = get_logger(__name__)
@@ -52,6 +53,8 @@ class _RetryableExternalToolset(ExternalToolset):
         return {name: replace(tool, max_retries=self._max_retries) for name, tool in tools.items()}
 
 
+# TODO: check if we need this here,
+# we should keep prompt with versions in db
 SYSTEM_PROMPT = """You are a domain-neutral decision engine used by several different services.
 Given the user's message, the conversation so far, and a list of tools you may call, decide ONE
 of the following:
@@ -102,7 +105,7 @@ def build_agent(resolved_model: ResolvedModel, tools: list[ToolDef]) -> "Agent[N
     A new Agent (and toolset) is built per request so the model (Anthropic
     key / Ollama URL) is never shared across requests.
     """
-    agent = Agent(
+    return build_instrumented_agent(
         resolved_model.model,
         toolsets=[_build_toolset(tools, resolved_model.provider_name)],
         output_type=[str, DeferredToolRequests],
@@ -110,8 +113,6 @@ def build_agent(resolved_model: ResolvedModel, tools: list[ToolDef]) -> "Agent[N
         model_settings={"temperature": 0.1},
         retries=3,
     )
-    agent.instrument = True
-    return agent
 
 
 async def decide(

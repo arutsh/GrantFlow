@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
@@ -21,6 +21,7 @@ from app.schemas.chat import (
     ParseBudgetStreamRequest,
 )
 from app.services.chat_stream import build_chat_sse_stream
+from app.services.import_excel import ImportExcelError, run_import_excel
 from app.services.orchestrator import TurnResult, run_turn
 from app.services.parse_budget_stream import build_parse_budget_sse_stream
 from shared.ai_client import AiRateLimitedError, AiUnavailableError
@@ -172,6 +173,26 @@ async def stream_parse_budget(
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+@router.post("/import-excel")
+async def import_excel_route(
+    request: Request,
+    file: UploadFile = File(...),
+    valid_user=Depends(get_validated_user),
+):
+    """Non-conversational entry point for the Excel drop-box UI (see design.md Decision 7)."""
+    token = valid_user.get("token", "")
+    try:
+        return await run_import_excel(
+            file,
+            token=token,
+            http=request.app.state.http_client,
+            ai_client=request.app.state.ai_client,
+            tool_registry=request.app.state.tool_registry,
+        )
+    except ImportExcelError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 
 @router.get("/conversations")

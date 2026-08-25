@@ -104,7 +104,7 @@ class TestRateLimiterEndpoint:
 
         user = make_valid_user()
 
-        async def _fake_check(cid: str, limit=None):
+        async def _fake_check(cid: str, limit=None, *, scope="ai"):
             return False, 3600
 
         def _mock_user():

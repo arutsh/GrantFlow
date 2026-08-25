@@ -24,11 +24,9 @@ class Settings(BaseSettings):
     donor_grantee_service_url: str
     user_service_url: str
     user_all_services_url: str
-    REDIS_URL: str
-    RULE_BASED_MAPPING_ENABLED: bool = False
-    USE_SEMANTIC_EMBEDDINGS: bool = True  # Use Sentence Transformers for embeddings
     # Databases
     budget_database_url: str
+    REDIS_URL: str
     # Object storage (S3-compatible: MinIO locally, Cloudflare R2 in production)
     STORAGE_ENDPOINT_URL: str
     STORAGE_ACCESS_KEY: str
@@ -48,7 +46,4 @@ print(f"Base dir: {BASE_DIR}")
 print(f"settings.debug: {settings.debug}")
 print(f"settings.budget_database_url: {settings.budget_database_url}")
 print(f"settings.customer_service_url: {settings.customer_service_url}")
-print(f"settings.REDIS_URL: {settings.REDIS_URL}")
-print(f"settings.RULE_BASED_MAPPING_ENABLED: {settings.RULE_BASED_MAPPING_ENABLED}")
-print(f"settings.USE_SEMANTIC_EMBEDDINGS: {settings.USE_SEMANTIC_EMBEDDINGS}")
 # print(f"Allowed origins: {settings.ALLOWED_ORIGINS}")

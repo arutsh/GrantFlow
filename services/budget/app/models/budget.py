@@ -63,6 +63,18 @@ class BudgetModel(Base, AuditMixin):
     donor_total_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     estimated_exchange_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # TODO: this is not correct approach, not a blocker for now
+    # but it should be revisited, the imported budget can be modified and if still have to be
+    # abl to export it to similar template even if it has more or less lines
+
+    # Set only when this budget was created by a fresh AI-extracted Excel
+    # import (no fingerprint match) — the candidate data for an optional
+    # "save as reusable template" prompt on confirm. None once a template
+    # already matched at import time (donor_template_id already set) or for
+    # budgets not created via Excel import at all.
+    excel_import_fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    excel_import_structure: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    excel_import_lines_locked_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lines: Mapped[list["BudgetLineModel"]] = relationship(
         "BudgetLineModel", back_populates="budget"
     )

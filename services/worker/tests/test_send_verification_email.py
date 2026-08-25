@@ -12,9 +12,7 @@ def test_personalization_includes_privacy_url(monkeypatch):
     mock_client = MagicMock()
     mock_client.sender_email = "support@example.com"
     mock_client.sender_name = "OpenGrantFlow"
-    monkeypatch.setattr(
-        "tasks.users.send_verification_email.get_email_client", lambda: mock_client
-    )
+    monkeypatch.setattr("tasks.users.send_verification_email.get_email_client", lambda: mock_client)
 
     send_verification_email(email="user@example.com", token="tok", first_name="Ana")
 

@@ -6,6 +6,8 @@ from app.crud.budget_category_crud import (
     get_budget_category,
     create_budget_category,
     get_budget_category_by_name_and_template_id,
+    get_budget_categories_by_names_and_template_id,
+    bulk_create_budget_categories,
 )
 from app.core.exceptions import DomainError
 from fastapi import status
@@ -40,3 +42,25 @@ def get_or_create_category_service(
         return category
 
     return create_budget_category(db, valid_user["user_id"], name, code, donor_template_id)
+
+
+def get_or_create_categories_by_names_service(
+    db: Session, valid_user: dict, category_names: list[str]
+) -> dict[str, BudgetCategoryModel]:
+    """Batched form of get_or_create_category_service for a list of names — avoids N+1 lookups."""
+    unique_names = list(dict.fromkeys(category_names))
+    if not unique_names:
+        return {}
+
+    existing = get_budget_categories_by_names_and_template_id(db, unique_names, None)
+    result = {category.name: category for category in existing}
+
+    missing_names = [name for name in unique_names if name not in result]
+    if missing_names:
+        names_and_codes: list[tuple[str, str | None]] = [
+            (name, "_".join(name.split()).upper()) for name in missing_names
+        ]
+        created = bulk_create_budget_categories(db, valid_user["user_id"], names_and_codes, None)
+        result.update({category.name: category for category in created})
+
+    return result

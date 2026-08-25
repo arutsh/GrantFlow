@@ -26,9 +26,6 @@ client = TestClient(app)
 
 USER_ID = str(uuid4())
 CUSTOMER_ID = str(uuid4())
-_CATEGORY_LOOKUP = (
-    "app.services.budget_category_services.get_budget_category_by_name_and_template_id"
-)
 
 
 def _mock_valid_user():
@@ -323,20 +320,20 @@ class TestAiDraftBudgetStatus:
 
         with (
             patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
-            patch("app.services.budget_line_services.get_budget", return_value=budget),
             patch(
-                _CATEGORY_LOOKUP,
-                return_value=line.category,
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
             ),
-            patch(
-                "app.services.budget_line_services.create_budget_line",
-                return_value=line,
-            ),
-            patch("app.services.budget_line_services.recalculate_budget_total"),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
                 new_callable=AsyncMock,
                 return_value=_enriched(budget),
+            ),
+            patch(
+                "app.services.budget_services.get_customer_cached",
+                return_value={"currency": "GBP"},
             ),
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
@@ -376,6 +373,172 @@ class TestAiDraftBudgetStatus:
         assert response.status_code == 200
         call_kwargs = mock_create.call_args.kwargs
         assert call_kwargs.get("status") != BudgetStatus.ai_draft
+
+
+class TestCreateBudgetFieldsPersist:
+    """create_budget_service used to silently drop local_currency,
+    actual_currency, start_date, duration_months, total_amount,
+    donor_total_amount, and estimated_exchange_rate — create_budget()'s
+    signature never accepted them, so every budget silently fell back to
+    the model's defaults regardless of what was requested."""
+
+    def test_with_lines_forwards_currency_and_duration(self):
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            external_funder_name="Smith Foundation",
+            created_by=USER_ID,
+            updated_by=USER_ID,
+        )
+        line = BudgetLineFactory.build(budget_id=budget.id, created_by=USER_ID)
+        payload = {**VALID_PAYLOAD, "local_currency": "EUR"}
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_budget_service",
+                new_callable=AsyncMock,
+                return_value=_enriched(budget),
+            ),
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=payload)
+
+        assert response.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("local_currency") == "EUR"
+        assert call_kwargs.get("duration_months") == 12
+
+    def test_manual_create_forwards_currency_and_duration(self):
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            external_funder_name="Donor Corp",
+            created_by=USER_ID,
+            updated_by=USER_ID,
+        )
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
+            patch(
+                "app.services.budget_services.get_users_by_ids_cached",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.services.budget_services.get_customers_by_ids",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+        ):
+            response = client.post(
+                "/api/v1/budgets/",
+                json={
+                    "name": "Manual Budget",
+                    "external_funder_name": "Donor Corp",
+                    "local_currency": "NOK",
+                    "duration_months": 6,
+                },
+            )
+
+        assert response.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("local_currency") == "NOK"
+        assert call_kwargs.get("duration_months") == 6
+
+    def test_with_lines_forwards_actual_currency_donor_total_and_exchange_rate(self):
+        """Excel-import fields threaded through by budget-export-from-excel
+        Group 5 — chat's import_excel.py sets these directly from AI
+        extraction (design.md Decision 8)."""
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            external_funder_name="Smith Foundation",
+            created_by=USER_ID,
+            updated_by=USER_ID,
+        )
+        line = BudgetLineFactory.build(budget_id=budget.id, created_by=USER_ID)
+        payload = {
+            **VALID_PAYLOAD,
+            "local_currency": "AMD",
+            "actual_currency": "EUR",
+            "donor_total_amount": 100.0,
+            "estimated_exchange_rate": 450.0,
+        }
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_budget_service",
+                new_callable=AsyncMock,
+                return_value=_enriched(budget),
+            ),
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=payload)
+
+        assert response.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("actual_currency") == "EUR"
+        assert call_kwargs.get("donor_total_amount") == 100.0
+        assert call_kwargs.get("estimated_exchange_rate") == 450.0
+
+    def test_with_lines_falls_back_to_org_currency_when_local_currency_missing(self):
+        """A null (or low-confidence, already filtered out by chat service)
+        local_currency falls back to the owning org's own default currency
+        rather than the model's hardcoded 'GBP' column default."""
+        budget = BudgetFactory.build(
+            owner_id=CUSTOMER_ID,
+            external_funder_name="Smith Foundation",
+            created_by=USER_ID,
+            updated_by=USER_ID,
+        )
+        line = BudgetLineFactory.build(budget_id=budget.id, created_by=USER_ID)
+
+        with (
+            patch("app.services.budget_services.create_budget", return_value=budget) as mock_create,
+            patch(
+                "app.services.budget_services.get_or_create_categories_by_names_service",
+                return_value={"Personnel": line.category},
+            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=[line]),
+            patch("app.services.budget_services.recalculate_budget_total"),
+            patch(
+                "app.services.budget_services.get_budget_service",
+                new_callable=AsyncMock,
+                return_value=_enriched(budget),
+            ),
+            patch(
+                "app.services.budget_services.get_customer_cached",
+                return_value={"currency": "AMD"},
+            ) as mock_get_customer,
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 200
+        call_kwargs = mock_create.call_args.kwargs
+        assert call_kwargs.get("local_currency") == "AMD"
+        mock_get_customer.assert_called_once_with(CUSTOMER_ID)
+
+    def test_with_lines_fails_when_currency_fallback_unreachable(self):
+        """A CustomerServiceError while resolving the org's default currency
+        propagates as a 500 rather than silently defaulting to GBP."""
+        from app.services.customer_client import CustomerServiceError
+
+        with patch(
+            "app.services.budget_services.get_customer_cached",
+            side_effect=CustomerServiceError("unreachable"),
+        ):
+            response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
+
+        assert response.status_code == 500
 
 
 class TestDeleteBudgetIntegrityGuard:

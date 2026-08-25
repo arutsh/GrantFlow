@@ -16,14 +16,21 @@ def get_redis_client() -> aioredis.Redis:
     return _redis_client
 
 
-async def check_and_increment(customer_id: str, limit: int | None = None) -> tuple[bool, int]:
-    """Sliding window counter keyed by customer_id.
+async def check_and_increment(
+    customer_id: str, limit: int | None = None, *, scope: str = "ai"
+) -> tuple[bool, int]:
+    """Sliding window counter keyed by (scope, customer_id).
+
+    `scope` namespaces the counter — e.g. "ai" for the general per-request
+    limit, "excel-import-platform" for the GrantFlow-funded Excel-import
+    fallback's own, separately-tracked limit — so different call sites don't
+    share a bucket.
 
     Returns (allowed, retry_after_seconds). retry_after is 0 when allowed.
     Fails open if Redis is unavailable.
     """
     effective_limit = limit if limit is not None else settings.AI_RATE_LIMIT_PER_HOUR
-    key = f"rate_limit:ai:{customer_id}"
+    key = f"rate_limit:{scope}:{customer_id}"
     try:
         client = get_redis_client()
         count = await client.incr(key)
@@ -34,13 +41,19 @@ async def check_and_increment(customer_id: str, limit: int | None = None) -> tup
             return False, max(ttl, 0)
         return True, 0
     except Exception:
-        logger.warning("rate_limiter_unavailable", customer_id=customer_id)
+        logger.warning("rate_limiter_unavailable", customer_id=customer_id, scope=scope)
         return True, 0
 
 
-async def enforce_rate_limit(customer_id: str, *, extra_headers: dict | None = None) -> None:
+async def enforce_rate_limit(
+    customer_id: str,
+    *,
+    limit: int | None = None,
+    scope: str = "ai",
+    extra_headers: dict | None = None,
+) -> None:
     """Raise 429 with a Retry-After header when the customer is over their hourly limit."""
-    allowed, retry_after = await check_and_increment(customer_id)
+    allowed, retry_after = await check_and_increment(customer_id, limit, scope=scope)
     if not allowed:
         raise HTTPException(
             status_code=429,

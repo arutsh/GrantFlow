@@ -34,6 +34,32 @@ def create_budget_line(
     return budget_line
 
 
+def bulk_create_budget_lines(
+    session: Session,
+    user_id: UUID,
+    budget_id: UUID,
+    lines: list[dict],
+) -> list[BudgetLineModel]:
+    """Create multiple budget lines with a single insert + commit."""
+    budget_lines = [
+        BudgetLineModel(
+            budget_id=budget_id,
+            category_id=line["category_id"],
+            description=line["description"],
+            amount=line["amount"],
+            extra_fields=line.get("extra_fields"),
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        for line in lines
+    ]
+    session.add_all(budget_lines)
+    session.commit()
+    for budget_line in budget_lines:
+        session.refresh(budget_line)
+    return budget_lines
+
+
 def get_budget_line(session: Session, budget_line_id: UUID) -> BudgetLineModel | None:
     return session.query(BudgetLineModel).filter(BudgetLineModel.id == budget_line_id).first()
 

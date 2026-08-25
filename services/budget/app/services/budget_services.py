@@ -13,8 +13,10 @@ from app.crud.budget_crud import (
     delete_budget,
     get_funded_budgets_summary,
     get_funded_grantees,
+    recalculate_budget_total,
 )
-from app.crud.budget_line_crud import delete_budget_line
+from app.crud.budget_line_crud import delete_budget_line, bulk_create_budget_lines
+from app.services.budget_category_services import get_or_create_categories_by_names_service
 from app.crud.dashboard_crud import (
     count_budgets_by_status,
     sum_committed_by_currency,
@@ -24,7 +26,11 @@ from app.crud.dashboard_crud import (
 )
 from app.core.exceptions import DomainError, PermissionDenied
 
-from app.services.customer_client import validate_customer_can_fund, validate_customer_can_own
+from app.services.customer_client import (
+    validate_customer_can_fund,
+    validate_customer_can_own,
+    get_customer_cached,
+)
 from app.services.donor_grantee_client import validate_donor_grantee_relationship
 from app.schemas.budget_schema import (
     BudgetCreate,
@@ -42,6 +48,7 @@ from uuid import UUID
 
 from typing import List
 from app.models import BudgetModel
+from app.models.mapping import DonorTemplateModel
 
 from app.services.user_client import get_customers_by_ids
 from app.services.user_cache import get_users_by_ids_cached
@@ -92,6 +99,13 @@ async def create_budget_service(
         external_funder_name=budget.external_funder_name,
         owner_id=owner_id,
         status=budget_status,
+        local_currency=budget.local_currency,
+        actual_currency=budget.actual_currency,
+        start_date=budget.start_date,
+        duration_months=budget.duration_months,
+        total_amount=budget.total_amount,
+        donor_total_amount=budget.donor_total_amount,
+        estimated_exchange_rate=budget.estimated_exchange_rate,
     )
     if not include_user_datails:
         return new_budget
@@ -356,6 +370,37 @@ async def restore_budget_service(budget_id: UUID, valid_user: dict, db):
     return _budget_update_response(updated_budget)
 
 
+# TODO check another TODO regarding this tempates
+async def save_budget_as_template_service(
+    budget_id: UUID, name: str, valid_user: dict, db
+) -> DonorTemplateModel:
+    """Promotes an unedited Excel-import budget into a reusable DonorTemplateModel."""
+    from app.crud.budget_donor_template_crud import create_donor_template
+
+    valid_budget, _ = _resolve_updatable_budget(budget_id, valid_user, False, db)
+
+    if not _can_save_as_template(valid_budget):
+        raise DomainError(
+            "This budget isn't eligible to be saved as a template — it must have come "
+            "from a fresh Excel import with no matched template, with its lines unedited "
+            "since creation.",
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    template = create_donor_template(
+        db,
+        name=name,
+        fingerprint=valid_budget.excel_import_fingerprint,
+        detected_structure=valid_budget.excel_import_structure,
+    )
+
+    if valid_budget.donor_template_id is None:
+        valid_budget.donor_template_id = template.id
+        db.commit()
+
+    return template
+
+
 async def get_budget_service(budget_id, valid_user, db, include_user_details: bool = False):
 
     customer_id = valid_user.get("customer_id")
@@ -518,25 +563,35 @@ async def delete_budget_service(budget_id: UUID, valid_user: dict, db):
     return False
 
 
+# from shared.observability import traced
+
+
+# @traced("create_budget_with_lines_service")
 async def create_budget_with_lines_service(
     request: CreateBudgetWithLinesRequest,
     valid_user: dict,
     db,
 ):
-    # Deferred import to avoid circular dependency
-    from app.services.budget_line_services import create_budget_line_service
-    from app.schemas import BudgetLineCreate
-
     new_budget = None
     created_lines = []
     try:
         owner_id = request.owner_id or valid_user.get("customer_id")
+
+        local_currency = request.local_currency
+        if not local_currency:
+            # Fall back to the org's default currency (Decision 8); errors propagate, no silent GBP.
+            local_currency = get_customer_cached(owner_id).get("currency")
+
         new_budget = await create_budget_service(
             BudgetCreate(
                 name=request.budget_name,
                 external_funder_name=request.external_funder_name,
                 owner_id=owner_id,
                 duration_months=request.duration_months,
+                local_currency=local_currency,
+                actual_currency=request.actual_currency,
+                donor_total_amount=request.donor_total_amount,
+                estimated_exchange_rate=request.estimated_exchange_rate,
             ),
             valid_user,
             db,
@@ -544,19 +599,41 @@ async def create_budget_with_lines_service(
         )
         set_span_attributes(budget_id=new_budget.id)
 
+        categories_by_name = get_or_create_categories_by_names_service(
+            db, valid_user, [line_input.category_name for line_input in request.lines]
+        )
+        category_ids_by_name = {name: category.id for name, category in categories_by_name.items()}
+        line_specs = []
         for line_input in request.lines:
-            line = create_budget_line_service(
-                db,
-                valid_user,
-                BudgetLineCreate(
-                    budget_id=new_budget.id,
-                    description=line_input.description,
-                    amount=line_input.amount,
-                    category_name=line_input.category_name,
-                    extra_fields=line_input.extra_fields,
-                ),
+            line_specs.append(
+                {
+                    "category_id": category_ids_by_name[line_input.category_name],
+                    "description": line_input.description,
+                    "amount": line_input.amount,
+                    "extra_fields": line_input.extra_fields,
+                }
             )
-            created_lines.append(line)
+
+        created_lines = bulk_create_budget_lines(
+            db, valid_user["user_id"], new_budget.id, line_specs
+        )
+        recalculate_budget_total(db, new_budget.id)
+
+        # Excel-import provenance, set only by chat's import-excel orchestration.
+        if any(
+            v is not None
+            for v in (
+                request.donor_template_id,
+                request.excel_import_fingerprint,
+                request.excel_import_structure,
+                request.excel_import_lines_locked_count,
+            )
+        ):
+            new_budget.donor_template_id = request.donor_template_id
+            new_budget.excel_import_fingerprint = request.excel_import_fingerprint
+            new_budget.excel_import_structure = request.excel_import_structure
+            new_budget.excel_import_lines_locked_count = request.excel_import_lines_locked_count
+            db.commit()
 
         from app.schemas.budget_line_schema import BudgetLine
 
@@ -603,6 +680,15 @@ def _compute_estimated_local_cap(budget: BudgetModel) -> float | None:
     return budget.donor_total_amount * budget.estimated_exchange_rate
 
 
+def _can_save_as_template(budget: BudgetModel) -> bool:
+    """True if the budget is a fresh, unmatched Excel import with unedited lines."""
+    if budget.excel_import_fingerprint is None or budget.donor_template_id is not None:
+        return False
+    if len(budget.lines) != budget.excel_import_lines_locked_count:
+        return False
+    return all(line.updated_at is None for line in budget.lines)
+
+
 def _budget_update_response(budget: BudgetModel) -> BudgetUpdate:
     """PATCH /budgets/{id} response shape (response_model=BudgetUpdate).
 
@@ -636,6 +722,7 @@ def _budget_update_response(budget: BudgetModel) -> BudgetUpdate:
         created_at=budget.created_at,
         confirmed_at=budget.confirmed_at,
         estimated_local_cap=_compute_estimated_local_cap(budget),
+        can_save_as_template=_can_save_as_template(budget),
     )
 
 
@@ -675,6 +762,7 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             "estimated_exchange_rate": b.estimated_exchange_rate,
             "confirmed_at": b.confirmed_at,
             "estimated_local_cap": _compute_estimated_local_cap(b),
+            "can_save_as_template": _can_save_as_template(b),
             "owner": customers_map.get(b.owner_id),
             # Preserve `id` from the budget's own funding_customer_id even
             # when the customer-name lookup is empty/failed, so a real

@@ -63,11 +63,12 @@ def _malformed_2xx_handler(sent: list):
 
 
 class TestListTools:
-    async def test_budgets_page_returns_curated_four(self):
+    async def test_budgets_page_returns_curated_tools(self):
         registry = await _registry(_json_handler(200, {}))
         tools = registry.list_tools("budgets")
         assert {t.name for t in tools} == {
             "create_budget",
+            "create_budget_with_lines",
             "add_budget_line",
             "update_budget",
             "get_budget_summary",
@@ -114,7 +115,7 @@ class TestTargetedTools:
         }
 
     def test_creating_tools_and_resource_id_param(self):
-        assert BudgetToolRegistry.creating_tools == {"create_budget"}
+        assert BudgetToolRegistry.creating_tools == {"create_budget", "create_budget_with_lines"}
         assert BudgetToolRegistry.resource_id_param == "budget_id"
 
 
@@ -165,6 +166,60 @@ class TestCallCreateBudget:
 
         assert result.success is False
         assert "Failed to create budget" in result.message
+
+
+class TestCallCreateBudgetWithLines:
+    async def test_success_returns_budget_id(self):
+        sent: list = []
+        registry = await _registry(
+            _capturing_json_handler(sent, 200, {"id": "budget-1", "name": "Imported Budget"})
+        )
+
+        result = await registry.call_tool(
+            "create_budget_with_lines",
+            {
+                "budget_name": "Imported Budget",
+                "external_funder_name": "Imported budget",
+                "lines": [
+                    {"category_name": "Travel", "description": "Flights", "amount": 500},
+                ],
+                "donor_template_id": 7,
+            },
+            token="tok",
+        )
+
+        assert result.success is True
+        assert result.created_resource_id == "budget-1"
+        (req,) = sent
+        assert str(req.url) == "http://budget:8000/api/v1/budgets/with-lines"
+        body = json.loads(req.content)
+        assert body["donor_template_id"] == 7
+        assert body["lines"] == [
+            {"category_name": "Travel", "description": "Flights", "amount": 500}
+        ]
+
+    async def test_success_message_never_embeds_the_raw_id(self):
+        registry = await _registry(_json_handler(200, {"id": "budget-1"}))
+
+        result = await registry.call_tool(
+            "create_budget_with_lines",
+            {"budget_name": "X", "external_funder_name": "Y", "lines": []},
+            token="tok",
+        )
+
+        assert "budget-1" not in result.message
+
+    async def test_domain_rejection_relayed_not_raised(self):
+        registry = await _registry(_json_handler(400, {"detail": "No budget lines"}))
+
+        result = await registry.call_tool(
+            "create_budget_with_lines",
+            {"budget_name": "X", "external_funder_name": "Y", "lines": []},
+            token="tok",
+        )
+
+        assert result.success is False
+        assert "Failed to create budget with lines" in result.message
 
 
 class TestCallAddBudgetLine:

@@ -43,15 +43,17 @@ _ROUTE_MAPS: Final = [
     RouteMap(methods=["PATCH"], pattern=r"^/api/v1/budgets/\{budget_id\}$", mcp_type=MCPType.TOOL),
     RouteMap(methods=["GET"], pattern=r"^/api/v1/budgets/\{budget_id\}$", mcp_type=MCPType.TOOL),
     RouteMap(methods=["POST"], pattern=r"^/api/v1/budget-lines/$", mcp_type=MCPType.TOOL),
+    RouteMap(methods=["POST"], pattern=r"^/api/v1/budgets/with-lines$", mcp_type=MCPType.TOOL),
     RouteMap(pattern=r".*", mcp_type=MCPType.EXCLUDE),
 ]
 
-# The four operationIds FastAPI generates for the routes above (verified
-# against budget's real app.openapi() output) -> the model-facing tool name.
+# FastAPI-generated operationIds -> model-facing tool name.
 CREATE_BUDGET = "create_budget_endpoint_api_v1_budgets"
 UPDATE_BUDGET = "update_budget_endpoint_api_v1_budgets"
 GET_BUDGET_SUMMARY = "get_budget_endpoint_api_v1_budgets"
 ADD_BUDGET_LINE = "create_budget_line_view_api_v1_budget_lines"
+# Truncated to 56 chars — FastMCP truncates the pre-transform name before ToolTransform's lookup.
+CREATE_BUDGET_WITH_LINES = "create_budget_with_lines_endpoint_api_v1_budgets_with_li"
 
 
 def service_root(budget_service_url: str) -> str:
@@ -154,6 +156,10 @@ def _transform_config(*, budget_id: str | None) -> ToolTransform:
                     # field.
                     "actual_currency": ArgTransformConfig(hide=True),
                     "start_date": ArgTransformConfig(hide=True),
+                    # Response-only fields on BudgetUpdate; hide from the request schema.
+                    "confirmed_at": ArgTransformConfig(hide=True),
+                    "estimated_local_cap": ArgTransformConfig(hide=True),
+                    "can_save_as_template": ArgTransformConfig(hide=True),
                 },
             ),
             GET_BUDGET_SUMMARY: ToolTransformConfig(
@@ -169,6 +175,13 @@ def _transform_config(*, budget_id: str | None) -> ToolTransform:
                     "category_name": ArgTransformConfig(required=True),
                     "category_id": ArgTransformConfig(hide=True),
                     "extra_fields": ArgTransformConfig(hide=True),
+                },
+            ),
+            CREATE_BUDGET_WITH_LINES: ToolTransformConfig(
+                name="create_budget_with_lines",
+                description="Create a new budget with an initial set of line items in one call.",
+                arguments={
+                    "owner_id": ArgTransformConfig(hide=True),
                 },
             ),
         }

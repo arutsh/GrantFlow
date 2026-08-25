@@ -16,7 +16,7 @@ from shared.ai_client.schemas import ToolDef
 class BudgetToolRegistry(ToolRegistry):
     targeted_tools = {"add_budget_line", "update_budget", "get_budget_summary"}
     resource_id_param = "budget_id"
-    creating_tools = {"create_budget"}
+    creating_tools = {"create_budget", "create_budget_with_lines"}
     no_active_resource_message = "There's no budget in progress in this conversation yet."
 
     def __init__(self, http: httpx.AsyncClient, base_url: str):
@@ -105,6 +105,17 @@ def _build_create_budget_result(params: dict, data: dict) -> ToolResult:
     )
 
 
+def _build_create_budget_with_lines_result(params: dict, data: dict) -> ToolResult:
+    # Same "raw id SHALL NOT be rendered" rule as _build_create_budget_result.
+    budget_id = data.get("id")
+    line_count = len(params.get("lines", []))
+    return ToolResult(
+        success=True,
+        message=f"Budget '{params['budget_name']}' created with {line_count} line(s).",
+        created_resource_id=budget_id,
+    )
+
+
 def _build_add_budget_line_result(params: dict, data: dict) -> ToolResult:
     # add_budget_line isn't a creating_tool, so its id is never surfaced
     # structurally or in the message (same "raw id SHALL NOT be rendered"
@@ -139,6 +150,7 @@ def _build_get_budget_summary_result(params: dict, data: dict) -> ToolResult:
 
 _RESULT_BUILDERS = {
     "create_budget": _build_create_budget_result,
+    "create_budget_with_lines": _build_create_budget_with_lines_result,
     "add_budget_line": _build_add_budget_line_result,
     "update_budget": _build_update_budget_result,
     "get_budget_summary": _build_get_budget_summary_result,
@@ -146,6 +158,7 @@ _RESULT_BUILDERS = {
 
 _VERBS = {
     "create_budget": "create budget",
+    "create_budget_with_lines": "create budget with lines",
     "add_budget_line": "add budget line",
     "update_budget": "update budget",
     "get_budget_summary": "get budget summary",

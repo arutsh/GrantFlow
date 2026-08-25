@@ -106,3 +106,71 @@ class ParseUnavailable(BaseModel):
 
 
 ParseEvent = Union[ParseProgress, ParseDone, ParseError, ParseUnavailable]
+
+
+# Wire contract for POST /ai/extract-budget-excel (budget-excel-import spec).
+# Same pattern as DecideRequest: both budget (caller) and ai (callee) import
+# these classes directly, and ai's PydanticAI agent targets ExcelExtractionResult
+# as its structured output type directly — there is no separate LLM-only shape.
+
+
+class ExcelExtractionLine(BaseModel):
+    """One extracted budget line. `confidence` below the caller's threshold
+    means the caller should route the raw row into `extra_fields` instead of
+    trusting `category_name`/`description`/`local_amount` as clean values.
+
+    `local_amount`/`target_amount` are reported separately, each read
+    verbatim from its own column, rather than the model being asked to
+    decide which single number is "the" amount — a per-line semantic
+    currency-role judgment call proved unreliable in practice even with
+    the currency identified correctly elsewhere. The caller cross-checks
+    the two against the sheet's own `donor_total_amount` and swaps them if
+    the model mislabeled which column is which — see budget-export-from-
+    excel design.md Decision 11."""
+
+    category_name: str
+    description: str
+    local_amount: float | None = None
+    target_amount: float | None = None
+    confidence: float
+    extra_fields: dict | None = None
+
+
+class ExcelExtractionColumnMap(BaseModel):
+    """0-indexed column positions (within the cleaned, header-row-stripped
+    grid sent to ai) that this layout uses for each field. Persisted as a
+    `DonorTemplateModel.detected_structure` when a user saves a recognized
+    layout as a reusable template, so a later upload with the same
+    structure fingerprint can re-extract lines by replaying this mapping
+    mechanically instead of calling ai again."""
+
+    category_col: int | None = None
+    description_col: int | None = None
+    amount_col: int | None = None
+    target_amount_col: int | None = None
+
+
+class ExcelExtractionRequest(BaseModel):
+    """`rows` is the cleaned sheet grid (header-row and row-number helper
+    column already stripped) as sent to ai for structured extraction."""
+
+    rows: list[list[str | None]]
+
+
+class ExcelExtractionResult(BaseModel):
+    """`local_currency` is the currency line `amount`s are expressed in — the
+    org's own spend currency, used verbatim as the created budget's
+    `local_currency`. `target_currency`/`donor_total_amount` describe the
+    donor's separate commitment (read directly off the sheet's own total
+    row, in the sheet's target currency), used to derive
+    `estimated_exchange_rate` deterministically rather than asking the
+    model to compute it — see budget-export-from-excel design.md Decision 8.
+    """
+
+    local_currency: str | None = None
+    local_currency_confidence: float | None = None
+    target_currency: str | None = None
+    donor_total_amount: float | None = None
+    duration_months: int | None = None
+    lines: list[ExcelExtractionLine]
+    column_map: ExcelExtractionColumnMap

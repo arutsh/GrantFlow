@@ -11,6 +11,8 @@ from shared.ai_client.schemas import (
     AiDecision,
     ChatTurn,
     DecideRequest,
+    ExcelExtractionRequest,
+    ExcelExtractionResult,
     ParseDone,
     ParseError,
     ParseEvent,
@@ -21,6 +23,13 @@ from shared.ai_client.schemas import (
     ToolDef,
 )
 from shared.ai_client.sse import iter_sse_frames
+
+
+def _describe(exc: Exception) -> str:
+    """httpx transport exceptions (timeouts especially) often stringify to
+    "" — fall back to the exception's type name so callers/logs still get
+    a diagnosable message instead of a bare trailing colon."""
+    return str(exc) or type(exc).__name__
 
 
 class AiClient:
@@ -125,6 +134,53 @@ class AiClient:
         except httpx.ConnectError:
             yield ParseError(message="Connection to AI service failed")
 
+    async def extract_budget_excel_lines(
+        self,
+        rows: list[list[str | None]],
+        user_token: str,
+        timeout: float = 180.0,
+    ) -> ExcelExtractionResult:
+        """Call ai's `POST /ai/extract-budget-excel` (budget-excel-import spec).
+
+        Unlike decide()/stream_parse_budget(), this is a plain
+        request/response call — a file upload has no natural streaming UX,
+        and the caller needs the full structured result before it can
+        create budget lines. A real sheet extraction (plus PydanticAI's own
+        validation retries) routinely takes longer than the shared client's
+        default timeout tuned for the much lighter decide()/parse calls, so
+        this overrides it per-request rather than raising the shared default
+        for every other budget-service outbound call.
+        """
+        payload = ExcelExtractionRequest(rows=rows).model_dump()
+        headers = {"Authorization": f"Bearer {user_token}"}
+
+        try:
+            resp = await self.http.post(
+                f"{self.base_url}/ai/extract-budget-excel",
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+        except httpx.ConnectError as exc:
+            raise AiClientError(f"Could not connect to ai service: {_describe(exc)}") from exc
+        except httpx.RequestError as exc:
+            raise AiClientError(f"Request to ai service failed: {_describe(exc)}") from exc
+
+        if resp.status_code == 503:
+            raise AiUnavailableError()
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", "0"))
+            raise AiRateLimitedError(retry_after=retry_after)
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise AiClientError(
+                f"ai service returned {exc.response.status_code}: {exc.response.text[:200]}",
+                status_code=exc.response.status_code,
+            ) from exc
+
+        return ExcelExtractionResult.model_validate(resp.json())
+
     async def _post_with_retry(self, payload: dict, headers: dict) -> httpx.Response:
         attempt = 0
         while True:
@@ -135,9 +191,11 @@ class AiClient:
             except httpx.ConnectError as exc:
                 attempt += 1
                 if attempt > self.connect_retries:
-                    raise AiClientError(f"Could not connect to ai service: {exc}") from exc
+                    raise AiClientError(
+                        f"Could not connect to ai service: {_describe(exc)}"
+                    ) from exc
                 await asyncio.sleep(self.backoff_seconds * attempt)
             except httpx.RequestError as exc:
                 # Read timeouts and other non-connect failures are not retried —
                 # LLM calls are not cheap to repeat blindly.
-                raise AiClientError(f"Request to ai service failed: {exc}") from exc
+                raise AiClientError(f"Request to ai service failed: {_describe(exc)}") from exc

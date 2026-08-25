@@ -35,6 +35,40 @@ def get_budget_category_by_name_and_template_id(
     )
 
 
+def get_budget_categories_by_names_and_template_id(
+    session: Session, names: list[str], template_id: int | None
+) -> list[BudgetCategoryModel]:
+    return (
+        session.query(BudgetCategoryModel)
+        .filter(
+            BudgetCategoryModel.name.in_(names),
+            BudgetCategoryModel.donor_template_id == template_id,
+        )
+        .all()
+    )
+
+
+def bulk_create_budget_categories(
+    session: Session,
+    user_id: UUID,
+    names_and_codes: list[tuple[str, str | None]],
+    donor_template_id: int | None = None,
+) -> list[BudgetCategoryModel]:
+    categories = [
+        BudgetCategoryModel(
+            name=name,
+            code=code,
+            donor_template_id=donor_template_id,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        for name, code in names_and_codes
+    ]
+    session.add_all(categories)
+    session.commit()
+    return categories
+
+
 def get_budget_category(session: Session, category_id: UUID) -> BudgetCategoryModel | None:
     return session.query(BudgetCategoryModel).filter(BudgetCategoryModel.id == category_id).first()
 

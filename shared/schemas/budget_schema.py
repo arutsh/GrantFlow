@@ -62,6 +62,10 @@ class BudgetUpdate(BudgetBase):
     # it refetches (see budget_services._budget_update_response).
     confirmed_at: datetime | None = None
     estimated_local_cap: float | None = None
+    # Whether an optional "save as reusable template" prompt should be
+    # offered — true only for a fresh AI-extracted Excel import (no
+    # fingerprint match) whose lines haven't been edited since creation.
+    can_save_as_template: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -72,6 +76,7 @@ class Budget(BudgetBase):
     # from BudgetCreate/BudgetUpdate payloads since they don't inherit these.
     confirmed_at: datetime | None = None
     estimated_local_cap: float | None = None
+    can_save_as_template: bool = False
     lines: list[BudgetLine] = []
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,6 +124,7 @@ class BudgetWithLines(BaseModel):
     estimated_exchange_rate: float | None = None
     confirmed_at: datetime | None = None
     estimated_local_cap: float | None = None
+    can_save_as_template: bool = False
     owner: CustomerOut | None = None
     funder: CustomerOut | None = None
     trace: TraceOut | None = None
