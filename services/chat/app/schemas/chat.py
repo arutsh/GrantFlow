@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,7 +16,7 @@ class ParseBudgetStreamRequest(BaseModel):
 
 
 class ConversationOut(BaseModel):
-    id: str
+    id: UUID
     title: str | None
     message_count: int
     last_activity_at: datetime
@@ -25,7 +26,7 @@ class ConversationOut(BaseModel):
 
 
 class MessageOut(BaseModel):
-    id: str
+    id: UUID
     role: str
     content: str
     tool_name: str | None
