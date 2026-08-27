@@ -21,6 +21,10 @@ The chat service SHALL expose `GET /chat/conversations` and `GET /chat/conversat
 - **WHEN** a user requests messages of a conversation belonging to another customer
 - **THEN** the conversation is not returned
 
+#### Scenario: Response is well-formed regardless of database backend
+- **WHEN** `GET /chat/conversations` or `GET /chat/conversations/{id}/messages` is served against any supported database backend (Postgres in production, SQLite in dev/test)
+- **THEN** each conversation/message `id` validates and serializes successfully, and the endpoint does not fail with a server error solely due to the backend's native identifier type
+
 ### Requirement: Get-or-create conversation semantics
 `POST /chat/stream` SHALL accept an optional `conversation_id`; an unknown or foreign id SHALL result in a new conversation rather than an error, and the effective id SHALL be returned via the `X-Conversation-Id` response header.
 
