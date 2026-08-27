@@ -42,6 +42,24 @@ const WORKFLOW_STEPS: { label: string; tone: keyof typeof TONE_COLORS }[] = [
   { label: "Audit", tone: "red" },
 ];
 
+const SECTOR_QUOTES = [
+  {
+    quote:
+      "Even sophisticated internal systems can still require exporting files to grantees and bringing them back.",
+    role: "Former UK fund CEO",
+  },
+  {
+    quote:
+      "Multiple platforms solve different pieces, but not the basic cross-organisation workflow.",
+    role: "International nonprofit leader",
+  },
+  {
+    quote:
+      "A donor portal can digitise the funder side while the grantee still keeps separate local records.",
+    role: "Nonprofit / fund adviser",
+  },
+];
+
 const AUDIENCES = [
   {
     emoji: "🏛",
@@ -145,23 +163,35 @@ function Nav() {
     <header className="border-b border-slate-200">
       <div className="max-w-5xl mx-auto flex items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2">
-          <img src={ogfIcon} alt="" className="h-8 w-auto" />
-          <span className="text-xl font-bold" style={{ color: brand.slate }}>
+          <img src={ogfIcon} alt="" className="h-8 w-auto shrink-0" />
+          <span
+            className="text-lg sm:text-xl font-bold whitespace-nowrap"
+            style={{ color: brand.slate }}
+          >
             Open Grant <span style={{ color: brand.teal }}>Flow</span>
           </span>
         </div>
-        <nav className="hidden sm:flex gap-6">
-          {NAV_LINKS.map(({ href, label }) => (
-            <a
-              key={href}
-              href={href}
-              className="text-sm font-medium hover:opacity-70"
-              style={{ color: brand.slate }}
-            >
-              {label}
-            </a>
-          ))}
-        </nav>
+        <div className="flex items-center gap-3 sm:gap-6">
+          <nav className="hidden sm:flex gap-6">
+            {NAV_LINKS.map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                className="text-sm font-medium hover:opacity-70"
+                style={{ color: brand.slate }}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <a
+            href="#contact"
+            className="rounded-lg px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm font-medium text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+            style={{ backgroundColor: brand.navy }}
+          >
+            Request Demo
+          </a>
+        </div>
       </div>
     </header>
   );
@@ -171,17 +201,6 @@ function Hero() {
   return (
     <section className="max-w-6xl mx-auto px-6 py-20 text-center">
       <div className="max-w-3xl mx-auto">
-        <div
-          className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 mb-8 text-xs font-medium"
-          style={{ borderColor: brand.gold, color: brand.slate }}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: brand.gold }}
-          />
-          In active development
-        </div>
-
         <h1
           className="text-4xl md:text-5xl font-bold mb-6 leading-tight"
           style={{ color: brand.slate }}
@@ -340,6 +359,53 @@ function ProblemSection() {
             );
           })}
         </ol>
+      </div>
+
+      <div className="mt-16">
+        <p
+          className="text-xs font-semibold tracking-widest uppercase mb-6"
+          style={{ color: brand.teal }}
+        >
+          From conversations across the sector
+        </p>
+
+        <div className="grid sm:grid-cols-3 gap-5">
+          {SECTOR_QUOTES.map(({ quote, role }) => (
+            <div
+              key={role}
+              className="bg-white rounded-2xl card-shadow-lg p-6 flex flex-col gap-4"
+            >
+              <p className="italic flex-grow" style={{ color: brand.slate }}>
+                &ldquo;{quote}&rdquo;
+              </p>
+              <p className="text-sm font-semibold" style={{ color: brand.teal }}>
+                {role}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div
+          className="mt-5 rounded-2xl p-6"
+          style={{ backgroundColor: "#EDF6F3", border: "1px solid #CDE7DE" }}
+        >
+          <p className="mb-3" style={{ color: brand.slate }}>
+            One leader of a small local nonprofit told us they went looking for
+            an alternative and couldn&apos;t find one that fit — a sign the
+            willingness is already there, once the right tool exists.
+          </p>
+          <p className="text-sm font-semibold" style={{ color: brand.teal }}>
+            From a conversation with a local nonprofit leader
+          </p>
+        </div>
+
+        <p
+          className="mt-10 text-center text-xl font-bold"
+          style={{ color: brand.teal }}
+        >
+          The emerging opportunity: interoperability, not another closed
+          portal.
+        </p>
       </div>
     </section>
   );

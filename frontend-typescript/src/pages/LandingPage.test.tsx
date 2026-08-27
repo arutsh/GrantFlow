@@ -37,6 +37,16 @@ describe("LandingPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers a Request Demo CTA in the nav that points to the contact section", () => {
+    renderAt("/");
+
+    const requestDemoLinks = screen.getAllByRole("link", {
+      name: "Request Demo",
+    });
+    expect(requestDemoLinks.length).toBeGreaterThan(0);
+    expect(requestDemoLinks[0]).toHaveAttribute("href", "#contact");
+  });
+
   it("renders the product demo embed", () => {
     renderAt("/");
 
@@ -46,7 +56,9 @@ describe("LandingPage", () => {
     expect(demoFrame.tagName).toBe("IFRAME");
     expect(demoFrame).toHaveAttribute(
       "src",
-      expect.stringContaining("https://demo.arcade.software/video/bJX6Bh5bfgTZU5E2pUSK"),
+      expect.stringContaining(
+        "https://demo.arcade.software/video/bJX6Bh5bfgTZU5E2pUSK",
+      ),
     );
     expect(demoFrame).toHaveAttribute("loading", "lazy");
   });
@@ -76,10 +88,16 @@ describe("LandingPage", () => {
     ).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText("Name"), "Jane Doe");
-    await userEvent.type(screen.getByLabelText("Organisation"), "Acme Foundation");
+    await userEvent.type(
+      screen.getByLabelText("Organisation"),
+      "Acme Foundation",
+    );
     await userEvent.type(screen.getByLabelText("Email"), "jane@example.org");
     await userEvent.selectOptions(screen.getByLabelText("Role"), "Foundation");
-    await userEvent.type(screen.getByLabelText("Message"), "We'd love to talk.");
+    await userEvent.type(
+      screen.getByLabelText("Message"),
+      "We'd love to talk.",
+    );
     await userEvent.click(screen.getByLabelText("I'd like to request a demo"));
     await userEvent.click(
       screen.getByRole("button", { name: "Let's Start a Conversation" }),
@@ -114,10 +132,16 @@ describe("LandingPage", () => {
     renderAt("/");
 
     await userEvent.type(screen.getByLabelText("Name"), "Jane Doe");
-    await userEvent.type(screen.getByLabelText("Organisation"), "Acme Foundation");
+    await userEvent.type(
+      screen.getByLabelText("Organisation"),
+      "Acme Foundation",
+    );
     await userEvent.type(screen.getByLabelText("Email"), "jane@example.org");
     await userEvent.selectOptions(screen.getByLabelText("Role"), "Foundation");
-    await userEvent.type(screen.getByLabelText("Message"), "We'd love to talk.");
+    await userEvent.type(
+      screen.getByLabelText("Message"),
+      "We'd love to talk.",
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Let's Start a Conversation" }),
     );
