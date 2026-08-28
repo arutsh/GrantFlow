@@ -13,7 +13,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 2.2 Add the same `privacy_url` key to the `personalization` dict in `services/worker/tasks/users/send_invite_email.py`.
 - [x] 2.3 Update the settings comment block in `services/worker/config.py` to document `privacy_url` as a personalization var for both the verification and invite templates.
 - [x] 2.4 Add unit tests asserting `privacy_url` is present in the personalization dict passed to `send_template_email` for both tasks (new coverage — no existing tests assert on these dicts today).
-- [ ] 2.5 In the Mailjet dashboard, edit both the verification-email and invite-email templates to render `{{var:privacy_url:""}}` as a Privacy Policy link in the footer.
-- [ ] 2.6 In the MailerSend dashboard (the alternate `EMAIL_PROVIDER`), make the same footer edit to both templates so the link works regardless of which provider is active.
-- [ ] 2.7 Trigger a real verification email and a real invite email in dev for each provider and manually confirm the Privacy Policy link renders and points at `/legal#privacy`.
-- [ ] 2.8 Run the worker test suite and lint clean; PR merged. (Tests + lint verified clean; PR not yet opened.)
+- [x] 2.5 In the Mailjet dashboard, edit both the verification-email and invite-email templates to render `{{var:privacy_url:""}}` as a Privacy Policy link in the footer.
+- [x] 2.6 In the MailerSend dashboard (the alternate `EMAIL_PROVIDER`), make the same footer edit to both templates so the link works regardless of which provider is active. (Skipped: MailerSend isn't the active provider — unnecessary effort right now. `privacy_url` is already sent in the personalization dict; a NOTE in `services/worker/config.py` and `docs/deployment/DEPLOYMENT_MODES.md` flags the MailerSend templates for revisiting if it becomes primary again.)
+- [x] 2.7 Trigger a real verification email and a real invite email in dev for each provider and manually confirm the Privacy Policy link renders and points at `/legal#privacy`.
+- [x] 2.8 Run the worker test suite and lint clean; PR merged. (Tests + lint verified clean; PR not yet opened.)

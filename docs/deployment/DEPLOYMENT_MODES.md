@@ -375,6 +375,8 @@ Real credentials are never committed — `MAILERSEND_API_TOKEN`/`MAILERSEND_SEND
 
 **Rolling back:** unset `EMAIL_PROVIDER`, or set it back to `mailersend`, in the relevant `.env.worker.*` file (and, in prod, the corresponding GitHub Actions secret substitution). No data migration is involved — the switch is config-only and fully reversible.
 
+**If MailerSend becomes primary again:** the code sends a `privacy_url` personalization var to both providers, but only the Mailjet dashboard templates were edited to render it as a footer link (`high-privacy-policy-mailjet-compliance`, task 2.5) — the MailerSend templates were left untouched (task 2.6, deliberately skipped since MailerSend wasn't the active provider). Revisit both `MAILERSEND_VERIFICATION_TEMPLATE_ID` and `MAILERSEND_INVITE_TEMPLATE_ID` templates in the MailerSend dashboard and add the same link before flipping `EMAIL_PROVIDER` back.
+
 ---
 
 ## Architecture Comparison
