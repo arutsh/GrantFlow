@@ -14,7 +14,8 @@ from pathlib import Path
 #                                          verification email. Personalization vars: name,
 #                                          verify_url, expiry_hours, support_email,
 #                                          account_name, privacy_url
-#   NOTE: privacy_url is sent to both providers, but only Mailjet's dashboard templates render it — see DEPLOYMENT_MODES.md before making MailerSend primary again.
+#   NOTE: privacy_url is sent to both providers, but only Mailjet's dashboard templates
+#         render it — see DEPLOYMENT_MODES.md before making MailerSend primary again.
 #   MAILERSEND_INVITE_TEMPLATE_ID — MailerSend dashboard template ID for the admin-invite
 #                                    email (distinct from verification: welcomes the invitee,
 #                                    names the inviter/company, links to /accept-invite).
