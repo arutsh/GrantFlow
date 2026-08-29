@@ -19,9 +19,7 @@ def send_password_reset_email(self, email: str, token: str, first_name: str = ""
     query = urlencode({"token": token, "email": email})
     reset_url = f"{settings.FRONTEND_BASE_URL}/reset-password?{query}"
     client = get_email_client()
-    template_id = getattr(
-        settings, f"{settings.EMAIL_PROVIDER.upper()}_PASSWORD_RESET_TEMPLATE_ID"
-    )
+    template_id = getattr(settings, f"{settings.EMAIL_PROVIDER.upper()}_PASSWORD_RESET_TEMPLATE_ID")
     try:
         client.send_template_email(
             to_email=email,
