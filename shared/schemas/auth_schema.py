@@ -87,3 +87,13 @@ class ResendVerificationResponse(BaseModel):
     # (local/e2e envs only) — lets e2e drive the real verify-email flow
     # without a real inbox. Always None in production.
     debug_token: str | None = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    sent: bool
+    # Same test-only escape hatch as ResendVerificationResponse.debug_token.
+    debug_token: str | None = None

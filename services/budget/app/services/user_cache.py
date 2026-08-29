@@ -96,7 +96,7 @@ async def get_users_by_ids_cached(ids: List[str], token: str) -> Dict[str, Dict[
 
     session = SessionLocal()
     try:
-        user_uuids = [UUID(uid) for uid in ids]
+        user_uuids = [uid if isinstance(uid, UUID) else UUID(uid) for uid in ids]
         profiles = (
             session.query(UserProfileModel).filter(UserProfileModel.user_id.in_(user_uuids)).all()
         )

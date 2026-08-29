@@ -351,6 +351,7 @@ Any other value raises a configuration error at worker startup rather than silen
 | `MAILERSEND_SENDER_EMAIL` | The `from` address on outgoing mail — must belong to `MAILERSEND_SENDER_DOMAIN`. |
 | `MAILERSEND_SENDER_NAME` | Display name on outgoing mail. Defaults to `GrandFlow`. |
 | `MAILERSEND_VERIFICATION_TEMPLATE_ID` | MailerSend dashboard template ID for the verification email. |
+| `MAILERSEND_PASSWORD_RESET_TEMPLATE_ID` | MailerSend dashboard template ID for the password-reset email. |
 | `MAILERSEND_API_URL` | Optional override for the Email API endpoint. Leave blank to use the real MailerSend API — only set this to redirect sends at a local mock server instead. |
 
 **Mailjet config:**
@@ -361,6 +362,7 @@ Any other value raises a configuration error at worker startup rather than silen
 | `MAILJET_SENDER_EMAIL` | The `from` address on outgoing mail — must belong to a verified Mailjet sender. |
 | `MAILJET_SENDER_NAME` | Display name on outgoing mail. Defaults to `GrandFlow`. |
 | `MAILJET_VERIFICATION_TEMPLATE_ID` | Mailjet dashboard template ID for the verification email. |
+| `MAILJET_PASSWORD_RESET_TEMPLATE_ID` | Mailjet dashboard template ID for the password-reset email. |
 | `MAILJET_API_URL` | Optional override for the Send API endpoint. Leave blank to use the real Mailjet API — only set this to redirect sends at a local mock server instead. |
 
 Shared across both: `FRONTEND_BASE_URL` — origin used to build the `/verify-email?token=...` link in the email (e.g. `http://localhost:3000` in dev, the deployed frontend origin in prod).

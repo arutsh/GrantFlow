@@ -727,11 +727,11 @@ def _budget_update_response(budget: BudgetModel) -> BudgetUpdate:
 
 
 async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_user: dict):
-    # Collect unique user and customer IDs
-    user_ids = {b.created_by for b in budgets if b.created_by}
-    user_ids |= {b.updated_by for b in budgets if b.updated_by}
-    customer_ids = {b.funding_customer_id for b in budgets if b.funding_customer_id}
-    customer_ids |= {b.owner_id for b in budgets if b.owner_id}
+    # Collect unique user and customer IDs (str: lookup maps below are keyed by string ids)
+    user_ids = {str(b.created_by) for b in budgets if b.created_by}
+    user_ids |= {str(b.updated_by) for b in budgets if b.updated_by}
+    customer_ids = {str(b.funding_customer_id) for b in budgets if b.funding_customer_id}
+    customer_ids |= {str(b.owner_id) for b in budgets if b.owner_id}
     user_ids = user_ids if user_ids else set()
     customer_ids = customer_ids if customer_ids else set()
     # Fetch users/customers concurrently (users from cache with fallback, customers from HTTP)
@@ -763,12 +763,14 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             "confirmed_at": b.confirmed_at,
             "estimated_local_cap": _compute_estimated_local_cap(b),
             "can_save_as_template": _can_save_as_template(b),
-            "owner": customers_map.get(b.owner_id),
+            "owner": customers_map.get(str(b.owner_id)),
             # Preserve `id` from the budget's own funding_customer_id even
             # when the customer-name lookup is empty/failed, so a real
             # funder relationship still round-trips to the frontend's
             # isBudgetFunder check regardless of that lookup's health.
-            "funder": customers_map.get(b.funding_customer_id)
+            "funder": (
+                customers_map.get(str(b.funding_customer_id)) if b.funding_customer_id else None
+            )
             or (
                 {"id": b.funding_customer_id, "name": b.external_funder_name}
                 if b.funding_customer_id
@@ -776,11 +778,11 @@ async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_us
             ),
             "trace": {
                 "created": {
-                    "user": users_map.get(b.created_by),
+                    "user": users_map.get(str(b.created_by)) if b.created_by else None,
                     "event_date": b.created_at,
                 },
                 "updated": {
-                    "user": users_map.get(b.updated_by),
+                    "user": users_map.get(str(b.updated_by)) if b.updated_by else None,
                     "event_date": b.updated_at,
                 },
             },

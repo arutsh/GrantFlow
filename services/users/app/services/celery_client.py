@@ -15,6 +15,13 @@ def enqueue_verification_email(email: str, token: str, first_name: str = "") -> 
     )
 
 
+def enqueue_password_reset_email(email: str, token: str, first_name: str = "") -> None:
+    celery_client.send_task(
+        "tasks.users.send_password_reset_email",
+        kwargs={"email": email, "token": token, "first_name": first_name},
+    )
+
+
 def enqueue_invite_email(
     email: str,
     token: str,

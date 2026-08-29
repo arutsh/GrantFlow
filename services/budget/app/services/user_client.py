@@ -1,11 +1,9 @@
 import requests
 from app.core.config import settings
-from functools import lru_cache
 import uuid
 import httpx
 from typing import List, Dict
 from shared.utils.gateway_wrapper import service_call_exception_handler
-from shared.security.jwt_utils import decode_access_token
 
 USER_SERVICE_URL = settings.user_all_services_url
 _client: httpx.AsyncClient = httpx.AsyncClient(base_url=USER_SERVICE_URL)
@@ -45,54 +43,31 @@ def get_user(user_id: str | uuid.UUID, token: str) -> dict:
         raise UserServiceError(f"Failed to fetch user {user_id}") from e
 
 
-# cache frequent calls to reduce network requests
-@lru_cache(maxsize=128)
-def get_user_cached(user_id: str | uuid.UUID, token: str) -> dict:
-    return get_user(user_id, token)
-
-
-def get_valid_user(user_id: str | uuid.UUID, token: str) -> dict:
-
-    user = decode_access_token(token)
-    if not user:
-        raise ValueError(f"User {user_id} not found")
-    user["token"] = token
-    return user
-
-
-def is_superuser(user_id: str | uuid.UUID, token: str) -> bool:
-    user = decode_access_token(token)
-    if not user:
-        return False
-    return user.get("role") == "superuser"
-
-
-def get_user_customer_id(user_id: str | uuid.UUID, token: str) -> uuid.UUID | None:
-    user = decode_access_token(token)
-    return user.get("customer_id") if user else None
-
-
 @service_call_exception_handler
-async def get_users_by_ids(ids: List[str], token: str) -> Dict[str, dict]:
+async def get_users_by_ids(ids: List[str | uuid.UUID], token: str) -> Dict[str, dict]:
     if not ids:
         return {}
     headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     # call a batch endpoint if available (recommended)
-    r = await _client.post(f"{USER_SERVICE_URL}users/by_ids/", headers=headers, json=ids)
+    r = await _client.post(
+        f"{USER_SERVICE_URL}users/by_ids/", headers=headers, json=[str(i) for i in ids]
+    )
     r.raise_for_status()
     items = r.json()
     return {it["id"]: it for it in items}
 
 
 @service_call_exception_handler
-async def get_customers_by_ids(ids: List[str], token: str) -> Dict[str, dict]:
+async def get_customers_by_ids(ids: List[str | uuid.UUID], token: str) -> Dict[str, dict]:
     if not ids:
         return {}
     headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     # call a batch endpoint if available (recommended)
-    r = await _client.post(f"{USER_SERVICE_URL}customers/by_ids/", headers=headers, json=ids)
+    r = await _client.post(
+        f"{USER_SERVICE_URL}customers/by_ids/", headers=headers, json=[str(i) for i in ids]
+    )
     r.raise_for_status()
     items = r.json()
     return {it["id"]: it for it in items}
