@@ -7,4 +7,6 @@ from shared.schemas.auth_schema import (  # noqa: F401
     VerifyEmailResponse,
     ResendVerificationRequest,
     ResendVerificationResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
 )

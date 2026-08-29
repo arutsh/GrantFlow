@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
+import uuid
 from uuid import uuid4
 
 from main import app
@@ -283,6 +284,51 @@ class TestPopulateBudgetGracefulDegradation:
 
         assert response.status_code == 200
         data = response.json()
+        assert data["owner"]["name"] == "Test NGO"
+        assert data["trace"]["created"]["user"]["first_name"] == "Alice"
+
+    def test_owner_and_trace_resolve_when_model_ids_are_uuid_objects(self):
+        """Regression: uuid.UUID model ids must match the string-keyed users/customers maps."""
+        owner_uuid = uuid.UUID(CUSTOMER_ID)
+        user_uuid = uuid4()
+        budget = BudgetFactory.build(
+            owner_id=owner_uuid,
+            funding_customer_id=None,
+            external_funder_name="Smith Foundation",
+            created_by=user_uuid,
+            updated_by=user_uuid,
+        )
+        users_map = {
+            str(user_uuid): {
+                "id": str(user_uuid),
+                "first_name": "Alice",
+                "last_name": "Smith",
+                "email": "alice@example.com",
+            }
+        }
+        customers_map = {
+            str(owner_uuid): {"id": str(owner_uuid), "name": "Test NGO", "type": "ngo"}
+        }
+
+        with (
+            patch("app.services.budget_services.get_budget", return_value=budget),
+            patch(
+                "app.services.budget_services.get_users_by_ids_cached",
+                new_callable=AsyncMock,
+                return_value=users_map,
+            ),
+            patch(
+                "app.services.budget_services.get_customers_by_ids",
+                new_callable=AsyncMock,
+                return_value=customers_map,
+            ),
+            patch("app.api.budget_routes.get_viewable_budget_lines_service", return_value=[]),
+        ):
+            response = client.get(f"/api/v1/budgets/{budget.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["owner"]["id"] == str(owner_uuid)
         assert data["owner"]["name"] == "Test NGO"
         assert data["trace"]["created"]["user"]["first_name"] == "Alice"
 

@@ -49,6 +49,10 @@ class UserModel(Base):
     email_verification_token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Password reset (password-reset): dedicated pair, separate from email verification above.
+    password_reset_token_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     # Rectification (data-subject-rights): a changed email is stored here,
     # unverified, until the verification link is followed — the old `email`
     # stays the account's active/login address until then (reuses the same

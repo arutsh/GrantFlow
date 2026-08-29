@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.auth_routes import (
+    forgot_password,
     login,
     refresh_token,
     register_endpoint,
@@ -24,6 +25,7 @@ from app.api.auth_routes import (
     verify_email,
 )
 from app.schemas.auth_schema import (
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResendVerificationRequest,
@@ -479,4 +481,106 @@ class TestResendVerification:
             patch("app.api.auth_routes.settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS", False),
         ):
             resp = resend_verification(ResendVerificationRequest(email=user.email), db=object())
+        assert resp.debug_token is None
+
+
+class TestForgotPassword:
+    """Anonymous and enumeration-safe: every branch returns `sent=True`."""
+
+    def test_account_with_password_gets_a_new_token_and_send(self):
+        user = UserModelFactory.build(hashed_password="a-real-hash")
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch(
+                "app.api.auth_routes.set_password_reset_token", return_value="raw-token"
+            ) as mock_set_token,
+            patch("app.api.auth_routes.enqueue_password_reset_email") as mock_enqueue,
+        ):
+            resp = forgot_password(ForgotPasswordRequest(email=user.email), db=object())
+        assert resp.sent is True
+        mock_set_token.assert_called_once()
+        mock_enqueue.assert_called_once_with(user.email, "raw-token", user.first_name)
+
+    def test_account_with_no_password_set_returns_the_same_generic_response(self):
+        user = UserModelFactory.build(hashed_password=None)
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch("app.api.auth_routes.set_password_reset_token", return_value=None),
+            patch("app.api.auth_routes.enqueue_password_reset_email") as mock_enqueue,
+        ):
+            resp = forgot_password(ForgotPasswordRequest(email=user.email), db=object())
+        assert resp.sent is True
+        mock_enqueue.assert_not_called()
+
+    def test_nonexistent_email_returns_the_same_generic_response(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=None),
+            patch("app.api.auth_routes.set_password_reset_token") as mock_set_token,
+            patch("app.api.auth_routes.enqueue_password_reset_email") as mock_enqueue,
+        ):
+            resp = forgot_password(
+                ForgotPasswordRequest(email="nobody@example.com"), db=object()
+            )
+        assert resp.sent is True
+        assert resp.debug_token is None
+        mock_set_token.assert_not_called()
+        mock_enqueue.assert_not_called()
+
+    def test_repeated_requests_past_the_threshold_are_rate_limited(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=True),
+            patch("app.api.auth_routes.get_user_by_email") as mock_get_user,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                forgot_password(ForgotPasswordRequest(email="a@b.com"), db=object())
+        assert exc_info.value.status_code == 429
+        mock_get_user.assert_not_called()
+
+    def test_resend_verification_lockout_does_not_block_forgot_password(self):
+        """The two buckets must not share a key space (design.md risk #2)."""
+        with (
+            patch(
+                "app.api.auth_routes.is_locked_out",
+                side_effect=lambda email, ip, bucket: bucket == "resend_verification",
+            ),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=None),
+        ):
+            resp = forgot_password(ForgotPasswordRequest(email="a@b.com"), db=object())
+        assert resp.sent is True
+
+    def test_debug_token_included_when_flag_enabled(self):
+        user = UserModelFactory.build(hashed_password="a-real-hash")
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch(
+                "app.api.auth_routes.set_password_reset_token", return_value="raw-token"
+            ),
+            patch("app.api.auth_routes.enqueue_password_reset_email"),
+            patch("app.api.auth_routes.settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS", True),
+        ):
+            resp = forgot_password(ForgotPasswordRequest(email=user.email), db=object())
+        assert resp.debug_token == "raw-token"
+
+    def test_debug_token_absent_when_flag_disabled(self):
+        user = UserModelFactory.build(hashed_password="a-real-hash")
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_email", return_value=user),
+            patch(
+                "app.api.auth_routes.set_password_reset_token", return_value="raw-token"
+            ),
+            patch("app.api.auth_routes.enqueue_password_reset_email"),
+            patch("app.api.auth_routes.settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS", False),
+        ):
+            resp = forgot_password(ForgotPasswordRequest(email=user.email), db=object())
         assert resp.debug_token is None

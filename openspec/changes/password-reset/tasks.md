@@ -2,15 +2,19 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 
 ## 1. Data model + forgot-password request
 
-- [ ] 1.1 Add `password_reset_token_hash: str | None` and `password_reset_expires_at: datetime | None` columns to `UserModel` (`services/users/app/models/user.py`), mirroring the existing `email_verification_token_hash`/`email_verification_expires_at` pair.
-- [ ] 1.2 Generate the Alembic migration for the two new nullable columns (no backfill needed).
-- [ ] 1.3 Add `PASSWORD_RESET_TOKEN_TTL_HOURS = 1` constant and `set_password_reset_token`/`get_user_by_password_reset_token`-style CRUD helpers to `services/users/app/crud/user_crud.py`, mirroring `set_email_verification_token`, hashing via the existing `hash_token`/`verify_token_hash` (`shared/security/jwt_utils.py`). No-op (don't issue a token) when the target user has no `hashed_password` set.
-- [ ] 1.4 Add `POST /auth/forgot-password` to `auth_routes.py`: anonymous, enumeration-safe generic response, rate-limited via `login_rate_limiter.py` with `bucket="forgot_password"`, reuses `settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS` to optionally return `debug_token`.
-- [ ] 1.5 Add `send_password_reset_email` Celery task (`services/worker/tasks/users/send_password_reset_email.py`), mirroring `send_verification_email.py` — same retry/backoff config, built via `get_email_client()`.
-- [ ] 1.6 Add `enqueue_password_reset_email` to `services/users/app/services/celery_client.py`, call it from the new route.
+- [x] 1.1 Add `password_reset_token_hash: str | None` and `password_reset_expires_at: datetime | None` columns to `UserModel` (`services/users/app/models/user.py`), mirroring the existing `email_verification_token_hash`/`email_verification_expires_at` pair.
+- [x] 1.2 Generate the Alembic migration for the two new nullable columns (no backfill needed).
+- [x] 1.3 Add `PASSWORD_RESET_TOKEN_TTL_HOURS = 1` constant and `set_password_reset_token`/`get_user_by_password_reset_token`-style CRUD helpers to `services/users/app/crud/user_crud.py`, mirroring `set_email_verification_token`, hashing via the existing `hash_token`/`verify_token_hash` (`shared/security/jwt_utils.py`). No-op (don't issue a token) when the target user has no `hashed_password` set.
+- [x] 1.4 Add `POST /auth/forgot-password` to `auth_routes.py`: anonymous, enumeration-safe generic response, rate-limited via `login_rate_limiter.py` with `bucket="forgot_password"`, reuses `settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS` to optionally return `debug_token`.
+- [x] 1.5 Add `send_password_reset_email` Celery task (`services/worker/tasks/users/send_password_reset_email.py`), mirroring `send_verification_email.py` — same retry/backoff config, built via `get_email_client()`.
+- [x] 1.6 Add `enqueue_password_reset_email` to `services/users/app/services/celery_client.py`, call it from the new route.
 - [ ] 1.7 Add `MAILERSEND_PASSWORD_RESET_TEMPLATE_ID` / `MAILJET_PASSWORD_RESET_TEMPLATE_ID` settings (`services/worker/config.py`) and create the corresponding template on both provider dashboards (dev + prod accounts); document the new env vars in `docs/deployment/DEPLOYMENT_MODES.md` alongside the existing MailerSend/Mailjet table.
-- [ ] 1.8 Tests: token issuance/expiry/no-op-on-no-password in `user_crud`, route-level enumeration-safety + rate-limit tests for `forgot-password` (mirroring existing `resend-verification` tests in `test_auth_routes.py`), Celery task test mirroring `test_send_verification_email.py`.
+  - [x] Settings + docs + env-file placeholders done.
+  - [ ] Dashboard templates (dev + prod, both providers) — needs your provider-account access, not doable from here.
+- [x] 1.8 Tests: token issuance/expiry/no-op-on-no-password in `user_crud`, route-level enumeration-safety + rate-limit tests for `forgot-password` (mirroring existing `resend-verification` tests in `test_auth_routes.py`), Celery task test mirroring `test_send_verification_email.py`.
 - [ ] 1.9 Run the users-service and worker-service test/lint suites clean; PR merged.
+  - [x] Tests/lint clean.
+  - [ ] PR merged — awaiting commit/push approval.
 
 ## 2. Reset-password confirmation + session revocation — depends on 1
 

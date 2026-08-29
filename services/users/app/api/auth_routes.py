@@ -14,6 +14,8 @@ from app.schemas.auth_schema import (
     VerifyEmailResponse,
     ResendVerificationRequest,
     ResendVerificationResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     ImpersonateRequest,
     ImpersonateResponse,
 )
@@ -46,10 +48,11 @@ from app.crud.user_crud import (
     set_email_verification_token,
     get_user_by_verification_token,
     mark_email_verified,
+    set_password_reset_token,
 )
 from app.crud.customer_crud import get_customer
 from app.utils.redis import _cache_get, _delete_key
-from app.services.celery_client import enqueue_verification_email
+from app.services.celery_client import enqueue_verification_email, enqueue_password_reset_email
 from app.services.login_rate_limiter import (
     is_locked_out,
     record_failed_attempt,
@@ -332,6 +335,36 @@ def resend_verification(
             debug_token = raw_token
 
     return ResendVerificationResponse(sent=True, debug_token=debug_token)
+
+
+@router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    req: ForgotPasswordRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    """Anonymous and enumeration-safe: same response regardless of account state."""
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(req.email, client_ip, bucket="forgot_password"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many reset attempts. Try again later.",
+        )
+    record_failed_attempt(req.email, client_ip, bucket="forgot_password")
+
+    debug_token = None
+    user = get_user_by_email(db, req.email)
+    if user:
+        raw_token = set_password_reset_token(db, user)
+        if raw_token:
+            try:
+                enqueue_password_reset_email(user.email, raw_token, user.first_name)
+            except Exception:
+                logger.exception("password_reset_email_enqueue_failed", user_id=str(user.id))
+            if settings.EXPOSE_VERIFICATION_TOKEN_FOR_TESTS:
+                debug_token = raw_token
+
+    return ForgotPasswordResponse(sent=True, debug_token=debug_token)
 
 
 @router.post("/auth/change-password")

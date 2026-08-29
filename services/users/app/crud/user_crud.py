@@ -15,6 +15,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 EMAIL_VERIFICATION_TOKEN_TTL_HOURS = 24
+PASSWORD_RESET_TOKEN_TTL_HOURS = 1
 
 
 def _user_event_payload(user: UserModel) -> dict:
@@ -216,6 +217,44 @@ def set_pending_email_verification_token(session: Session, user: UserModel, new_
     session.commit()
     session.refresh(user)
     return raw_token
+
+
+def set_password_reset_token(session: Session, user: UserModel) -> str | None:
+    """Mirrors set_email_verification_token, on the dedicated reset column
+    pair. No-ops (returns None) for an account with no password set — a
+    reset token there would be a set-invite-password case, not a reset."""
+    if not user.hashed_password:
+        return None
+    raw_token = secrets.token_urlsafe(32)
+    user.password_reset_token_hash = hash_token(raw_token)
+    user.password_reset_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        hours=PASSWORD_RESET_TOKEN_TTL_HOURS
+    )
+    session.commit()
+    session.refresh(user)
+    return raw_token
+
+
+def get_user_by_password_reset_token(
+    session: Session, email: str, raw_token: str
+) -> UserModel | None:
+    user = get_user_by_email(session, email)
+    if not user or not user.password_reset_token_hash or not user.password_reset_expires_at:
+        return None
+    if user.password_reset_expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        return None
+    if not verify_token_hash(raw_token, user.password_reset_token_hash):
+        return None
+    return user
+
+
+def reset_password(session: Session, user: UserModel, new_password: str) -> UserModel:
+    user.hashed_password = hash_password(new_password)
+    user.password_reset_token_hash = None
+    user.password_reset_expires_at = None
+    session.commit()
+    session.refresh(user)
+    return user
 
 
 def get_consent_state(user: UserModel) -> dict:
