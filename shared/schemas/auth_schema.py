@@ -97,3 +97,13 @@ class ForgotPasswordResponse(BaseModel):
     sent: bool
     # Same test-only escape hatch as ResendVerificationResponse.debug_token.
     debug_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    token: str
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
+    reset: bool

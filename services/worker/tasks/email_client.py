@@ -1,3 +1,4 @@
+from shared.services.console_email_client import ConsoleEmailClient
 from shared.services.mailersend_client import MailerSendClient
 from shared.services.mailjet_client import MailjetClient
 
@@ -25,9 +26,14 @@ def _build_mailjet_client(settings):
     )
 
 
+def _build_console_client(settings):
+    return ConsoleEmailClient()
+
+
 _PROVIDER_BUILDERS = {
     "mailersend": _build_mailersend_client,
     "mailjet": _build_mailjet_client,
+    "console": _build_console_client,
 }
 
 
@@ -36,10 +42,12 @@ def get_email_client():
     if _client is None:
         from config import settings
 
-        builder = _PROVIDER_BUILDERS.get(settings.EMAIL_PROVIDER)
+        # Falls back to console (not an error) when EMAIL_PROVIDER is unset/blank.
+        provider = settings.EMAIL_PROVIDER or "console"
+        builder = _PROVIDER_BUILDERS.get(provider)
         if builder is None:
             raise ValueError(
-                f"Unsupported EMAIL_PROVIDER={settings.EMAIL_PROVIDER!r}; "
+                f"Unsupported EMAIL_PROVIDER={provider!r}; "
                 f"expected one of {sorted(_PROVIDER_BUILDERS)}"
             )
         _client = builder(settings)

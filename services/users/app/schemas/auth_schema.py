@@ -9,4 +9,6 @@ from shared.schemas.auth_schema import (  # noqa: F401
     ResendVerificationResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
 )

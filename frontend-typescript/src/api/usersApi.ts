@@ -33,6 +33,24 @@ export const resendVerification = async (email: string) => {
   return data;
 };
 
+export const forgotPassword = async (email: string) => {
+  const { data } = await gatewayApi.post("/auth/forgot-password", { email });
+  return data;
+};
+
+export const resetPassword = async (
+  email: string,
+  token: string,
+  newPassword: string,
+) => {
+  const { data } = await gatewayApi.post("/auth/reset-password", {
+    email,
+    token,
+    new_password: newPassword,
+  });
+  return data;
+};
+
 export const userOnboarding = async (
   first_name: string,
   last_name: string,

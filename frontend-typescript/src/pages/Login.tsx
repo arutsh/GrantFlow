@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
 import { STATUS, useAuth } from "@/context/AuthContext";
 import { loginUser } from "@/api/usersApi";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Button from "@/components/ui/Button";
 import { LogIn } from "lucide-react";
 
 export default function Login() {
   const { isAuthenticated, isRegistering, login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [remember, setRemember] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const successMessage = (location.state as { message?: string } | null)?.message;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +69,13 @@ export default function Login() {
         </h1>
         <p className="text-center text-gray-500 mb-8">Welcome back</p>
 
+        {/* Success Message */}
+        {!error && successMessage && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-green-700 text-sm">{successMessage}</p>
+          </div>
+        )}
+
         {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -91,9 +100,17 @@ export default function Login() {
 
         {/* Password Input */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-slate-900 mb-2">
-            Password
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-slate-900">
+              Password
+            </label>
+            <a
+              href="/forgot-password"
+              className="text-sm text-slate-700 font-medium hover:text-slate-900 hover:underline"
+            >
+              Forgot password?
+            </a>
+          </div>
           <input
             type="password"
             placeholder="Enter your password"

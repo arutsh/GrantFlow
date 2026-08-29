@@ -122,3 +122,32 @@ class TestResetPassword:
         assert user.hashed_password != "old-hash"
         assert user.password_reset_token_hash is None
         assert user.password_reset_expires_at is None
+
+
+class TestPasswordResetTokenIsolation:
+    """Dedicated column pair (design.md decision 1) — a reset request must
+    not disturb a pending email-verification token, and vice versa."""
+
+    def test_issuing_a_reset_token_leaves_a_pending_verification_token_untouched(self):
+        user = UserModelFactory.build(
+            hashed_password="a-real-hash",
+            email_verification_token_hash="verify-hash",
+            email_verification_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+            + timedelta(hours=1),
+        )
+        set_password_reset_token(MagicMock(), user)
+
+        assert user.email_verification_token_hash == "verify-hash"
+
+    def test_consuming_a_reset_token_leaves_a_pending_verification_token_untouched(self):
+        user = UserModelFactory.build(
+            hashed_password="old-hash",
+            password_reset_token_hash="reset-hash",
+            password_reset_expires_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            email_verification_token_hash="verify-hash",
+            email_verification_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+            + timedelta(hours=1),
+        )
+        reset_password(MagicMock(), user, "N3w-Str0ng-Pass!")
+
+        assert user.email_verification_token_hash == "verify-hash"

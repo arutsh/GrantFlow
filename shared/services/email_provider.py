@@ -1,5 +1,5 @@
 # /shared/services/email_provider.py
-from typing import Protocol
+from abc import ABC, abstractmethod
 
 
 class EmailProviderError(Exception):
@@ -21,10 +21,15 @@ class EmailProviderError(Exception):
         self.retryable = retryable
 
 
-class EmailProvider(Protocol):
-    """Interface every transactional-email provider client implements, so call
+class EmailClient(ABC):
+    """Base class every transactional-email provider client extends, so call
     sites depend on this shape instead of any vendor-specific payload/response."""
 
+    def __init__(self, sender_email: str, sender_name: str = "GrandFlow"):
+        self.sender_email = sender_email
+        self.sender_name = sender_name
+
+    @abstractmethod
     def send_template_email(
         self,
         to_email: str,

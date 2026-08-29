@@ -6,7 +6,9 @@ from pathlib import Path
 #   RABBITMQ_URL  — amqp://user:pass@host:5672//
 #   REDIS_URL     — redis://host:6379/0
 #   AI_DATABASE_URL — postgresql://user:pass@host:5432/grandflow_ai
-#   EMAIL_PROVIDER — which transactional-email client to use: "mailersend" (default) or "mailjet"
+#   EMAIL_PROVIDER — which transactional-email client to use: "console" (default — prints the
+#                     send instead of calling an API, no credentials or network access needed),
+#                     "mailersend", or "mailjet"
 #   MAILERSEND_API_TOKEN    — MailerSend Email API token
 #   MAILERSEND_SENDER_DOMAIN — trial domain in dev/staging, verified domain in prod
 #   MAILERSEND_SENDER_EMAIL — from-address sent with each email (must belong to the sender domain)
@@ -57,7 +59,7 @@ class Settings(BaseSettings):
     RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672//"
     REDIS_URL: str = "redis://localhost:6379/0"
     AI_DATABASE_URL: str
-    EMAIL_PROVIDER: str = "mailersend"
+    EMAIL_PROVIDER: str = "console"
     MAILERSEND_API_TOKEN: str = ""
     MAILERSEND_SENDER_DOMAIN: str = ""
     MAILERSEND_SENDER_EMAIL: str = ""
@@ -74,6 +76,10 @@ class Settings(BaseSettings):
     MAILJET_INVITE_TEMPLATE_ID: str = ""
     MAILJET_PASSWORD_RESET_TEMPLATE_ID: str = ""
     MAILJET_API_URL: str = ""
+    # So the {PROVIDER}_{PURPOSE}_TEMPLATE_ID getattr lookups resolve for EMAIL_PROVIDER=console.
+    CONSOLE_VERIFICATION_TEMPLATE_ID: str = "console"
+    CONSOLE_INVITE_TEMPLATE_ID: str = "console"
+    CONSOLE_PASSWORD_RESET_TEMPLATE_ID: str = "console"
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")

@@ -10,6 +10,8 @@ import Register from "./pages/Register";
 import Onboarding from "./pages/OnBoarding";
 import ConfirmEmail from "./pages/ConfirmEmail";
 import VerifyEmail from "./pages/VerifyEmail";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import AcceptInvite from "./pages/AcceptInvite";
 import BudgetsPage from "./pages/Budgets/budgets";
 import { SingleBudgetViewContainer } from "./pages/Budgets/SingleBudgetView";
@@ -47,6 +49,8 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route

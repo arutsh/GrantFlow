@@ -22,6 +22,7 @@ from app.api.auth_routes import (
     refresh_token,
     register_endpoint,
     resend_verification,
+    reset_password_endpoint,
     verify_email,
 )
 from app.schemas.auth_schema import (
@@ -29,6 +30,7 @@ from app.schemas.auth_schema import (
     LoginRequest,
     RegisterRequest,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     VerifyEmailRequest,
 )
 from app.utils.security import decode_access_token
@@ -584,3 +586,74 @@ class TestForgotPassword:
         ):
             resp = forgot_password(ForgotPasswordRequest(email=user.email), db=object())
         assert resp.debug_token is None
+
+
+class TestResetPasswordEndpoint:
+    def _req(self, email="user@example.com", token="raw-token", new_password="N3w-Str0ng-Pass!"):
+        return ResetPasswordRequest(email=email, token=token, new_password=new_password)
+
+    def test_valid_token_resets_password_and_revokes_every_session(self):
+        user = UserModelFactory.build(hashed_password="old-hash")
+        sessions = [SimpleNamespace(id=str(uuid4())), SimpleNamespace(id=str(uuid4()))]
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.clear_failed_attempts"),
+            patch(
+                "app.api.auth_routes.get_user_by_password_reset_token", return_value=user
+            ) as mock_lookup,
+            patch("app.api.auth_routes.reset_password", return_value=user) as mock_reset,
+            patch(
+                "app.api.auth_routes.revoke_all_sessions_for_user", return_value=sessions
+            ) as mock_revoke_all,
+            patch("app.api.auth_routes.mark_session_revoked") as mock_mark_revoked,
+        ):
+            resp = reset_password_endpoint(self._req(email=user.email), db=object())
+        assert resp.reset is True
+        assert mock_lookup.call_args[0][1] == user.email
+        assert mock_lookup.call_args[0][2] == "raw-token"
+        mock_reset.assert_called_once()
+        assert mock_reset.call_args[0][1] is user
+        assert mock_reset.call_args[0][2] == "N3w-Str0ng-Pass!"
+        assert mock_revoke_all.call_args[0][1] == user.id
+        assert mock_mark_revoked.call_count == len(sessions)
+
+    def test_expired_or_invalid_token_is_rejected(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt") as mock_record,
+            patch("app.api.auth_routes.get_user_by_password_reset_token", return_value=None),
+            patch("app.api.auth_routes.reset_password") as mock_reset,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                reset_password_endpoint(self._req(), db=object())
+        assert exc_info.value.status_code == 400
+        mock_reset.assert_not_called()
+        mock_record.assert_called_once()
+
+    def test_weak_new_password_is_rejected_and_token_left_intact(self):
+        user = UserModelFactory.build(hashed_password="old-hash")
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=False),
+            patch("app.api.auth_routes.record_failed_attempt"),
+            patch("app.api.auth_routes.get_user_by_password_reset_token", return_value=user),
+            patch("app.api.auth_routes.reset_password") as mock_reset,
+            patch("app.api.auth_routes.revoke_all_sessions_for_user") as mock_revoke_all,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                reset_password_endpoint(
+                    self._req(email=user.email, new_password="weak"), db=object()
+                )
+        assert exc_info.value.status_code == 400
+        mock_reset.assert_not_called()
+        mock_revoke_all.assert_not_called()
+
+    def test_repeated_requests_past_the_threshold_are_rate_limited(self):
+        with (
+            patch("app.api.auth_routes.is_locked_out", return_value=True),
+            patch("app.api.auth_routes.get_user_by_password_reset_token") as mock_lookup,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                reset_password_endpoint(self._req(), db=object())
+        assert exc_info.value.status_code == 429
+        mock_lookup.assert_not_called()

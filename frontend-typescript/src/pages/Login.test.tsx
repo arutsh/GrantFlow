@@ -23,14 +23,14 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
-function renderLogin() {
+function renderLogin(initialEntries?: { pathname: string; state?: unknown }[]) {
   vi.mocked(authContext.useAuth).mockReturnValue({
     isAuthenticated: false,
     isRegistering: false,
     login: vi.fn(),
   } as any);
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <Login />
     </MemoryRouter>,
   );
@@ -74,5 +74,26 @@ describe("Login error messages", () => {
         state: { email: "user@example.com" },
       });
     });
+  });
+});
+
+describe("Login success message", () => {
+  it("shows the message passed via navigation state (e.g. after a password reset)", () => {
+    renderLogin([
+      { pathname: "/login", state: { message: "Password reset. Please log in with your new password." } },
+    ]);
+
+    expect(
+      screen.getByText("Password reset. Please log in with your new password."),
+    ).toBeInTheDocument();
+  });
+
+  it("has a Forgot password? link", () => {
+    renderLogin();
+
+    expect(screen.getByRole("link", { name: "Forgot password?" })).toHaveAttribute(
+      "href",
+      "/forgot-password",
+    );
   });
 });
