@@ -1,7 +1,7 @@
 # /shared/services/mailjet_client.py
 import httpx
 
-from shared.services.email_provider import EmailProviderError
+from shared.services.email_provider import EmailClient, EmailProviderError
 
 DEFAULT_MAILJET_API_URL = "https://api.mailjet.com/v3.1/send"
 
@@ -10,7 +10,7 @@ class MailjetError(EmailProviderError):
     """Raised when the Mailjet Send API can't be reached or rejects a send."""
 
 
-class MailjetClient:
+class MailjetClient(EmailClient):
     """Thin wrapper around Mailjet's Send API v3.1.
 
     One client (and its underlying httpx client) is meant to be built once
@@ -27,8 +27,7 @@ class MailjetClient:
         api_url: str | None = None,
         http: httpx.Client | None = None,
     ):
-        self.sender_email = sender_email
-        self.sender_name = sender_name
+        super().__init__(sender_email, sender_name)
         # Overridable so local/dev can point this at a mock HTTP server
         # instead of the real Mailjet API.
         self.api_url = api_url or DEFAULT_MAILJET_API_URL

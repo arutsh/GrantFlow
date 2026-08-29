@@ -14,20 +14,25 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 1.8 Tests: token issuance/expiry/no-op-on-no-password in `user_crud`, route-level enumeration-safety + rate-limit tests for `forgot-password` (mirroring existing `resend-verification` tests in `test_auth_routes.py`), Celery task test mirroring `test_send_verification_email.py`.
 - [ ] 1.9 Run the users-service and worker-service test/lint suites clean; PR merged.
   - [x] Tests/lint clean.
-  - [ ] PR merged — awaiting commit/push approval.
+  - [x] PR merged (#251).
 
 ## 2. Reset-password confirmation + session revocation — depends on 1
 
-- [ ] 2.1 Add `POST /auth/reset-password` to `auth_routes.py`: validates token via the CRUD helper from 1.3, validates new password via `validate_password_strength`, sets `hashed_password`, clears the reset token/expiry, returns no session.
-- [ ] 2.2 On successful reset, revoke every session for the account using `revoke_all_sessions_for_user` + `_revoke_session_everywhere` (dual-store: DB `revoked` flag + Redis), matching `change-password`'s revocation call but with no session preserved.
-- [ ] 2.3 Add request/response schemas (`ForgotPasswordRequest/Response`, `ResetPasswordRequest/Response`) to `services/users/app/schemas/auth_schema.py`, following the existing `ResendVerificationRequest/Response` naming.
-- [ ] 2.4 Tests: valid/expired/already-used/weak-password scenarios for `reset-password`, session-revocation assertions (all sessions gone, no new session issued), a test confirming a pending email-verification token is untouched by a password-reset request (and vice versa).
+- [x] 2.1 Add `POST /auth/reset-password` to `auth_routes.py`: validates token via the CRUD helper from 1.3, validates new password via `validate_password_strength`, sets `hashed_password`, clears the reset token/expiry, returns no session.
+- [x] 2.2 On successful reset, revoke every session for the account using `revoke_all_sessions_for_user` + `mark_session_revoked` (dual-store: DB `revoked` flag + Redis), matching `delete_my_account`'s revocation call.
+- [x] 2.3 Add request/response schemas (`ForgotPasswordRequest/Response`, `ResetPasswordRequest/Response`) to `services/users/app/schemas/auth_schema.py`, following the existing `ResendVerificationRequest/Response` naming.
+- [x] 2.4 Tests: valid/expired/already-used/weak-password scenarios for `reset-password`, session-revocation assertions (all sessions gone, no new session issued), a test confirming a pending email-verification token is untouched by a password-reset request (and vice versa).
 - [ ] 2.5 Run the users-service test/lint suite clean; PR merged.
+  - [x] Tests/lint clean (`black --check`, `mypy`, `flake8` on `./app`; 184 users tests passed).
+  - [ ] PR merged — combined with group 3 into one PR per direction.
 
 ## 3. Frontend request + confirm pages — depends on 1, 2
 
-- [ ] 3.1 Add `ForgotPassword.tsx` page: email input, calls `POST /auth/forgot-password`, shows the same generic "check your email" confirmation regardless of outcome (no enumeration signal in the UI either).
-- [ ] 3.2 Add `ResetPassword.tsx` page: reads the token from the URL query (mirroring `VerifyEmail.tsx`'s handling of its own token param), new-password + confirm-password inputs, calls `POST /auth/reset-password`, handles expired/already-used/weak-password error states distinctly, redirects to `/login` on success with a success message.
-- [ ] 3.3 Wire both routes into `App.tsx` (`/forgot-password`, `/reset-password`) and add a "Forgot password?" link on `Login.tsx` next to the password field.
+- [x] 3.1 Add `ForgotPassword.tsx` page: email input, calls `POST /auth/forgot-password`, shows the same generic "check your email" confirmation regardless of outcome (no enumeration signal in the UI either).
+- [x] 3.2 Add `ResetPassword.tsx` page: reads the token from the URL query (mirroring `VerifyEmail.tsx`'s handling of its own token param), new-password + confirm-password inputs, calls `POST /auth/reset-password`, handles expired/already-used/weak-password error states distinctly, redirects to `/login` on success with a success message.
+- [x] 3.3 Wire both routes into `App.tsx` (`/forgot-password`, `/reset-password`) and add a "Forgot password?" link on `Login.tsx` next to the password field.
 - [ ] 3.4 Manual verification: run the app, exercise the full flow end to end (request → email/debug token → confirm → old sessions dead → fresh login works), including the expired-token and wrong-password-strength error paths.
+  - Needs you to run it in a browser against the dev stack — not doable from here (no Docker/dev-server management, no browser tool in this session).
 - [ ] 3.5 Run the frontend lint/typecheck/test suite clean; PR merged.
+  - [x] Lint (touched files clean; pre-existing repo-wide lint debt untouched), typecheck (`tsc -b`), and test (`vitest run --coverage`, 277/277) all clean.
+  - [ ] PR merged.

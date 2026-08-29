@@ -16,6 +16,8 @@ from app.schemas.auth_schema import (
     ResendVerificationResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
     ImpersonateRequest,
     ImpersonateResponse,
 )
@@ -40,6 +42,7 @@ from app.crud.sessions_curd import (
     get_session_by_id,
     get_non_revoked_sessions_for_user,
     revoke_session,
+    revoke_all_sessions_for_user,
 )
 from app.crud.user_crud import (
     get_user,
@@ -49,6 +52,8 @@ from app.crud.user_crud import (
     get_user_by_verification_token,
     mark_email_verified,
     set_password_reset_token,
+    get_user_by_password_reset_token,
+    reset_password,
 )
 from app.crud.customer_crud import get_customer
 from app.utils.redis import _cache_get, _delete_key
@@ -365,6 +370,45 @@ def forgot_password(
                 debug_token = raw_token
 
     return ForgotPasswordResponse(sent=True, debug_token=debug_token)
+
+
+@router.post("/auth/reset-password", response_model=ResetPasswordResponse)
+def reset_password_endpoint(
+    req: ResetPasswordRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db: Session = Depends(get_db),
+):
+    """Anonymous: consumes the reset token, sets the new password, and
+    revokes every session for the account. No session is issued here."""
+    client_ip = request.client.host if request is not None and request.client else "unknown"
+    if is_locked_out(req.email, client_ip, bucket="reset_password"):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many reset attempts. Try again later.",
+        )
+
+    user = get_user_by_password_reset_token(db, req.email, req.token)
+    if not user:
+        record_failed_attempt(req.email, client_ip, bucket="reset_password")
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    try:
+        validate_password_strength(
+            req.new_password,
+            email=user.email,
+            name=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    clear_failed_attempts(req.email, bucket="reset_password")
+    reset_password(db, user, req.new_password)
+
+    sessions = revoke_all_sessions_for_user(db, user.id)
+    for s in sessions:
+        mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+
+    return ResetPasswordResponse(reset=True)
 
 
 @router.post("/auth/change-password")

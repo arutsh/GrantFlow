@@ -1,7 +1,7 @@
 # /shared/services/mailersend_client.py
 import httpx
 
-from shared.services.email_provider import EmailProviderError
+from shared.services.email_provider import EmailClient, EmailProviderError
 
 DEFAULT_MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 
@@ -10,7 +10,7 @@ class MailerSendError(EmailProviderError):
     """Raised when the MailerSend Email API can't be reached or rejects a send."""
 
 
-class MailerSendClient:
+class MailerSendClient(EmailClient):
     """Thin wrapper around MailerSend's Email API (HTTPS), not SMTP — see
     the "MailerSend product" decision in the email-verification design doc.
 
@@ -27,8 +27,7 @@ class MailerSendClient:
         api_url: str | None = None,
         http: httpx.Client | None = None,
     ):
-        self.sender_email = sender_email
-        self.sender_name = sender_name
+        super().__init__(sender_email, sender_name)
         # Overridable so local/dev can point this at a mock HTTP server
         # (e.g. WireMock) instead of the real MailerSend API.
         self.api_url = api_url or DEFAULT_MAILERSEND_API_URL

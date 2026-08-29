@@ -92,6 +92,7 @@ app = Celery(
         "tasks.debug.ping",
         "tasks.users.send_verification_email",
         "tasks.users.send_invite_email",
+        "tasks.users.send_password_reset_email",
     ],
 )
 
