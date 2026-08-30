@@ -2,12 +2,12 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 1. Outbound notification interface (shared)
 
-- [ ] 1.1 Add `shared/services/notification_provider.py`: abstract `NotificationProvider` (`send(message: NotificationMessage) -> None`) and `NotificationMessage` dataclass (`title`, `body`, `fields: list[tuple[str, str]]`, `link: str | None`), plus `NotificationError(message, status_code=None, retryable=None)` mirroring `EmailProviderError`.
-- [ ] 1.2 Add `shared/services/slack_webhook_client.py`: `SlackWebhookProvider` posting a Block-Kit-formatted message to a configured webhook URL via a reused `httpx.Client`, following `mailjet_client.py`'s retryable-vs-non-retryable error mapping (network errors and 5xx/429 → retryable; 4xx other than 429 → non-retryable).
-- [ ] 1.3 Add a `ConsoleNotificationProvider` (or an in-client guard) that logs instead of sending when no webhook URL is configured, mirroring `console_email_client.py`.
-- [ ] 1.4 Add a small provider-selection helper (env-driven, same shape as the email provider builder) so callers get a configured provider without knowing which implementation backs it.
-- [ ] 1.5 Unit tests: message formatting, retryable failure (network error, 500, 429), non-retryable failure (400, 404), and the no-webhook-configured fallback.
-- [ ] 1.6 Run `shared`'s test suite and lint clean; PR merged (`Closes #<n>`).
+- [x] 1.1 Add `shared/services/notification_provider.py`: abstract `NotificationProvider` (`send(message: NotificationMessage) -> None`) and `NotificationMessage` dataclass (`title`, `body`, `fields: list[tuple[str, str]]`, `link: str | None`), plus `NotificationError(message, status_code=None, retryable=None)` mirroring `EmailProviderError`.
+- [x] 1.2 Add `shared/services/slack_webhook_client.py`: `SlackWebhookProvider` posting a Block-Kit-formatted message to a configured webhook URL via a reused `httpx.Client`, following `mailjet_client.py`'s retryable-vs-non-retryable error mapping (network errors and 5xx/429 → retryable; 4xx other than 429 → non-retryable).
+- [x] 1.3 Add a `ConsoleNotificationProvider` (or an in-client guard) that logs instead of sending when no webhook URL is configured, mirroring `console_email_client.py`.
+- [x] 1.4 Add a small provider-selection helper (env-driven, same shape as the email provider builder) so callers get a configured provider without knowing which implementation backs it.
+- [x] 1.5 Unit tests: message formatting, retryable failure (network error, 500, 429), non-retryable failure (400, 404), and the no-webhook-configured fallback.
+- [ ] 1.6 Run `shared`'s test suite and lint clean; PR merged (`Closes #256`).
 
 ## 2. Bug report submission backend (services/users) — depends on 1
 
