@@ -1,3 +1,4 @@
+from shared.services.brevo_client import BrevoClient
 from shared.services.console_email_client import ConsoleEmailClient
 from shared.services.mailersend_client import MailerSendClient
 from shared.services.mailjet_client import MailjetClient
@@ -26,6 +27,15 @@ def _build_mailjet_client(settings):
     )
 
 
+def _build_brevo_client(settings):
+    return BrevoClient(
+        api_key=settings.BREVO_API_KEY,
+        sender_email=settings.BREVO_SENDER_EMAIL,
+        sender_name=settings.BREVO_SENDER_NAME,
+        api_url=settings.BREVO_API_URL or None,
+    )
+
+
 def _build_console_client(settings):
     return ConsoleEmailClient()
 
@@ -33,6 +43,7 @@ def _build_console_client(settings):
 _PROVIDER_BUILDERS = {
     "mailersend": _build_mailersend_client,
     "mailjet": _build_mailjet_client,
+    "brevo": _build_brevo_client,
     "console": _build_console_client,
 }
 

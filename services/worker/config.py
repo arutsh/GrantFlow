@@ -39,6 +39,18 @@ from pathlib import Path
 #                                         MAILERSEND_PASSWORD_RESET_TEMPLATE_ID
 #   MAILJET_API_URL — override for the Mailjet Send API endpoint; blank uses the real Mailjet API
 #                      (only set this to point at a local mock in dev)
+#   BREVO_API_KEY — Brevo transactional email API key (header auth, no separate secret)
+#   BREVO_SENDER_EMAIL — from-address sent with each email (must belong to a verified sender)
+#   BREVO_VERIFICATION_TEMPLATE_ID — Brevo dashboard template ID for the verification email;
+#                                     same personalization vars as
+#                                     MAILERSEND_VERIFICATION_TEMPLATE_ID
+#   BREVO_INVITE_TEMPLATE_ID — Brevo dashboard template ID for the admin-invite email;
+#                               same personalization vars as MAILERSEND_INVITE_TEMPLATE_ID
+#   BREVO_PASSWORD_RESET_TEMPLATE_ID — Brevo dashboard template ID for the password-reset email;
+#                                       same personalization vars as
+#                                       MAILERSEND_PASSWORD_RESET_TEMPLATE_ID
+#   BREVO_API_URL — override for the Brevo API endpoint; blank uses the real Brevo API
+#                    (only set this to point at a local mock in dev)
 #   FRONTEND_BASE_URL — origin used to build the verification/accept-invite link,
 #                        e.g. https://app.example.com
 
@@ -76,6 +88,13 @@ class Settings(BaseSettings):
     MAILJET_INVITE_TEMPLATE_ID: str = ""
     MAILJET_PASSWORD_RESET_TEMPLATE_ID: str = ""
     MAILJET_API_URL: str = ""
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = ""
+    BREVO_SENDER_NAME: str = "OpenGrandFlow"
+    BREVO_VERIFICATION_TEMPLATE_ID: str = ""
+    BREVO_INVITE_TEMPLATE_ID: str = ""
+    BREVO_PASSWORD_RESET_TEMPLATE_ID: str = ""
+    BREVO_API_URL: str = ""
     # So the {PROVIDER}_{PURPOSE}_TEMPLATE_ID getattr lookups resolve for EMAIL_PROVIDER=console.
     CONSOLE_VERIFICATION_TEMPLATE_ID: str = "console"
     CONSOLE_INVITE_TEMPLATE_ID: str = "console"
