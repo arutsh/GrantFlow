@@ -11,15 +11,15 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 2. Bug report submission backend (services/users) — depends on 1
 
-- [ ] 2.1 Add `BugReportModel` (GUID PK, `AuditMixin`, submitter user id, description text, page path, browser/user-agent string, client timestamp, nullable `screenshot_storage_key`) and the Alembic migration in `services/users/migrations/versions/`.
-- [ ] 2.2 Add a `storage_client.py` singleton in `services/users/app/services/` wiring the existing `shared/storage/s3_storage_service.py` `S3StorageService` from `services/users` config (`STORAGE_ENDPOINT_URL`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`/`STORAGE_BUCKET_NAME`).
-- [ ] 2.3 Add screenshot validation (content-type allowlist restricted to PNG/JPEG/WebP, magic-byte sniffing, 5MB size cap) adapted from `services/budget/app/services/attachment_services.py`.
-- [ ] 2.4 Add `POST /bug-reports` route (multipart: description + context fields + optional file), authenticated via the existing `get_validated_user` dependency; on success, uploads the screenshot (if present) using storage key convention `bug-reports/{bug_report_id}/{uuid4()}_{filename}`, persists the record, and enqueues the notification job.
-- [ ] 2.5 Add `enqueue_bug_report_notification(...)` to the existing `services/users/app/services/celery_client.py`, sending `tasks.feedback.post_notification` with the report id, description, context fields, and screenshot storage key (if any).
-- [ ] 2.6 Add Pydantic request/response schemas for the endpoint.
-- [ ] 2.7 Wire the new route in `nginx/nginx-dev.conf`, `nginx/nginx.conf`, and `Caddyfile`.
-- [ ] 2.8 Tests: successful submission with and without a screenshot, oversized file rejected, spoofed/disallowed content type rejected, unauthenticated request rejected, notification enqueue failure does not fail the submission response.
-- [ ] 2.9 Run `services/users` tests and lint clean; PR merged (`Closes #<n>`).
+- [x] 2.1 Add `BugReportModel` (GUID PK, `AuditMixin`, submitter user id, description text, page path, browser/user-agent string, client timestamp, nullable `screenshot_storage_key`) and the Alembic migration in `services/users/migrations/versions/`.
+- [x] 2.2 Add a `storage_client.py` singleton in `services/users/app/services/` wiring the existing `shared/storage/s3_storage_service.py` `S3StorageService` from `services/users` config (`STORAGE_ENDPOINT_URL`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY`/`STORAGE_BUCKET_NAME`).
+- [x] 2.3 Add screenshot validation (content-type allowlist restricted to PNG/JPEG/WebP, magic-byte sniffing, 5MB size cap) adapted from `services/budget/app/services/attachment_services.py`.
+- [x] 2.4 Add `POST /bug-reports` route (multipart: description + context fields + optional file), authenticated via the existing `get_validated_user` dependency; on success, uploads the screenshot (if present) using storage key convention `bug-reports/{bug_report_id}/{uuid4()}_{filename}`, persists the record, and enqueues the notification job.
+- [x] 2.5 Add `enqueue_bug_report_notification(...)` to the existing `services/users/app/services/celery_client.py`, sending `tasks.feedback.post_notification` with the report id, description, context fields, and screenshot storage key (if any).
+- [x] 2.6 Add Pydantic request/response schemas for the endpoint.
+- [x] 2.7 Wire the new route in `nginx/nginx-dev.conf`, `nginx/nginx.conf`, and `Caddyfile`.
+- [x] 2.8 Tests: successful submission with and without a screenshot, oversized file rejected, spoofed/disallowed content type rejected, unauthenticated request rejected, notification enqueue failure does not fail the submission response.
+- [ ] 2.9 Run `services/users` tests and lint clean; PR merged (`Closes #258`).
 
 ## 3. Worker notification task (services/worker) — depends on 1, pairs with 2
 

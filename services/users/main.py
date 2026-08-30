@@ -26,6 +26,7 @@ from app.api import (  # noqa: E402
     auth_routes,
     ai_settings_routes,
     donor_grantee_routes,
+    bug_report_routes,
     health_routes,
 )
 from app.db.init_db import init_db  # noqa: E402
@@ -91,6 +92,7 @@ app.include_router(customer_routes.router, prefix="/api")
 app.include_router(auth_routes.router, prefix="/api")
 app.include_router(ai_settings_routes.router, prefix="/api")
 app.include_router(donor_grantee_routes.router, prefix="/api")
+app.include_router(bug_report_routes.router, prefix="/api")
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
 
 app.add_exception_handler(DomainError, domain_error_handler)
