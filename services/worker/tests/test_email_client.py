@@ -2,6 +2,7 @@ import pytest
 
 import tasks.email_client as svc
 from config import settings
+from shared.services.brevo_client import BrevoClient
 from shared.services.console_email_client import ConsoleEmailClient
 from shared.services.mailersend_client import MailerSendClient
 from shared.services.mailjet_client import MailjetClient
@@ -33,6 +34,16 @@ def test_mailjet_selected_when_configured(monkeypatch):
     client = svc.get_email_client()
 
     assert isinstance(client, MailjetClient)
+
+
+def test_brevo_selected_when_configured(monkeypatch):
+    monkeypatch.setattr(settings, "EMAIL_PROVIDER", "brevo")
+    monkeypatch.setattr(settings, "BREVO_API_KEY", "key")
+    monkeypatch.setattr(settings, "BREVO_SENDER_EMAIL", "from@example.com")
+
+    client = svc.get_email_client()
+
+    assert isinstance(client, BrevoClient)
 
 
 def test_console_selected_when_configured(monkeypatch):
