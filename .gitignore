@@ -146,6 +146,7 @@ celerybeat.pid
 # .env (bare) is ignored — never create this at the repo root.
 # *.private.* files are ignored below (they contain real API keys etc.)
 .env
+.env.github-secrets
 .envrc
 .venv
 env/
