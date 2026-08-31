@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     BUDGET_SERVICE_URL: str = "http://localhost:8001/api/v1"
     LOGIN_MAX_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_SECONDS: int = 900
+    # Object storage (S3-compatible: MinIO locally, Cloudflare R2 in production)
+    STORAGE_ENDPOINT_URL: str
+    STORAGE_ACCESS_KEY: str
+    STORAGE_SECRET_KEY: str
+    STORAGE_BUCKET_NAME: str
     # Only ever true in .env.users.local (local dev + e2e CI, both boot from
     # docker-compose.local.yml) — never set in .env.users.dev/.env.users.prod.
     # Lets e2e drive the real /auth/verify-email flow without a real inbox.

@@ -68,6 +68,12 @@ api.opengrantflow.com {
 		reverse_proxy users:8000
 	}
 
+	# ---- BUG REPORTS ----
+	handle_path /api/v1/bug-reports/* {
+		rewrite * /api/bug-reports{uri}
+		reverse_proxy users:8000
+	}
+
 	# ---- BUDGET SERVICE (health) ----
 	# Most specific path first — same reasoning as the ai-settings rule above:
 	# a single fixed endpoint, not a path prefix.

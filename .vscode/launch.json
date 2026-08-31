@@ -10,7 +10,8 @@
         "Debug Users Service (FastAPI + Uvicorn)",
         "Debug Budget Service (FastAPI + Uvicorn)",
         "Debug AI Service (FastAPI + Uvicorn)",
-        "Debug Chat Service (FastAPI + Uvicorn)"
+        "Debug Chat Service (FastAPI + Uvicorn)",
+        "Debug Worker Service (Celery)"
       ],
       "stopAll": true
     },
@@ -102,6 +103,29 @@
         "ENCRYPTION_KEY": "${env:ENCRYPTION_KEY}"
       },
       "jinja": true
+    },
+    {
+      // Runs tasks in-process (no forked child workers) so debugpy can hit
+      // breakpoints inside task code; prefork (the prod/Docker pool) forks
+      // workers debugpy doesn't attach to.
+      "name": "Debug Worker Service (Celery)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": [
+        "-A",
+        "celery_app",
+        "worker",
+        "--loglevel=info",
+        "-Q",
+        "ai,budget,users,feedback",
+        "--pool=solo"
+      ],
+      "cwd": "${workspaceFolder}/services/worker",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/services/worker:${workspaceFolder}"
+      },
+      "justMyCode": false
     },
     {
       // Debug the test file currently open in the editor (works for any service

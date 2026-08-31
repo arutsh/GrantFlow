@@ -93,6 +93,12 @@ Organisation-level billing and subscription details live under **Settings → Bi
 
 Open Grant Flow is open source and under active development — feedback directly shapes what gets built next.
 
+### 4.1 Reporting a problem
+
+The fastest way to report something that isn't working: click the message icon in the top bar, from any page. Describe what you were doing — the page, browser, and time are attached automatically — and optionally attach a screenshot (you can also paste one directly into the description field). The team is notified right away, and you don't need a GitHub account.
+
+### 4.2 Other ways to reach us
+
 - **Source & issues:** [github.com/arutsh/GrantFlow](https://github.com/arutsh/GrantFlow)
 - **Contact:** n.arutshyan@gmail.com
 - **Website:** [opengrantflow.com](https://opengrantflow.com)

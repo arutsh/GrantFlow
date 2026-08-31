@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from celery import Celery
 from app.core.config import settings
 
@@ -5,7 +7,10 @@ from app.core.config import settings
 # RabbitMQ broker services/worker consumes from, but never imports or runs
 # worker task code itself.
 celery_client = Celery("users_producer", broker=settings.RABBITMQ_URL)
-celery_client.conf.task_routes = {"tasks.users.*": {"queue": "users"}}
+celery_client.conf.task_routes = {
+    "tasks.users.*": {"queue": "users"},
+    "tasks.feedback.*": {"queue": "feedback"},
+}
 
 
 def enqueue_verification_email(email: str, token: str, first_name: str = "") -> None:
@@ -19,6 +24,33 @@ def enqueue_password_reset_email(email: str, token: str, first_name: str = "") -
     celery_client.send_task(
         "tasks.users.send_password_reset_email",
         kwargs={"email": email, "token": token, "first_name": first_name},
+    )
+
+
+def enqueue_bug_report_notification(
+    bug_report_id: UUID,
+    description: str,
+    page_path: str,
+    user_agent: str,
+    client_timestamp: str,
+    user_id: str | None = None,
+    trace_id: str | None = None,
+    last_api_call: str | None = None,
+    screenshot_storage_key: str | None = None,
+) -> None:
+    celery_client.send_task(
+        "tasks.feedback.post_notification",
+        kwargs={
+            "bug_report_id": str(bug_report_id),
+            "description": description,
+            "page_path": page_path,
+            "user_agent": user_agent,
+            "client_timestamp": client_timestamp,
+            "user_id": user_id,
+            "trace_id": trace_id,
+            "last_api_call": last_api_call,
+            "screenshot_storage_key": screenshot_storage_key,
+        },
     )
 
 
