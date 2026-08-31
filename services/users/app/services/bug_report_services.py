@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import UploadFile, status
+from opentelemetry import trace
 
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
@@ -11,6 +12,14 @@ from app.services.celery_client import enqueue_bug_report_notification
 from app.services.storage_client import storage_client
 
 logger = get_logger(__name__)
+
+
+def _current_trace_id() -> str | None:
+    span_context = trace.get_current_span().get_span_context()
+    if not span_context.is_valid:
+        return None
+    return f"{span_context.trace_id:032x}"
+
 
 MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp"}
@@ -60,6 +69,7 @@ def submit_bug_report_service(
     page_path: str,
     user_agent: str,
     client_timestamp: datetime,
+    last_api_call: str | None = None,
     screenshot: UploadFile | None = None,
 ):
     bug_report_id = uuid.uuid4()
@@ -88,11 +98,12 @@ def submit_bug_report_service(
             page_path=page_path,
             user_agent=user_agent,
             client_timestamp=client_timestamp.isoformat(),
+            user_id=str(valid_user["user_id"]),
+            trace_id=_current_trace_id(),
+            last_api_call=last_api_call,
             screenshot_storage_key=screenshot_storage_key,
         )
     except Exception:
-        logger.exception(
-            "bug_report_notification_enqueue_failed", bug_report_id=str(bug_report.id)
-        )
+        logger.exception("bug_report_notification_enqueue_failed", bug_report_id=str(bug_report.id))
 
     return bug_report

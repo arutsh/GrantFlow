@@ -33,6 +33,9 @@ def enqueue_bug_report_notification(
     page_path: str,
     user_agent: str,
     client_timestamp: str,
+    user_id: str | None = None,
+    trace_id: str | None = None,
+    last_api_call: str | None = None,
     screenshot_storage_key: str | None = None,
 ) -> None:
     celery_client.send_task(
@@ -43,6 +46,9 @@ def enqueue_bug_report_notification(
             "page_path": page_path,
             "user_agent": user_agent,
             "client_timestamp": client_timestamp,
+            "user_id": user_id,
+            "trace_id": trace_id,
+            "last_api_call": last_api_call,
             "screenshot_storage_key": screenshot_storage_key,
         },
     )

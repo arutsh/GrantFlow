@@ -42,6 +42,39 @@ class TestBuildsMessage:
         assert ("Delivery ID", "unknown") in message.fields
         assert message.link is None
 
+    def test_message_includes_reporter_trace_and_last_api_call_when_provided(self, monkeypatch):
+        provider = _fake_provider()
+        monkeypatch.setattr(
+            "tasks.feedback.post_notification.get_notification_provider", lambda url: provider
+        )
+
+        post_notification(
+            **_payload(
+                user_id="user-1",
+                trace_id="abc123",
+                last_api_call="GET /api/v1/budgets/123 (500)",
+            )
+        )
+
+        message = provider.send.call_args.args[0]
+        assert ("Reported by", "user-1") in message.fields
+        assert ("Trace ID", "abc123") in message.fields
+        assert ("Last API call", "GET /api/v1/budgets/123 (500)") in message.fields
+
+    def test_message_omits_optional_fields_when_absent(self, monkeypatch):
+        provider = _fake_provider()
+        monkeypatch.setattr(
+            "tasks.feedback.post_notification.get_notification_provider", lambda url: provider
+        )
+
+        post_notification(**_payload())
+
+        message = provider.send.call_args.args[0]
+        field_names = [name for name, _ in message.fields]
+        assert "Trace ID" not in field_names
+        assert "Last API call" not in field_names
+        assert ("Reported by", "unknown") in message.fields
+
     def test_message_with_screenshot_includes_presigned_link(self, monkeypatch):
         provider = _fake_provider()
         storage = MagicMock()
@@ -49,9 +82,7 @@ class TestBuildsMessage:
         monkeypatch.setattr(
             "tasks.feedback.post_notification.get_notification_provider", lambda url: provider
         )
-        monkeypatch.setattr(
-            "tasks.feedback.post_notification.get_storage_client", lambda: storage
-        )
+        monkeypatch.setattr("tasks.feedback.post_notification.get_storage_client", lambda: storage)
 
         post_notification(**_payload(screenshot_storage_key="bug-reports/1/x.png"))
 

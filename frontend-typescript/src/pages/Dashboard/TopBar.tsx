@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, LogOut, Menu, Settings } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { ReportProblemWidget } from "@/components/ReportProblemWidget";
 import { ImpersonatePicker } from "./ImpersonatePicker";
 
 function initialsFor(name?: string | null): string {
@@ -47,6 +48,7 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
         <Menu size={22} />
       </button>
       <div className="ml-auto flex items-center gap-1.5">
+        <ReportProblemWidget />
         {isSuperuser && <ImpersonatePicker />}
         <div className="relative" ref={menuRef}>
           <button

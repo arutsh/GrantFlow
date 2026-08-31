@@ -17,6 +17,7 @@ def submit_bug_report_endpoint(
     page_path: str = Form(...),
     user_agent: str = Form(...),
     client_timestamp: datetime = Form(...),
+    last_api_call: str | None = Form(None),
     screenshot: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
@@ -28,5 +29,6 @@ def submit_bug_report_endpoint(
         page_path=page_path,
         user_agent=user_agent,
         client_timestamp=client_timestamp,
+        last_api_call=last_api_call,
         screenshot=screenshot,
     )

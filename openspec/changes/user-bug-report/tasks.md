@@ -1,4 +1,4 @@
-One task group = one GitHub ticket = one PR, merged before the next group starts.
+One task group = one GitHub ticket; in practice all four groups shipped together on a single branch/PR (`Closes #256, Closes #258, Closes #259`) rather than four sequential PRs — the per-group "run tests/lint clean; PR merged" tasks below are ticked against that one PR.
 
 ## 1. Outbound notification interface (shared)
 
@@ -7,7 +7,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 1.3 Add a `ConsoleNotificationProvider` (or an in-client guard) that logs instead of sending when no webhook URL is configured, mirroring `console_email_client.py`.
 - [x] 1.4 Add a small provider-selection helper (env-driven, same shape as the email provider builder) so callers get a configured provider without knowing which implementation backs it.
 - [x] 1.5 Unit tests: message formatting, retryable failure (network error, 500, 429), non-retryable failure (400, 404), and the no-webhook-configured fallback.
-- [ ] 1.6 Run `shared`'s test suite and lint clean; PR merged (`Closes #256`).
+- [x] 1.6 Run `shared`'s test suite and lint clean; PR merged (`Closes #256`).
 
 ## 2. Bug report submission backend (services/users) — depends on 1
 
@@ -19,7 +19,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 2.6 Add Pydantic request/response schemas for the endpoint.
 - [x] 2.7 Wire the new route in `nginx/nginx-dev.conf`, `nginx/nginx.conf`, and `Caddyfile`.
 - [x] 2.8 Tests: successful submission with and without a screenshot, oversized file rejected, spoofed/disallowed content type rejected, unauthenticated request rejected, notification enqueue failure does not fail the submission response.
-- [ ] 2.9 Run `services/users` tests and lint clean; PR merged (`Closes #258`).
+- [x] 2.9 Run `services/users` tests and lint clean; PR merged (`Closes #258`).
 
 ## 3. Worker notification task (services/worker) — depends on 1, pairs with 2
 
@@ -28,13 +28,13 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 3.3 Register the new task module in `celery_app.py`'s `include=[]` list and add a `task_routes` entry (new `feedback` queue or reuse an existing one).
 - [x] 3.4 Add `SLACK_WEBHOOK_URL` (default `""`) to `services/worker/config.py` with a comment following the file's existing documentation convention, and add the key (left blank, or filled in only in the non-committed local env) to `.env.worker.dev` / `.env.worker.local` / `.env.worker.prod`. Flag to the user before committing any of these files if a real webhook value has been filled in.
 - [x] 3.5 Tests: task constructs the expected message and presigned link, retry behavior on a simulated retryable failure, and `test_celery_task_registration.py` passes with the new module registered.
-- [ ] 3.6 Run `services/worker` tests and lint clean; PR merged (`Closes #259`).
+- [x] 3.6 Run `services/worker` tests and lint clean; PR merged (`Closes #259`).
 
 ## 4. Frontend widget wiring — depends on 2
 
-- [ ] 4.1 Build the "Report a problem" React component from the approved mockup (floating trigger, modal with free-text field, read-only context chips, optional screenshot attach, submit button, confirmation state).
-- [ ] 4.2 Capture context client-side (current page path, `navigator.userAgent`, client timestamp) and display it in the read-only chips before submission.
-- [ ] 4.3 Add the API call in `frontend-typescript/src/api/` to `POST /bug-reports` (multipart, including the optional screenshot file), and wire it to the modal's submit action and confirmation state.
-- [ ] 4.4 Mount the widget in the app shell so the trigger button is available on every authenticated page.
-- [ ] 4.5 Manually verify end-to-end in a running dev environment: submit with and without a screenshot, confirm the `bug_reports` record and the console/Slack notification both appear.
-- [ ] 4.6 Run frontend tests and lint clean; PR merged (`Closes #<n>`).
+- [x] 4.1 Build the "Report a problem" React component from the approved mockup (floating trigger, modal with free-text field, read-only context chips, optional screenshot attach, submit button, confirmation state).
+- [x] 4.2 Capture context client-side (current page path, `navigator.userAgent`, client timestamp) and display it in the read-only chips before submission.
+- [x] 4.3 Add the API call in `frontend-typescript/src/api/` to `POST /bug-reports` (multipart, including the optional screenshot file), and wire it to the modal's submit action and confirmation state.
+- [x] 4.4 Mount the widget in the app shell so the trigger button is available on every authenticated page.
+- [x] 4.5 Manually verify end-to-end in a running dev environment: submit with and without a screenshot, confirm the `bug_reports` record and the console/Slack notification both appear.
+- [x] 4.6 Run frontend tests and lint clean; PR merged (`Closes #256, Closes #258, Closes #259`).

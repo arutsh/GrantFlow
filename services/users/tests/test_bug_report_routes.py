@@ -154,6 +154,25 @@ class TestSubmitBugReportService:
         storage.save.assert_not_called()
         enqueue.assert_not_called()
 
+    def test_enqueues_with_reporter_and_last_api_call(self, db, storage, enqueue):
+        user = _valid_user(user_id="11111111-1111-1111-1111-111111111111")
+
+        submit_bug_report_service(
+            db,
+            user,
+            description="Something broke",
+            page_path="/budgets/123",
+            user_agent="Mozilla/5.0",
+            client_timestamp=_client_timestamp(),
+            last_api_call="GET /api/v1/budgets/123 (500)",
+        )
+
+        kwargs = enqueue.call_args.kwargs
+        assert kwargs["user_id"] == "11111111-1111-1111-1111-111111111111"
+        assert kwargs["last_api_call"] == "GET /api/v1/budgets/123 (500)"
+        # No active OTEL span in this test process — graceful None, not a crash.
+        assert kwargs["trace_id"] is None
+
     def test_notification_failure_does_not_fail_submission(self, db, storage, enqueue):
         enqueue.side_effect = Exception("broker unreachable")
 

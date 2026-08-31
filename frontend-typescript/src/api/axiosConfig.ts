@@ -1,5 +1,7 @@
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 import { notifyTokenRefreshed } from "@/utils/tokenRefreshBridge";
+
+type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 // sessionStorage first: it's per-tab, so a hit there is unambiguously this tab's session.
 export const getAuthToken = (): string | null => {
@@ -14,6 +16,19 @@ const getRefreshTokenSource = (): { token: string | null; store: Storage } => {
 };
 
 export const getRefreshToken = () => getRefreshTokenSource().token;
+
+// Last API call made by the app, for the bug-report widget's context chip —
+// not tied to any one gateway instance, since all of them share this module.
+let lastApiCall: string | null = null;
+
+function recordLastApiCall(method: string | undefined, url: string | undefined, status?: number) {
+  if (!method || !url) return;
+  lastApiCall = `${method.toUpperCase()} ${url} (${status ?? "network error"})`;
+}
+
+export function getLastApiCall(): string | null {
+  return lastApiCall;
+}
 
 // Endpoints that can legitimately 401 on their own terms (bad credentials,
 // no session yet) — a 401 from these must surface to the caller as-is, not
@@ -52,9 +67,13 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
 
   // Response interceptor
   instance.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      recordLastApiCall(response.config.method, response.config.url, response.status);
+      return response;
+    },
     async (error: AxiosError) => {
-      const originalRequest = error.config as any;
+      const originalRequest = error.config as RetryableRequestConfig | undefined;
+      recordLastApiCall(originalRequest?.method, originalRequest?.url, error.response?.status);
 
       if (
         error.response?.status === 403 &&
@@ -84,7 +103,7 @@ function createAxiosInstance(baseURL: string): AxiosInstance {
           return Promise.reject(error);
         }
 
-        originalRequest._retry = true;
+        if (originalRequest) originalRequest._retry = true;
 
         if (isRefreshing) {
           // wait until token refreshed

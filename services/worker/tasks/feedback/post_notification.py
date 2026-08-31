@@ -21,6 +21,9 @@ def post_notification(
     page_path: str,
     user_agent: str,
     client_timestamp: str,
+    user_id: str | None = None,
+    trace_id: str | None = None,
+    last_api_call: str | None = None,
     screenshot_storage_key: str | None = None,
 ):
     from config import settings
@@ -33,18 +36,25 @@ def post_notification(
             screenshot_storage_key, expires_in=SCREENSHOT_LINK_EXPIRY_SECONDS
         )
 
+    fields = [
+        ("Report ID", bug_report_id),
+        ("Reported by", user_id or "unknown"),
+        ("Page", page_path),
+        ("Browser", user_agent),
+        ("Reported at", client_timestamp),
+        # Stable across Celery retries of this same dispatch (self.retry()
+        # keeps the task id) — lets a human spot a retry-caused duplicate.
+        ("Delivery ID", self.request.id or "unknown"),
+    ]
+    if last_api_call:
+        fields.append(("Last API call", last_api_call))
+    if trace_id:
+        fields.append(("Trace ID", trace_id))
+
     message = NotificationMessage(
         title="New bug report",
         body=description,
-        fields=[
-            ("Report ID", bug_report_id),
-            ("Page", page_path),
-            ("Browser", user_agent),
-            ("Reported at", client_timestamp),
-            # Stable across Celery retries of this same dispatch (self.retry()
-            # keeps the task id) — lets a human spot a retry-caused duplicate.
-            ("Delivery ID", self.request.id or "unknown"),
-        ],
+        fields=fields,
         link=link,
     )
 
