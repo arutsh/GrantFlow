@@ -93,6 +93,7 @@ app = Celery(
         "tasks.users.send_verification_email",
         "tasks.users.send_invite_email",
         "tasks.users.send_password_reset_email",
+        "tasks.feedback.post_notification",
     ],
 )
 
@@ -107,6 +108,7 @@ app.conf.update(
         "tasks.budget.*": {"queue": "budget"},
         "tasks.users.*": {"queue": "users"},
         "tasks.debug.*": {"queue": "ai"},
+        "tasks.feedback.*": {"queue": "feedback"},
     },
     beat_schedule={
         "cleanup-ai-sessions-daily": {

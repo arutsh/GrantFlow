@@ -146,7 +146,7 @@ case "$MODE" in
         echo ""
         echo -e "${BLUE}=== Terminal 6: Celery Worker ===${NC}"
         echo "cd services/worker"
-        echo "celery -A celery_app worker --loglevel=info -Q ai,budget,users"
+        echo "celery -A celery_app worker --loglevel=info -Q ai,budget,users,feedback"
         echo ""
         echo -e "${BLUE}=== Terminal 7: Celery Beat ===${NC}"
         echo "cd services/worker"

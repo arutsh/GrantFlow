@@ -53,6 +53,11 @@ from pathlib import Path
 #                    (only set this to point at a local mock in dev)
 #   FRONTEND_BASE_URL — origin used to build the verification/accept-invite link,
 #                        e.g. https://app.example.com
+#   SLACK_WEBHOOK_URL — Slack Incoming Webhook URL for outbound notifications (e.g. bug
+#                        reports); blank uses the console fallback (logs instead of sending)
+#   STORAGE_ENDPOINT_URL / STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY / STORAGE_BUCKET_NAME —
+#     S3-compatible object storage (MinIO locally, Cloudflare R2 in production), used to
+#     generate a presigned download link for a bug report's screenshot attachment
 
 BASE_DIR = Path(__file__).resolve().parent
 env_mode = os.getenv("ENV", "development")
@@ -100,6 +105,11 @@ class Settings(BaseSettings):
     CONSOLE_INVITE_TEMPLATE_ID: str = "console"
     CONSOLE_PASSWORD_RESET_TEMPLATE_ID: str = "console"
     FRONTEND_BASE_URL: str = "http://localhost:3000"
+    SLACK_WEBHOOK_URL: str = ""
+    STORAGE_ENDPOINT_URL: str = ""
+    STORAGE_ACCESS_KEY: str = ""
+    STORAGE_SECRET_KEY: str = ""
+    STORAGE_BUCKET_NAME: str = ""
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, case_sensitive=False, extra="ignore")
 

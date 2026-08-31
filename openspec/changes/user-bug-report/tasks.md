@@ -23,12 +23,12 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 3. Worker notification task (services/worker) — depends on 1, pairs with 2
 
-- [ ] 3.1 Add `services/worker/tasks/feedback/post_notification.py`: task `tasks.feedback.post_notification` (`bind=True`, retry with backoff on `NotificationError`, following `send_password_reset_email`'s pattern) that builds a `NotificationMessage` from the task payload and sends it via the configured `NotificationProvider`.
-- [ ] 3.2 If the payload includes a screenshot storage key, generate a presigned download URL with a 24-hour expiry (explicit `expires_in`, not the 5-minute default) and set it as the message's `link`.
-- [ ] 3.3 Register the new task module in `celery_app.py`'s `include=[]` list and add a `task_routes` entry (new `feedback` queue or reuse an existing one).
-- [ ] 3.4 Add `SLACK_WEBHOOK_URL` (default `""`) to `services/worker/config.py` with a comment following the file's existing documentation convention, and add the key (left blank, or filled in only in the non-committed local env) to `.env.worker.dev` / `.env.worker.local` / `.env.worker.prod`. Flag to the user before committing any of these files if a real webhook value has been filled in.
-- [ ] 3.5 Tests: task constructs the expected message and presigned link, retry behavior on a simulated retryable failure, and `test_celery_task_registration.py` passes with the new module registered.
-- [ ] 3.6 Run `services/worker` tests and lint clean; PR merged (`Closes #<n>`).
+- [x] 3.1 Add `services/worker/tasks/feedback/post_notification.py`: task `tasks.feedback.post_notification` (`bind=True`, retry with backoff on `NotificationError`, following `send_password_reset_email`'s pattern) that builds a `NotificationMessage` from the task payload and sends it via the configured `NotificationProvider`.
+- [x] 3.2 If the payload includes a screenshot storage key, generate a presigned download URL with a 24-hour expiry (explicit `expires_in`, not the 5-minute default) and set it as the message's `link`.
+- [x] 3.3 Register the new task module in `celery_app.py`'s `include=[]` list and add a `task_routes` entry (new `feedback` queue or reuse an existing one).
+- [x] 3.4 Add `SLACK_WEBHOOK_URL` (default `""`) to `services/worker/config.py` with a comment following the file's existing documentation convention, and add the key (left blank, or filled in only in the non-committed local env) to `.env.worker.dev` / `.env.worker.local` / `.env.worker.prod`. Flag to the user before committing any of these files if a real webhook value has been filled in.
+- [x] 3.5 Tests: task constructs the expected message and presigned link, retry behavior on a simulated retryable failure, and `test_celery_task_registration.py` passes with the new module registered.
+- [ ] 3.6 Run `services/worker` tests and lint clean; PR merged (`Closes #259`).
 
 ## 4. Frontend widget wiring — depends on 2
 
