@@ -11,6 +11,8 @@ from main import app
 from app.api.settings_routes import get_db
 from app.models.ai_provider import AIProvider
 from app.models.base import Base
+from app.models.customer_ai_defaults import CustomerAiDefaults
+from app.models.user_provider_key import UserProviderKey
 from shared.security.jwt_utils import create_access_token
 
 
@@ -36,7 +38,14 @@ async def sessions_db():
     # resolvable outside docker-compose.local.yml (or CI).
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, tables=[AIProvider.__table__])
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                AIProvider.__table__,
+                UserProviderKey.__table__,
+                CustomerAiDefaults.__table__,
+            ],
+        )
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
         yield session

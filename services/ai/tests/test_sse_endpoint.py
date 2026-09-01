@@ -152,6 +152,40 @@ class TestSSEEndpoint:
         assert response.status_code == 200
         assert "event: unavailable" in response.text
 
+    def test_uses_platform_model_when_fallback_enabled(self):
+        from app.schemas.ai_schema import LLMBudgetOutput
+
+        app.dependency_overrides[get_resolved_model] = lambda: None
+        platform_model = _make_resolved(provider_name="anthropic")
+        with (
+            patch(
+                "app.api.parse_routes.resolve_with_platform_fallback",
+                new=AsyncMock(return_value=platform_model),
+            ),
+            patch(_LOAD_PROMPT, new=AsyncMock(return_value=MOCK_PROMPT)),
+            patch(_AUDIT, new=AsyncMock()),
+            patch(_RATE, new=AsyncMock(return_value=(True, 0))),
+            patch(_AGENT, _make_agent_mock(LLMBudgetOutput(**_VALID_OUTPUT))),
+        ):
+            response = self.client.get("/api/v1/ai/parse-budget/stream?text=test")
+
+        assert response.status_code == 200
+        assert "event: unavailable" not in response.text
+
+    def test_fails_closed_when_fallback_not_enabled(self):
+        app.dependency_overrides[get_resolved_model] = lambda: None
+        with (
+            patch(
+                "app.api.parse_routes.resolve_with_platform_fallback",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(_RATE, new=AsyncMock(return_value=(True, 0))),
+        ):
+            response = self.client.get("/api/v1/ai/parse-budget/stream?text=test")
+
+        assert response.status_code == 200
+        assert "event: unavailable" in response.text
+
     def test_audit_log_written_with_prompt_version_and_provider(self):
         from app.schemas.ai_schema import LLMBudgetOutput
 

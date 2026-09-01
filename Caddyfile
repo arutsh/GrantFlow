@@ -25,7 +25,7 @@ api.opengrantflow.com {
 
 	# ---- AI SETTINGS (proxied through users service) ----
 	handle_path /api/v1/users/me/ai-settings* {
-		rewrite * /api/users/me/ai-settings
+		rewrite * /api/users/me/ai-settings{uri}
 		reverse_proxy users:8000
 	}
 
@@ -36,15 +36,14 @@ api.opengrantflow.com {
 	}
 
 	# ---- USER REGISTRATION ----
-	# No {uri} here either — same reasoning as the ai-settings rule above.
+	# No {uri} here — this is a single fixed endpoint, not a path prefix.
 	handle_path /api/v1/register* {
 		rewrite * /api/register
 		reverse_proxy users:8000
 	}
 
 	# ---- USERS SERVICE (health) ----
-	# Most specific path first — same reasoning as the ai-settings rule above:
-	# a single fixed endpoint, not a path prefix.
+	# Most specific path first — a single fixed endpoint, not a path prefix.
 	handle_path /api/v1/users/health* {
 		rewrite * /health
 		reverse_proxy users:8000
@@ -75,8 +74,7 @@ api.opengrantflow.com {
 	}
 
 	# ---- BUDGET SERVICE (health) ----
-	# Most specific path first — same reasoning as the ai-settings rule above:
-	# a single fixed endpoint, not a path prefix.
+	# Most specific path first — a single fixed endpoint, not a path prefix.
 	handle_path /api/v1/budgets/health* {
 		rewrite * /health
 		reverse_proxy budget:8000
@@ -125,8 +123,7 @@ api.opengrantflow.com {
 	}
 
 	# ---- CHAT SERVICE (health only for now — SSE endpoints land in ticket #92) ----
-	# Most specific path first — same reasoning as the ai-settings rule above:
-	# a single fixed endpoint, not a path prefix.
+	# Most specific path first — a single fixed endpoint, not a path prefix.
 	handle_path /api/v1/chat/health* {
 		rewrite * /health
 		reverse_proxy chat:8000

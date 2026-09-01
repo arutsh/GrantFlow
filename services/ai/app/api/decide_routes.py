@@ -11,7 +11,7 @@ from pydantic_ai.exceptions import AgentRunError
 
 from app.core.logging import get_logger
 from app.services.decide_service import decide
-from app.services.provider import ResolvedModel, get_resolved_model
+from app.services.provider import ResolvedModel, get_resolved_model, resolve_with_platform_fallback
 from app.services.rate_limiter import enforce_rate_limit
 from app.utils.security import get_validated_user, resolve_customer_id
 from shared.ai_client.schemas import DecideRequest, ToolCall
@@ -30,6 +30,8 @@ async def decide_route(
     customer_id = resolve_customer_id(valid_user)
     user_id = str(valid_user["user_id"])
 
+    if resolved is None:
+        resolved = await resolve_with_platform_fallback(customer_id)
     if resolved is None:
         raise HTTPException(status_code=503, detail={"code": "no_provider"})
 

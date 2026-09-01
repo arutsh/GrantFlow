@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 from app.services.parse_service import build_parse_stream
-from app.services.provider import ResolvedModel, get_resolved_model
+from app.services.provider import ResolvedModel, get_resolved_model, resolve_with_platform_fallback
 from app.services.rate_limiter import enforce_rate_limit
 from app.utils.security import get_validated_user, resolve_customer_id
 
@@ -25,6 +25,9 @@ async def stream_parse_budget(
     customer_id = resolve_customer_id(valid_user)
 
     await enforce_rate_limit(customer_id, extra_headers=_SSE_HEADERS)
+
+    if resolved is None:
+        resolved = await resolve_with_platform_fallback(customer_id)
 
     if resolved is None:
 

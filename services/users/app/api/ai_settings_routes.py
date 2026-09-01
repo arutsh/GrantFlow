@@ -32,12 +32,12 @@ async def get_ai_settings(current_user: dict = Depends(get_validated_user)):
     return JSONResponse(content=response.json(), status_code=response.status_code)
 
 
-@router.put("/ai-settings")
-async def save_ai_settings(request: Request, current_user: dict = Depends(get_validated_user)):
+@router.post("/ai-settings/keys")
+async def create_ai_key(request: Request, current_user: dict = Depends(get_validated_user)):
     body = await request.json()
     async with httpx.AsyncClient() as client:
-        response = await client.put(
-            f"{settings.AI_SERVICE_URL}/ai/settings",
+        response = await client.post(
+            f"{settings.AI_SERVICE_URL}/ai/settings/keys",
             json=body,
             headers=_ai_headers(current_user["token"]),
         )
@@ -45,11 +45,44 @@ async def save_ai_settings(request: Request, current_user: dict = Depends(get_va
     return JSONResponse(content=response.json(), status_code=response.status_code)
 
 
-@router.delete("/ai-settings/{provider}/key")
-async def clear_ai_key(provider: str, current_user: dict = Depends(get_validated_user)):
+@router.post("/ai-settings/keys/{config_id}/default")
+async def set_default_ai_key(
+    config_id: str, current_user: dict = Depends(get_validated_user)
+):
     async with httpx.AsyncClient() as client:
-        response = await client.delete(
-            f"{settings.AI_SERVICE_URL}/ai/settings/{provider}/key",
+        response = await client.post(
+            f"{settings.AI_SERVICE_URL}/ai/settings/keys/{config_id}/default",
+            headers=_ai_headers(current_user["token"]),
+        )
+    _forward_error(response)
+    return JSONResponse(content=response.json(), status_code=response.status_code)
+
+
+@router.delete("/ai-settings/keys/{config_id}")
+async def delete_ai_key(
+    config_id: str, request: Request, current_user: dict = Depends(get_validated_user)
+):
+    body = await request.body()
+    async with httpx.AsyncClient() as client:
+        response = await client.request(
+            "DELETE",
+            f"{settings.AI_SERVICE_URL}/ai/settings/keys/{config_id}",
+            content=body or None,
+            headers={**_ai_headers(current_user["token"]), "Content-Type": "application/json"},
+        )
+    _forward_error(response)
+    return JSONResponse(content=response.json(), status_code=response.status_code)
+
+
+@router.put("/ai-settings/platform-fallback")
+async def set_platform_fallback(
+    request: Request, current_user: dict = Depends(get_validated_user)
+):
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        response = await client.put(
+            f"{settings.AI_SERVICE_URL}/ai/settings/platform-fallback",
+            json=body,
             headers=_ai_headers(current_user["token"]),
         )
     _forward_error(response)

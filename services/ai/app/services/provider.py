@@ -133,7 +133,10 @@ def resolve_platform_funded_model() -> ResolvedModel | None:
 async def get_resolved_model(
     valid_user: dict = Depends(get_validated_user),
 ) -> ResolvedModel | None:
-    """FastAPI dependency — injects a resolved provider model into route handlers."""
+    """FastAPI dependency — injects a resolved provider model into route handlers.
+
+    BYOK-only, shared by all three provider-consuming routes; never falls
+    through to the platform model itself (see resolve_with_platform_fallback)."""
     from app.crud.user_provider_key import get_active_key_for_customer
     from app.db.session import AsyncSessionLocal
 
@@ -147,6 +150,22 @@ async def get_resolved_model(
         return None
 
     return resolve_model(user_key, customer_id=customer_id)
+
+
+async def resolve_with_platform_fallback(customer_id: str) -> ResolvedModel | None:
+    """Platform model if a superuser set it as this customer's default, else None.
+    Used only by /ai/decide and /ai/parse-budget/stream — excel keeps its own
+    unconditional fallback regardless of this flag."""
+    from app.crud.customer_ai_defaults import get as get_customer_ai_defaults
+    from app.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        defaults = await get_customer_ai_defaults(customer_id, db)
+
+    if defaults is None or not defaults.platform_fallback_enabled:
+        return None
+
+    return resolve_platform_funded_model()
 
 
 # Import adapters to trigger their @register decorators

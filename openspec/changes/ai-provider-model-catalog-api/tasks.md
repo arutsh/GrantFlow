@@ -1,0 +1,6 @@
+- [ ] Add a read endpoint in `services/ai/app/api/settings_routes.py` (or a new small router) returning active `ai_provider_models` rows, e.g. `{ provider: string, models: { value, label }[] }[]`.
+- [ ] Add a CRUD/query helper in `app/crud/ai_provider_model.py` to list active models (per-provider or all), alongside the existing `exists_for_provider`.
+- [ ] Consider a `models` relationship (or a `model_ids` convenience list) on `AIProvider` (`app/models/ai_provider.py`) back to `AIProviderModel` — currently there's no ORM-level link between the two, only the FK column on `AIProviderModel`.
+- [ ] Frontend: fetch the catalog in `AiIntegrationsSection.tsx` (new API function in `aiSettingsApi.ts`) and use it in place of the hardcoded `MODELS_BY_PROVIDER`.
+- [ ] Remove `MODELS_BY_PROVIDER` from `AiIntegrationsSection.tsx` once the fetch path is wired up.
+- [ ] Tests: backend endpoint returns the seeded catalog; frontend renders the model dropdown from fetched data.
