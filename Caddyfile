@@ -24,7 +24,16 @@ api.opengrantflow.com {
 	}
 
 	# ---- AI SETTINGS (proxied through users service) ----
-	handle_path /api/v1/users/me/ai-settings* {
+	# The bare base path is split from its sub-paths because handle_path
+	# normalizes an empty leftover ("" after stripping the matched prefix)
+	# to "/" — that trailing slash mismatches the FastAPI route (registered
+	# without one)
+	handle /api/v1/users/me/ai-settings {
+		rewrite * /api/users/me/ai-settings
+		reverse_proxy users:8000
+	}
+
+	handle_path /api/v1/users/me/ai-settings/* {
 		rewrite * /api/users/me/ai-settings{uri}
 		reverse_proxy users:8000
 	}

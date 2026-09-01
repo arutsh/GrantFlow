@@ -18,12 +18,12 @@ Among a customer's saved configs, at most one SHALL be marked default at any tim
 - **WHEN** a customer has multiple configured configs and a non-default one was modified most recently
 - **THEN** requests that don't specify a model resolve to the config marked default, not the most recently modified one
 
-### Requirement: Deleting the default config requires an explicit next step
-The system SHALL reject a request to delete a customer's default config unless the request also specifies either another existing config of that customer to promote to default, or an explicit choice to fall back to the platform-funded model (see platform-fallback requirement below).
+### Requirement: Deleting the default config is always allowed; a replacement default is an optional convenience
+The system SHALL allow deletion of a customer's default config unconditionally. The request MAY optionally name another existing config of that customer to promote to default in the same operation; if no replacement is named, the customer is simply left with no default. Enabling the platform-funded model as a default is a separate, independent action (see platform-fallback requirement below) and is not a delete-time choice.
 
-#### Scenario: Delete default without a replacement is rejected
-- **WHEN** an admin requests deletion of the org's current default config without naming a replacement default or choosing the platform fallback
-- **THEN** the system rejects the deletion with an error, and the config and its default status are unchanged
+#### Scenario: Delete default without a replacement succeeds
+- **WHEN** an admin requests deletion of the org's current default config without naming a replacement
+- **THEN** the deletion succeeds and the customer is left with no default set
 
 #### Scenario: Delete default with a named replacement succeeds
 - **WHEN** an admin requests deletion of the org's current default config and names another of the org's existing configs as the new default
@@ -31,7 +31,7 @@ The system SHALL reject a request to delete a customer's default config unless t
 
 #### Scenario: Deleting an organization's last remaining config is allowed
 - **WHEN** an admin deletes a customer's only remaining config
-- **THEN** the deletion succeeds and the customer is left with no configs and no default, without requiring a replacement or fallback choice
+- **THEN** the deletion succeeds and the customer is left with no configs and no default, without requiring a replacement
 
 ### Requirement: Only a superuser may set the platform-funded model as an organization's default
 Choosing GrantFlow's platform-funded model as a customer's explicit default (rather than one of its own BYOK configs) SHALL require the acting user to have the `superuser` role. An `admin` acting for the customer SHALL NOT be able to enable this on their own.
