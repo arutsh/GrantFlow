@@ -9,13 +9,17 @@ client = TestClient(app)
 
 _ENCRYPTED_KEY = "dGVzdC1lbmNyeXB0ZWQ="  # fake base64 blob
 
-_LIST_ACTIVE = "app.api.settings_routes.list_active"
-_GET_KEY = "app.api.settings_routes.get_key"
+_LIST_FOR_CUSTOMER = "app.api.settings_routes.list_for_customer"
+_GET_CUSTOMER_AI_DEFAULTS = "app.api.settings_routes.get_customer_ai_defaults"
 _GET_BY_NAME = "app.api.settings_routes.get_by_name"
+_MODEL_EXISTS = "app.api.settings_routes.model_exists_for_provider"
 _VALIDATE = "app.api.settings_routes._validate_key_with_provider"
 _ENCRYPT = "app.api.settings_routes.encrypt"
-_UPSERT = "app.api.settings_routes.upsert_key"
-_DELETE = "app.api.settings_routes.delete_key"
+_DECRYPT = "app.api.settings_routes.decrypt"
+_CREATE = "app.api.settings_routes.create"
+_SET_DEFAULT = "app.api.settings_routes.set_default"
+_DELETE = "app.api.settings_routes.delete"
+_SET_PLATFORM_FALLBACK = "app.api.settings_routes.set_platform_fallback"
 
 
 def _make_admin_user():
@@ -36,13 +40,15 @@ def _make_provider(name="anthropic", has_key_prefix=True):
     return p
 
 
-def _make_key_row(has_key: bool):
-    if not has_key:
-        return None
+def _make_config(config_id="id-1", provider_name="anthropic", is_default=False, has_key=True):
     row = MagicMock()
-    row.encrypted_key = _ENCRYPTED_KEY
+    row.id = config_id
+    row.provider.name = provider_name
+    row.label = "My key"
     row.model_name = "claude-sonnet-4-6"
+    row.encrypted_key = _ENCRYPTED_KEY if has_key else None
     row.base_url = None
+    row.is_default = is_default
     return row
 
 
@@ -62,43 +68,40 @@ class TestGetAiSettings:
         app.dependency_overrides.pop(get_validated_user, None)
         app.dependency_overrides.pop(get_db, None)
 
-    def test_returns_providers_list_with_has_key_true(self):
+    def test_returns_all_configs_with_is_default_flag(self):
+        configs = [_make_config("id-1", is_default=True), _make_config("id-2", is_default=False)]
         with (
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=_make_key_row(has_key=True))),
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=configs)),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+            patch(_DECRYPT, return_value="sk-ant-api03-secretvalue"),
         ):
             response = client.get("/api/v1/ai/settings")
         assert response.status_code == 200
         data = response.json()
-        assert len(data["providers"]) == 1
-        p = data["providers"][0]
-        assert p["name"] == "anthropic"
-        assert p["has_key"] is True
-        assert p["requires_key"] is True
-        assert p["model"] == "claude-sonnet-4-6"
+        assert len(data["configs"]) == 2
+        assert data["configs"][0]["is_default"] is True
+        assert data["configs"][1]["is_default"] is False
+        assert data["platform_fallback_enabled"] is False
 
-    def test_returns_has_key_false_when_no_key(self):
+    def test_masked_key_never_exposes_raw_key(self):
         with (
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[_make_config()])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+            patch(_DECRYPT, return_value="sk-ant-api03-secretvalue"),
         ):
             response = client.get("/api/v1/ai/settings")
-        assert response.status_code == 200
-        assert response.json()["providers"][0]["has_key"] is False
+        masked = response.json()["configs"][0]["masked_key"]
+        assert masked is not None
+        assert "secretvalue" not in masked
 
-    def test_ollama_provider_requires_no_key(self):
+    def test_includes_platform_fallback_enabled_flag(self):
+        defaults = MagicMock(platform_fallback_enabled=True)
         with (
-            patch(
-                _LIST_ACTIVE,
-                new=AsyncMock(
-                    return_value=[_make_provider("ollama", has_key_prefix=False)]
-                ),
-            ),
-            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=defaults)),
         ):
             response = client.get("/api/v1/ai/settings")
-        p = response.json()["providers"][0]
-        assert p["requires_key"] is False
+        assert response.json()["platform_fallback_enabled"] is True
 
     def test_user_role_forbidden(self):
         app.dependency_overrides[get_validated_user] = _make_regular_user
@@ -106,7 +109,7 @@ class TestGetAiSettings:
         assert response.status_code == 403
 
 
-class TestSaveAiSettings:
+class TestCreateAiKey:
     def setup_method(self):
         app.dependency_overrides[get_validated_user] = _make_admin_user
         app.dependency_overrides[get_db] = _mock_db()
@@ -115,18 +118,61 @@ class TestSaveAiSettings:
         app.dependency_overrides.pop(get_validated_user, None)
         app.dependency_overrides.pop(get_db, None)
 
+    def test_second_config_for_same_provider_succeeds(self):
+        with (
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
+            patch(_MODEL_EXISTS, new=AsyncMock(return_value=True)),
+            patch(_VALIDATE, new=AsyncMock()),
+            patch(_ENCRYPT, return_value=_ENCRYPTED_KEY),
+            patch(_CREATE, new=AsyncMock()) as mock_create,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[_make_config()])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+            patch(_DECRYPT, return_value="sk-ant-api03-x"),
+        ):
+            response = client.post(
+                "/api/v1/ai/settings/keys",
+                json={
+                    "provider": "anthropic",
+                    "label": "Fast tasks",
+                    "key": "sk-ant-api03-x",
+                    "model": "claude-haiku-4-5",
+                },
+            )
+        assert response.status_code == 200
+        mock_create.assert_awaited_once()
+
+    def test_ollama_key_without_base_url_defaults_to_localhost(self):
+        ollama_provider = _make_provider("ollama", has_key_prefix=False)
+        with (
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=ollama_provider)),
+            patch(_MODEL_EXISTS, new=AsyncMock(return_value=True)),
+            patch(_VALIDATE, new=AsyncMock()),
+            patch(_CREATE, new=AsyncMock()) as mock_create,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+        ):
+            response = client.post(
+                "/api/v1/ai/settings/keys",
+                json={"provider": "ollama", "model": "llama3.2"},
+            )
+        assert response.status_code == 200
+        assert mock_create.await_args.kwargs["base_url"] == "http://localhost:11434"
+
     def test_unknown_provider_returns_404(self):
         with patch(_GET_BY_NAME, new=AsyncMock(return_value=None)):
-            response = client.put(
-                "/api/v1/ai/settings",
+            response = client.post(
+                "/api/v1/ai/settings/keys",
                 json={"provider": "unknown", "key": "any", "model": "claude-sonnet-4-6"},
             )
         assert response.status_code == 404
 
     def test_invalid_key_format_rejected(self):
-        with patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())):
-            response = client.put(
-                "/api/v1/ai/settings",
+        with (
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
+            patch(_MODEL_EXISTS, new=AsyncMock(return_value=True)),
+        ):
+            response = client.post(
+                "/api/v1/ai/settings/keys",
                 json={
                     "provider": "anthropic",
                     "key": "not-a-valid-key",
@@ -136,42 +182,29 @@ class TestSaveAiSettings:
         assert response.status_code == 422
 
     def test_unsupported_model_rejected(self):
-        response = client.put(
-            "/api/v1/ai/settings",
-            json={"provider": "anthropic", "key": "sk-ant-x", "model": "gpt-5-turbo"},
-        )
-        assert response.status_code == 422
-
-    def test_valid_key_saved_returns_providers(self):
+        """A model must belong to the given provider (e.g. claude-haiku-4-5
+        is not valid for ollama) — see app/crud/ai_provider_model.py."""
+        ollama_provider = _make_provider("ollama", has_key_prefix=False)
         with (
-            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
-            patch(_VALIDATE, new=AsyncMock()),
-            patch(_ENCRYPT, return_value=_ENCRYPTED_KEY),
-            patch(_UPSERT, new=AsyncMock()),
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=_make_key_row(has_key=True))),
+            patch(_GET_BY_NAME, new=AsyncMock(return_value=ollama_provider)),
+            patch(_MODEL_EXISTS, new=AsyncMock(return_value=False)),
         ):
-            response = client.put(
-                "/api/v1/ai/settings",
-                json={
-                    "provider": "anthropic",
-                    "key": "sk-ant-api03-x",
-                    "model": "claude-sonnet-4-6",
-                },
+            response = client.post(
+                "/api/v1/ai/settings/keys",
+                json={"provider": "ollama", "model": "claude-haiku-4-5"},
             )
-        assert response.status_code == 200
-        assert response.json()["providers"][0]["has_key"] is True
+        assert response.status_code == 422
 
     def test_user_role_forbidden(self):
         app.dependency_overrides[get_validated_user] = _make_regular_user
-        response = client.put(
-            "/api/v1/ai/settings",
+        response = client.post(
+            "/api/v1/ai/settings/keys",
             json={"provider": "anthropic", "key": "sk-ant-api03-x", "model": "claude-sonnet-4-6"},
         )
         assert response.status_code == 403
 
 
-class TestClearAiKey:
+class TestSetDefaultAiKey:
     def setup_method(self):
         app.dependency_overrides[get_validated_user] = _make_admin_user
         app.dependency_overrides[get_db] = _mock_db()
@@ -180,30 +213,112 @@ class TestClearAiKey:
         app.dependency_overrides.pop(get_validated_user, None)
         app.dependency_overrides.pop(get_db, None)
 
-    def test_unknown_provider_returns_404(self):
-        with patch(_GET_BY_NAME, new=AsyncMock(return_value=None)):
-            response = client.delete("/api/v1/ai/settings/unknown/key")
-        assert response.status_code == 404
-
-    def test_clears_key_returns_has_key_false(self):
+    def test_sets_a_non_default_config_as_default(self):
         with (
-            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
-            patch(_DELETE, new=AsyncMock()),
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+            patch(_SET_DEFAULT, new=AsyncMock()) as mock_set_default,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[_make_config(is_default=True)])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+            patch(_DECRYPT, return_value="sk-ant-api03-x"),
         ):
-            response = client.delete("/api/v1/ai/settings/anthropic/key")
+            response = client.post("/api/v1/ai/settings/keys/id-2/default")
         assert response.status_code == 200
-        assert response.json()["providers"][0]["has_key"] is False
+        mock_set_default.assert_awaited_once()
+
+    def test_unknown_config_returns_404(self):
+        with patch(_SET_DEFAULT, new=AsyncMock(side_effect=ValueError("not found"))):
+            response = client.post("/api/v1/ai/settings/keys/missing/default")
+        assert response.status_code == 404
 
     def test_user_role_forbidden(self):
         app.dependency_overrides[get_validated_user] = _make_regular_user
-        response = client.delete("/api/v1/ai/settings/anthropic/key")
+        response = client.post("/api/v1/ai/settings/keys/id-2/default")
         assert response.status_code == 403
 
 
+class TestDeleteAiKey:
+    def setup_method(self):
+        app.dependency_overrides[get_validated_user] = _make_admin_user
+        app.dependency_overrides[get_db] = _mock_db()
+
+    def teardown_method(self):
+        app.dependency_overrides.pop(get_validated_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    def test_deletes_a_non_default_config(self):
+        with (
+            patch(_DELETE, new=AsyncMock()) as mock_delete,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+        ):
+            response = client.request("DELETE", "/api/v1/ai/settings/keys/id-1")
+        assert response.status_code == 200
+        mock_delete.assert_awaited_once()
+
+    def test_delete_default_without_replacement_succeeds(self):
+        """An AI config is never required to use the app, so deleting the
+        default with no replacement named is allowed, not a 409."""
+        with (
+            patch(_DELETE, new=AsyncMock()) as mock_delete,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+        ):
+            response = client.request("DELETE", "/api/v1/ai/settings/keys/id-1")
+        assert response.status_code == 200
+        mock_delete.assert_awaited_once_with(ANY, "id-1", ANY, new_default_id=None)
+
+    def test_delete_default_with_replacement_succeeds(self):
+        with (
+            patch(_DELETE, new=AsyncMock()) as mock_delete,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[_make_config(is_default=True)])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+            patch(_DECRYPT, return_value="sk-ant-api03-x"),
+        ):
+            response = client.request(
+                "DELETE", "/api/v1/ai/settings/keys/id-1", json={"new_default_id": "id-2"}
+            )
+        assert response.status_code == 200
+        mock_delete.assert_awaited_once_with(ANY, "id-1", ANY, new_default_id="id-2")
+
+    def test_unknown_replacement_returns_404(self):
+        with patch(_DELETE, new=AsyncMock(side_effect=ValueError("not found"))):
+            response = client.request(
+                "DELETE", "/api/v1/ai/settings/keys/id-1", json={"new_default_id": "missing"}
+            )
+        assert response.status_code == 404
+
+    def test_user_role_forbidden(self):
+        app.dependency_overrides[get_validated_user] = _make_regular_user
+        response = client.request("DELETE", "/api/v1/ai/settings/keys/id-1")
+        assert response.status_code == 403
+
+
+class TestSetPlatformFallbackRoute:
+    def setup_method(self):
+        app.dependency_overrides[get_db] = _mock_db()
+
+    def teardown_method(self):
+        app.dependency_overrides.pop(get_validated_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    def test_admin_gets_403(self):
+        app.dependency_overrides[get_validated_user] = lambda: ValidUserFactory(role="admin")
+        response = client.put("/api/v1/ai/settings/platform-fallback", json={"enabled": True})
+        assert response.status_code == 403
+
+    def test_superuser_succeeds(self):
+        app.dependency_overrides[get_validated_user] = lambda: ValidUserFactory(role="superuser")
+        with (
+            patch(_SET_PLATFORM_FALLBACK, new=AsyncMock()) as mock_set,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
+        ):
+            response = client.put("/api/v1/ai/settings/platform-fallback", json={"enabled": True})
+        assert response.status_code == 200
+        mock_set.assert_awaited_once_with(ANY, True, ANY)
+
+
 class TestCustomerScopedLookup:
-    """Two admins of the same customer must resolve to the same UserProviderKey row."""
+    """Admins of the same customer share the same set of configs and default."""
 
     CUSTOMER_ID = "cccccccc-0000-0000-0000-000000000003"
 
@@ -218,47 +333,33 @@ class TestCustomerScopedLookup:
         return ValidUserFactory(role="admin", user_id=user_id, customer_id=self.CUSTOMER_ID)
 
     def test_get_settings_keyed_by_customer_id_regardless_of_which_admin(self):
-        admin_a = self._admin("admin-a")
-        admin_b = self._admin("admin-b")
-
-        for admin in (admin_a, admin_b):
+        for admin in (self._admin("admin-a"), self._admin("admin-b")):
             app.dependency_overrides[get_validated_user] = lambda admin=admin: admin
             with (
-                patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-                patch(_GET_KEY, new=AsyncMock(return_value=None)) as mock_get_key,
+                patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])) as mock_list,
+                patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
             ):
                 client.get("/api/v1/ai/settings")
-            mock_get_key.assert_awaited_once_with(self.CUSTOMER_ID, ANY, ANY)
+            mock_list.assert_awaited_once_with(self.CUSTOMER_ID, ANY)
 
-    def test_save_settings_upserts_keyed_by_customer_id_not_user_id(self):
+    def test_create_scopes_new_config_by_customer_id_not_user_id(self):
         app.dependency_overrides[get_validated_user] = lambda: self._admin("admin-b")
         with (
             patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
+            patch(_MODEL_EXISTS, new=AsyncMock(return_value=True)),
             patch(_VALIDATE, new=AsyncMock()),
             patch(_ENCRYPT, return_value=_ENCRYPTED_KEY),
-            patch(_UPSERT, new=AsyncMock()) as mock_upsert,
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=None)),
+            patch(_CREATE, new=AsyncMock()) as mock_create,
+            patch(_LIST_FOR_CUSTOMER, new=AsyncMock(return_value=[])),
+            patch(_GET_CUSTOMER_AI_DEFAULTS, new=AsyncMock(return_value=None)),
         ):
-            client.put(
-                "/api/v1/ai/settings",
+            client.post(
+                "/api/v1/ai/settings/keys",
                 json={
                     "provider": "anthropic",
                     "key": "sk-ant-api03-x",
                     "model": "claude-sonnet-4-6",
                 },
             )
-        mock_upsert.assert_awaited_once()
-        assert mock_upsert.await_args is not None
-        assert mock_upsert.await_args.kwargs["customer_id"] == self.CUSTOMER_ID
-
-    def test_clear_key_deletes_keyed_by_customer_id(self):
-        app.dependency_overrides[get_validated_user] = lambda: self._admin("admin-a")
-        with (
-            patch(_GET_BY_NAME, new=AsyncMock(return_value=_make_provider())),
-            patch(_DELETE, new=AsyncMock()) as mock_delete,
-            patch(_LIST_ACTIVE, new=AsyncMock(return_value=[_make_provider()])),
-            patch(_GET_KEY, new=AsyncMock(return_value=None)),
-        ):
-            client.delete("/api/v1/ai/settings/anthropic/key")
-        mock_delete.assert_awaited_once_with(self.CUSTOMER_ID, ANY, ANY)
+        assert mock_create.await_args is not None
+        assert mock_create.await_args.kwargs["customer_id"] == self.CUSTOMER_ID

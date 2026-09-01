@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from contextlib import ExitStack
+from unittest.mock import AsyncMock, patch
 
 import os
 
@@ -31,6 +32,22 @@ def db():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine, tables=[PrivilegedAccessLog.__table__])
     return sessionmaker(bind=engine)()
+
+
+@pytest.fixture(autouse=True)
+def _no_platform_fallback_by_default():
+    """Default resolve_with_platform_fallback to None so unpatched tests don't hit a real DB."""
+    with (
+        patch(
+            "app.api.decide_routes.resolve_with_platform_fallback",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.api.parse_routes.resolve_with_platform_fallback",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        yield
 
 
 @pytest.fixture

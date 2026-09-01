@@ -1,6 +1,8 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.provider import ResolvedModel, resolve_model
+import anyio
+
+from app.services.provider import ResolvedModel, resolve_model, resolve_with_platform_fallback
 
 
 def _make_user_key(provider_name="anthropic", model_name="claude-sonnet-4-6", encrypted_key="enc"):
@@ -50,3 +52,48 @@ class TestResolveModel:
         assert resolved is not None
         assert resolved.provider_name == "ollama"
         assert resolved.model_name == "llama3.2"
+
+
+class _FakeSessionCtx:
+    async def __aenter__(self):
+        return AsyncMock()
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class TestResolveWithPlatformFallback:
+    def test_returns_none_when_flag_not_set(self):
+        defaults = MagicMock(platform_fallback_enabled=False)
+        with (
+            patch(
+                "app.crud.customer_ai_defaults.get", new=AsyncMock(return_value=defaults)
+            ),
+            patch("app.db.session.AsyncSessionLocal", return_value=_FakeSessionCtx()),
+        ):
+            result = anyio.run(resolve_with_platform_fallback, "customer-1")
+        assert result is None
+
+    def test_returns_none_when_no_defaults_row(self):
+        with (
+            patch("app.crud.customer_ai_defaults.get", new=AsyncMock(return_value=None)),
+            patch("app.db.session.AsyncSessionLocal", return_value=_FakeSessionCtx()),
+        ):
+            result = anyio.run(resolve_with_platform_fallback, "customer-1")
+        assert result is None
+
+    def test_returns_platform_model_when_flag_set(self):
+        defaults = MagicMock(platform_fallback_enabled=True)
+        platform_model = ResolvedModel(model=MagicMock(), provider_name="anthropic", model_name="x")
+        with (
+            patch(
+                "app.crud.customer_ai_defaults.get", new=AsyncMock(return_value=defaults)
+            ),
+            patch("app.db.session.AsyncSessionLocal", return_value=_FakeSessionCtx()),
+            patch(
+                "app.services.provider.resolve_platform_funded_model",
+                return_value=platform_model,
+            ),
+        ):
+            result = anyio.run(resolve_with_platform_fallback, "customer-1")
+        assert result is platform_model

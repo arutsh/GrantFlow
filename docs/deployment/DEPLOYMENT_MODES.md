@@ -203,6 +203,8 @@ Add an A record at your registrar: `api.opengrantflow.com` → the `server_ipv4`
 
 All set already: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_URL`, `USERS_DATABASE_URL`, `BUDGET_DATABASE_URL`, `AI_DATABASE_URL`, `JWT_SECRET_KEY`, `ENCRYPTION_KEY`, `VPS_USER` (`deploy`), `VPS_SSH_KEY` (private half of the deploy keypair — the same keypair Terraform registers as `hcloud_ssh_key`, reused rather than regenerated), `GRAFANA_CLOUD_OTLP_ENDPOINT`, `GRAFANA_CLOUD_OTLP_HEADERS` (see Observability below). `VPS_HOST` needs updating any time the server is recreated (`terraform destroy && terraform apply` would produce a new IP) — set it to the current `server_ipv4` output.
 
+**Not yet set — needed for the platform-funded AI fallback (`services/ai`):** `ANTHROPIC_API_KEY`. Without it, `resolve_platform_funded_model()` returns `None` and every platform-funded fallback path (excel import for zero-key orgs, and the superuser-gated `/ai/decide` / `/ai/parse-budget/stream` fallback) fails closed even when it should recover — confirmed missing in prod on 2026-08-25.
+
 ### Observability
 
 Traces, metrics, and logs from all five services (the four FastAPI services
