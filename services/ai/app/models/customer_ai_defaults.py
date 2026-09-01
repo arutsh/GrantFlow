@@ -11,7 +11,5 @@ class CustomerAiDefaults(Base):
     __tablename__ = "customer_ai_defaults"
 
     customer_id: Mapped[t.GUID] = mapped_column(t.GUID(), primary_key=True)
-    platform_fallback_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    platform_fallback_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

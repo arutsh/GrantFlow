@@ -46,9 +46,7 @@ async def create_ai_key(request: Request, current_user: dict = Depends(get_valid
 
 
 @router.post("/ai-settings/keys/{config_id}/default")
-async def set_default_ai_key(
-    config_id: str, current_user: dict = Depends(get_validated_user)
-):
+async def set_default_ai_key(config_id: str, current_user: dict = Depends(get_validated_user)):
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.AI_SERVICE_URL}/ai/settings/keys/{config_id}/default",
@@ -75,9 +73,7 @@ async def delete_ai_key(
 
 
 @router.put("/ai-settings/platform-fallback")
-async def set_platform_fallback(
-    request: Request, current_user: dict = Depends(get_validated_user)
-):
+async def set_platform_fallback(request: Request, current_user: dict = Depends(get_validated_user)):
     body = await request.json()
     async with httpx.AsyncClient() as client:
         response = await client.put(
