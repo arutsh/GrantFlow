@@ -36,7 +36,7 @@ def get_customers(
 def create_customer(
     session: Session,
     name: str,
-    is_ngo: bool = False,
+    is_ngo: bool = True,
     is_donor: bool = False,
     country: str = "GB",
     currency: str = "GBP",

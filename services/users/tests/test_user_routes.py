@@ -74,6 +74,7 @@ class TestUpdateUserOnboarding:
         )
         assert customer is not None
         assert customer.name == "Acme NGO"
+        assert customer.is_ngo is True
 
     def test_existing_customer_id_leaves_role_unchanged(self, make_client, db):
         customer = _persist(db, CustomerModel(name="Existing Org", country="GB", currency="GBP"))
