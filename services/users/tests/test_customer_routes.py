@@ -86,6 +86,22 @@ class TestCreateCustomer:
 
         assert response.status_code == 401
 
+    def test_respects_explicit_is_ngo_false(self, make_client, db):
+        client = make_client(db=db)
+
+        response = client.post(
+            "/api/customers/",
+            json={
+                "name": "Donor Org",
+                "country": "GB",
+                "currency": "GBP",
+                "is_ngo": False,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["is_ngo"] is False
+
 
 class TestGetCustomer:
     def test_requires_auth(self, make_client, db):
