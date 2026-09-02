@@ -8,4 +8,4 @@ Workflow rule: one task group = one GitHub ticket = one PR, merged before the ne
 - [x] 1.4 Add an Alembic migration in `services/users/migrations/versions/` setting `server_default="true"` on `customers.is_ngo` (schema-only, no data backfill of existing rows).
 - [x] 1.5 Add/update a test covering self-service onboarding (`new_customer_name` path) asserting the created company has `is_ngo=True`.
 - [x] 1.6 Add/update a test covering admin-created customers (`POST /customers/`) asserting `is_ngo` still reflects the request body value, unaffected by the default change.
-- [ ] 1.7 Run the users service's test suite and flake8 (max-line-length=100) clean; PR merged.
+- [x] 1.7 Run the users service's test suite and flake8 (max-line-length=100) clean; PR merged.
