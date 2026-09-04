@@ -4,33 +4,6 @@ from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
 from app.schemas.budget_schema import BudgetStatus
 
 
-class BudgetCategoryFactory(factory.Factory):
-    class Meta:
-        model = BudgetCategoryModel
-
-    id = factory.LazyFunction(uuid4)
-    name = "Personnel"
-    code = factory.LazyAttribute(lambda o: o.name.upper())
-    donor_template_id = None
-
-
-class BudgetLineFactory(factory.Factory):
-    class Meta:
-        model = BudgetLineModel
-
-    id = factory.LazyFunction(uuid4)
-    budget_id = factory.LazyFunction(uuid4)
-    category_id = factory.LazyFunction(uuid4)
-    description = factory.Faker("sentence", nb_words=4)
-    amount = 1000.0
-    extra_fields = None
-    created_by = factory.LazyFunction(uuid4)
-    updated_by = factory.LazyFunction(uuid4)
-    created_at = None
-    updated_at = None
-    category = factory.SubFactory(BudgetCategoryFactory)
-
-
 class BudgetFactory(factory.Factory):
     class Meta:
         model = BudgetModel
@@ -52,3 +25,34 @@ class BudgetFactory(factory.Factory):
     donor_total_amount = None
     estimated_exchange_rate = None
     confirmed_at = None
+
+
+class BudgetCategoryFactory(factory.Factory):
+    class Meta:
+        model = BudgetCategoryModel
+
+    id = factory.LazyFunction(uuid4)
+    budget = factory.SubFactory(BudgetFactory)
+    budget_id = factory.SelfAttribute("budget.id")
+    name = "Personnel"
+    code = factory.LazyAttribute(lambda o: o.name.upper())
+
+
+class BudgetLineFactory(factory.Factory):
+    class Meta:
+        model = BudgetLineModel
+
+    id = factory.LazyFunction(uuid4)
+    budget = factory.SubFactory(BudgetFactory)
+    budget_id = factory.SelfAttribute("budget.id")
+    category_id = factory.LazyFunction(uuid4)
+    description = factory.Faker("sentence", nb_words=4)
+    amount = 1000.0
+    extra_fields = None
+    created_by = factory.LazyFunction(uuid4)
+    updated_by = factory.LazyFunction(uuid4)
+    created_at = None
+    updated_at = None
+    category = factory.SubFactory(
+        BudgetCategoryFactory, budget_id=factory.SelfAttribute("..budget_id")
+    )

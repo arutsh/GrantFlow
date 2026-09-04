@@ -12,17 +12,13 @@ from app.crud.budget_line_crud import (
 )
 from app.core.exceptions import DomainError, PermissionDenied
 from app.services.budget_category_services import get_or_create_category_service
-from app.services.budget_services import is_budget_locked
+from app.services.budget_services import assert_budget_editable
 from uuid import UUID
 from app.schemas import BudgetLineCreate, BudgetLineUpdate
 
 
 def _assert_budget_editable(budget) -> None:
-    if is_budget_locked(budget):
-        raise DomainError(
-            "Budget lines cannot be changed once the budget is confirmed",
-            status.HTTP_400_BAD_REQUEST,
-        )
+    assert_budget_editable(budget, "lines")
 
 
 def create_budget_line_service(
@@ -40,7 +36,11 @@ def create_budget_line_service(
         )
     _assert_budget_editable(budget)
     category = get_or_create_category_service(
-        db, valid_user, category_id=budget_line.category_id, category_name=budget_line.category_name
+        db,
+        valid_user,
+        budget_id=budget_line.budget_id,
+        category_id=budget_line.category_id,
+        category_name=budget_line.category_name,
     )
 
     created_line = create_budget_line(

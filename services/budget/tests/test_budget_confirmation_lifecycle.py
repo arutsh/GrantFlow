@@ -413,7 +413,7 @@ class TestEditLockedOnceConfirmed:
             create_budget_line_service(db, _valid_user(OWNER_ID), payload)
 
     def _make_line(self, db, budget_id):
-        category = BudgetCategoryModel(name="Personnel", code="PERSONNEL")
+        category = BudgetCategoryModel(name="Personnel", code="PERSONNEL", budget_id=budget_id)
         db.add(category)
         db.commit()
         db.refresh(category)
