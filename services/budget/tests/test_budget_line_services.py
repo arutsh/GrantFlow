@@ -10,7 +10,7 @@ session) and assert recalculation is triggered with the correct budget_id.
 from unittest.mock import patch
 from uuid import uuid4
 
-from tests.factories.user import make_valid_user
+from tests.factories.user import ValidUserFactory
 from tests.factories.budget import BudgetFactory, BudgetLineFactory
 from app.schemas import BudgetLineCreate, BudgetLineUpdate
 from app.services.budget_line_services import (
@@ -25,7 +25,7 @@ DB = object()  # session is never actually used — every crud call is mocked
 
 
 def _valid_user():
-    return make_valid_user(user_id=USER_ID, customer_id=CUSTOMER_ID)
+    return ValidUserFactory(user_id=USER_ID, customer_id=CUSTOMER_ID)
 
 
 class TestTotalAmountRecalculation:
@@ -123,15 +123,15 @@ class TestRecalculateBudgetTotalCrud:
         Base.metadata.create_all(engine, tables=[BudgetModel.__table__, BudgetLineModel.__table__])
         session = sessionmaker(bind=engine)()
 
-        budget = BudgetModel(name="Test Budget", owner_id=uuid4())
+        budget = BudgetFactory.build()
         session.add(budget)
         session.commit()
 
         session.add_all(
             [
-                BudgetLineModel(budget_id=budget.id, amount=500.0),
-                BudgetLineModel(budget_id=budget.id, amount=300.0),
-                BudgetLineModel(budget_id=budget.id, amount=None),
+                BudgetLineFactory.build(budget=budget, category=None, amount=500.0),
+                BudgetLineFactory.build(budget=budget, category=None, amount=300.0),
+                BudgetLineFactory.build(budget=budget, category=None, amount=None),
             ]
         )
         session.commit()
@@ -151,7 +151,7 @@ class TestRecalculateBudgetTotalCrud:
         Base.metadata.create_all(engine, tables=[BudgetModel.__table__, BudgetLineModel.__table__])
         session = sessionmaker(bind=engine)()
 
-        budget = BudgetModel(name="Empty Budget", owner_id=uuid4())
+        budget = BudgetFactory.build()
         session.add(budget)
         session.commit()
 

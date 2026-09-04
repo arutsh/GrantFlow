@@ -1,11 +1,7 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, JSON
 from app.models.base import Base
-
-if TYPE_CHECKING:
-    from app.models.budget import BudgetCategoryModel
 
 
 class DonorTemplateModel(Base):
@@ -21,7 +17,3 @@ class DonorTemplateModel(Base):
     detected_structure: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Reserved for future template-versioning/export work; not diffed in v1.
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-
-    categories: Mapped[list["BudgetCategoryModel"]] = relationship(
-        back_populates="donor_template", cascade="all, delete-orphan"
-    )

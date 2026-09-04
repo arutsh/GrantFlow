@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SQLEnum,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -23,7 +24,6 @@ from typing import TYPE_CHECKING
 from app.schemas.budget_schema import BudgetStatus
 
 if TYPE_CHECKING:
-    from app.models.mapping import DonorTemplateModel
     from app.models.report import ReportModel, ReportLineModel
 
 
@@ -79,6 +79,9 @@ class BudgetModel(Base, AuditMixin):
         "BudgetLineModel", back_populates="budget"
     )
     reports: Mapped[list["ReportModel"]] = relationship("ReportModel", back_populates="budget")
+    categories: Mapped[list["BudgetCategoryModel"]] = relationship(
+        "BudgetCategoryModel", back_populates="budget"
+    )
 
 
 class BudgetLineModel(Base, AuditMixin):
@@ -108,6 +111,7 @@ class BudgetLineModel(Base, AuditMixin):
 
 class BudgetCategoryModel(Base, AuditMixin):
     __tablename__ = "budget_categories"
+    __table_args__ = (UniqueConstraint("budget_id", "name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         GUID(), primary_key=True, index=True, default=lambda: uuid.uuid4()
@@ -115,13 +119,11 @@ class BudgetCategoryModel(Base, AuditMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    donor_template_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("donor_templates.id", ondelete="CASCADE"), nullable=True
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("budgets.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    donor_template: Mapped["DonorTemplateModel"] = relationship(
-        "DonorTemplateModel", back_populates="categories"
-    )
+    budget: Mapped["BudgetModel"] = relationship("BudgetModel", back_populates="categories")
 
     lines: Mapped[list["BudgetLineModel"]] = relationship(
         "BudgetLineModel", back_populates="category"

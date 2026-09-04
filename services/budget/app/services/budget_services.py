@@ -116,9 +116,18 @@ async def create_budget_service(
 
 def is_budget_locked(budget) -> bool:
     """A confirmed budget's metadata and lines are frozen to keep reported
-    figures accurate. Single source of truth for that rule — also used by
-    budget_line_services._assert_budget_editable, so the two never drift."""
+    figures accurate. Single source of truth for that rule."""
     return budget is not None and budget.status == BudgetStatus.confirmed
+
+
+def assert_budget_editable(budget, resource: str) -> None:
+    """Shared confirmed-budget edit lock for budget_line_services and
+    budget_category_services, so the two never drift."""
+    if is_budget_locked(budget):
+        raise DomainError(
+            f"Budget {resource} cannot be changed once the budget is confirmed",
+            status.HTTP_400_BAD_REQUEST,
+        )
 
 
 def _is_metadata_edit(budget: BudgetCreate) -> bool:
@@ -600,7 +609,10 @@ async def create_budget_with_lines_service(
         set_span_attributes(budget_id=new_budget.id)
 
         categories_by_name = get_or_create_categories_by_names_service(
-            db, valid_user, [line_input.category_name for line_input in request.lines]
+            db,
+            valid_user,
+            budget_id=new_budget.id,
+            category_names=[line_input.category_name for line_input in request.lines],
         )
         category_ids_by_name = {name: category.id for name, category in categories_by_name.items()}
         line_specs = []
