@@ -9,11 +9,16 @@ from shared.schemas.audit_mixin import AuditMixinBase
 class BudgetCategoryBase(BaseModel):
     name: str
     code: Optional[str] = None
-    donor_template_id: Optional[int] = None
+    budget_id: UUID
 
 
 class BudgetCategoryCreate(BudgetCategoryBase):
     pass
+
+
+class BudgetCategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
 
 
 class BudgetCategory(BudgetCategoryBase, AuditMixinBase):

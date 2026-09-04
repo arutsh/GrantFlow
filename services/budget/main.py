@@ -17,6 +17,7 @@ init_observability("budget-service")
 from app.api import (  # noqa: E402
     budget_routes,
     budget_line_routes,
+    budget_category_routes,
     mapping_routes,
     report_routes,
     report_line_routes,
@@ -94,6 +95,7 @@ app.include_router(health_routes.router)
 app.include_router(budget_routes.router, prefix="/api/v1")
 app.include_router(budget_routes.private_router, prefix="/api/private/v1")
 app.include_router(budget_line_routes.router, prefix="/api/v1")
+app.include_router(budget_category_routes.router, prefix="/api/v1")
 app.include_router(mapping_routes.router, prefix="/api/v1")
 app.include_router(report_routes.router, prefix="/api/v1")
 app.include_router(report_line_routes.router, prefix="/api/v1")

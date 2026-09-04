@@ -10,15 +10,15 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 1.6 Update call sites to thread `budget_id` through: `services/budget/app/services/budget_line_services.py` (`create_budget_line_service`) and `services/budget/app/services/budget_services.py` (`create_budget_with_lines_service`).
 - [x] 1.7 Update `services/budget/tests/factories/budget.py`: `BudgetCategoryFactory` gets `budget_id`, drops `donor_template_id`.
 - [x] 1.8 Add unmocked coverage: CRUD/service-level tests proving name lookup is scoped to `budget_id` (same name in two budgets → two rows, same name twice in one budget → one row), and new tests for `update_budget_category_service`/`delete_budget_category_service` covering ownership rejection, lock rejection, and `updated_by` actually changing on edit.
-- [ ] 1.9 Run `services/budget` test suite clean; PR merged (`Closes #<ticket>`).
+- [x] 1.9 Run `services/budget` test suite clean; PR merged (`Closes #<ticket>`).
 
 ## 2. API surface: routes and shared schema (Budget) — depends on 1
 
-- [ ] 2.1 Update `shared/schemas/budget_line_schema.py`: `BudgetCategoryBase` drops `donor_template_id`, gains required `budget_id`; add `BudgetCategoryUpdate` (`name`/`code`, both optional).
-- [ ] 2.2 Remove the `POST /donor-mapping/categories` and `GET /donor-mapping/categories` (+ `/categories/{template_id}`) endpoints from `services/budget/app/api/mapping_routes.py`.
-- [ ] 2.3 Add `services/budget/app/api/budget_category_routes.py` (`prefix="/budget-categories"`, matching `budget_line_routes.py`'s flat-router convention): `GET /budget-categories/by-budget/{budget_id}`, `PATCH /budget-categories/{category_id}`, `DELETE /budget-categories/{category_id}`.
-- [ ] 2.4 Register the new router in `services/budget/main.py` alongside the existing `budget_line_routes` registration.
-- [ ] 2.5 Add `services/budget/tests/test_budget_category_routes.py` mirroring `budget_line_routes`' test shape (ownership rejection, lock rejection, happy-path edit/delete/list).
+- [x] 2.1 Update `shared/schemas/budget_line_schema.py`: `BudgetCategoryBase` drops `donor_template_id`, gains required `budget_id`; add `BudgetCategoryUpdate` (`name`/`code`, both optional).
+- [x] 2.2 Remove the `POST /donor-mapping/categories` and `GET /donor-mapping/categories` (+ `/categories/{template_id}`) endpoints from `services/budget/app/api/mapping_routes.py`. (already done as part of #270/group 1's migration commit)
+- [x] 2.3 Add `services/budget/app/api/budget_category_routes.py` (`prefix="/budget-categories"`, matching `budget_line_routes.py`'s flat-router convention): `GET /budget-categories/by-budget/{budget_id}`, `PATCH /budget-categories/{category_id}`, `DELETE /budget-categories/{category_id}`.
+- [x] 2.4 Register the new router in `services/budget/main.py` alongside the existing `budget_line_routes` registration.
+- [x] 2.5 Add `services/budget/tests/test_budget_category_routes.py` mirroring `budget_line_routes`' test shape (ownership rejection, lock rejection, happy-path edit/delete/list).
 - [ ] 2.6 Run `services/budget` test suite clean; PR merged (`Closes #<ticket>`).
 
 ## 3. Frontend type sync (Frontend) — depends on 2

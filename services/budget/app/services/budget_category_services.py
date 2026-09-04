@@ -11,6 +11,7 @@ from app.crud.budget_category_crud import (
     bulk_create_budget_categories,
     update_budget_category,
     delete_budget_category,
+    list_budget_categories,
 )
 from app.crud.budget_crud import get_budget
 from app.core.exceptions import DomainError
@@ -77,6 +78,23 @@ def get_or_create_categories_by_names_service(
         result.update({category.name: category for category in created})
 
     return result
+
+
+def get_budget_category_by_id_service(db: Session, category_id: UUID) -> BudgetCategoryModel:
+    category = get_budget_category(db, category_id)
+    if not category:
+        raise DomainError("Budget Category not found", status.HTTP_404_NOT_FOUND)
+    return category
+
+
+def list_budget_categories_service(
+    db: Session, valid_user: dict, budget_id: UUID
+) -> list[BudgetCategoryModel]:
+    customer_id = valid_user.get("customer_id")
+    budget = get_budget(db, budget_id, customer_id) if customer_id else None
+    if not budget:
+        raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
+    return list_budget_categories(db, budget_id=budget_id)
 
 
 def _get_owned_category_or_404(db: Session, valid_user: dict, budget_id: UUID, category_id: UUID):
