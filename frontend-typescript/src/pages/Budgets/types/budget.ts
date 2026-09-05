@@ -25,7 +25,7 @@ export interface BudgetCategory {
   id: string;
   name: string;
   code: string;
-  donor_template_id?: string;
+  budget_id: string;
 }
 
 export interface NewBudgetLine {

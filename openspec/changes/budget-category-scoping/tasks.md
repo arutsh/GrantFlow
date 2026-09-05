@@ -23,6 +23,6 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 3. Frontend type sync (Frontend) — depends on 2
 
-- [ ] 3.1 Update `frontend-typescript/src/pages/Budgets/types/budget.ts`: `BudgetCategory` type drops `donor_template_id`, gains `budget_id`.
-- [ ] 3.2 Confirm `SingleBudgetViewContext.tsx`'s `budgetCategories`/`budgetCategoryNames` derivation and `AddBudgetLine.tsx`'s dropdown still compile and behave correctly against the updated type (no inline-rename UI in this ticket — that's a separate follow-up).
+- [x] 3.1 Update `frontend-typescript/src/pages/Budgets/types/budget.ts`: `BudgetCategory` type drops `donor_template_id`, gains `budget_id`.
+- [x] 3.2 Confirm `SingleBudgetViewContext.tsx`'s `budgetCategories`/`budgetCategoryNames` derivation and `AddBudgetLine.tsx`'s dropdown still compile and behave correctly against the updated type (no inline-rename UI in this ticket — that's a separate follow-up).
 - [ ] 3.3 Run frontend typecheck/build clean; PR merged (`Closes #<ticket>`).

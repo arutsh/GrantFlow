@@ -1,5 +1,5 @@
 # /services/budget/app/schemas/budget.py
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from shared.schemas.audit_mixin import AuditMixinBase
@@ -19,6 +19,15 @@ class BudgetCategoryCreate(BudgetCategoryBase):
 class BudgetCategoryUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_non_blank(cls, v: Optional[str]) -> str:
+        # Only runs when the client explicitly sends "name" (including null),
+        # since an omitted field never reaches the validator with its default.
+        if v is None or not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
 
 
 class BudgetCategory(BudgetCategoryBase, AuditMixinBase):

@@ -7,7 +7,6 @@ from uuid import UUID
 from app.db.session import SessionLocal
 from app.schemas import BudgetCategory, BudgetCategoryUpdate
 from app.services.budget_category_services import (
-    get_budget_category_by_id_service,
     list_budget_categories_service,
     update_budget_category_service,
     delete_budget_category_service,
@@ -42,15 +41,8 @@ def update_budget_category_view(
     valid_user=Depends(get_validated_user),
 ):
     set_span_attributes(budget_category_id=category_id)
-    category = get_budget_category_by_id_service(db, category_id)
-    return update_budget_category_service(
-        db,
-        valid_user,
-        budget_id=category.budget_id,
-        category_id=category_id,
-        name=payload.name if payload.name is not None else category.name,
-        code=payload.code if payload.code is not None else category.code,
-    )
+    update_data = payload.model_dump(exclude_unset=True)
+    return update_budget_category_service(db, valid_user, category_id, update_data)
 
 
 @router.delete("/{category_id}")
@@ -58,7 +50,4 @@ def delete_budget_category_view(
     category_id: UUID, db: Session = Depends(get_db), valid_user=Depends(get_validated_user)
 ):
     set_span_attributes(budget_category_id=category_id)
-    category = get_budget_category_by_id_service(db, category_id)
-    return delete_budget_category_service(
-        db, valid_user, budget_id=category.budget_id, category_id=category_id
-    )
+    return delete_budget_category_service(db, valid_user, category_id)

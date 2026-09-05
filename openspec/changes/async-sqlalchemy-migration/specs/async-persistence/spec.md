@@ -22,6 +22,17 @@ Every SQLAlchemy relationship that a route or service function reads SHALL be ei
 - **WHEN** the full test suite for a migrated service runs, and every route is manually exercised once
 - **THEN** no `MissingGreenlet` (or equivalent lazy-load-under-async) error occurs
 
+### Requirement: Timestamp correctness under expire_on_commit=False
+`AuditMixin`-backed models SHALL set `created_at`/`updated_at` in Python before a write is committed, not rely on a database-computed default (`func.now()`/`onupdate`) that requires a post-commit refresh to observe. No route or service function SHALL depend on an explicit `session.refresh()`/`await session.refresh()` call to obtain a correct audit timestamp.
+
+#### Scenario: Created row has a correct timestamp with no refresh
+- **WHEN** a route creates an `AuditMixin`-backed row and returns it in the response without calling `refresh()`
+- **THEN** the response's `created_at` reflects the actual creation time, not `None` or a stale value
+
+#### Scenario: Updated row has a correct timestamp with no refresh
+- **WHEN** a route updates an `AuditMixin`-backed row and returns it in the response without calling `refresh()`
+- **THEN** the response's `updated_at` reflects the actual update time, not the prior value
+
 ### Requirement: Atomic multi-step writes via commit=False
 CRUD write functions SHALL accept an optional `commit: bool = True` parameter. When `commit=False`, the function SHALL call `session.flush()` instead of `session.commit()`, leaving the caller responsible for the final commit. The default (`commit=True`) SHALL preserve every existing caller's current commit-per-call behavior unchanged.
 

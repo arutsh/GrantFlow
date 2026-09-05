@@ -72,7 +72,7 @@ def budget_ledger_lock(db, budget_id: UUID):
             conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
-def _get_owned_budget(db, valid_user: dict, budget_id: UUID):
+def _require_owned_budget(db, valid_user: dict, budget_id: UUID):
     budget = get_viewable_budget(db, valid_user, budget_id)
     if not is_owner(budget, valid_user):
         raise PermissionDenied()
@@ -94,7 +94,7 @@ def _get_currency_conversion_or_404(db, conversion_id: UUID):
 
 
 def record_receipt_service(db, valid_user: dict, receipt: FundingReceiptCreate):
-    budget = _get_owned_budget(db, valid_user, receipt.budget_id)
+    budget = _require_owned_budget(db, valid_user, receipt.budget_id)
     return create_funding_receipt(
         session=db,
         user_id=valid_user["user_id"],
@@ -113,7 +113,7 @@ def get_funding_receipt_service(db, valid_user: dict, receipt_id: UUID):
 def list_funding_receipts_service(db, valid_user: dict, budget_id: UUID):
     # Owner or funder may view the ledger (matches the currency-ledger-ui
     # panel being visible to both) — only recording a receipt/conversion
-    # stays owner-only, via _get_owned_budget below.
+    # stays owner-only, via _require_owned_budget below.
     get_viewable_budget(db, valid_user, budget_id)
     return list_funding_receipts(db, budget_id=budget_id)
 
@@ -181,7 +181,7 @@ def _backfill_unsatisfied_expenses(
 
 
 def record_conversion_service(db, valid_user: dict, conversion: CurrencyConversionCreate):
-    budget = _get_owned_budget(db, valid_user, conversion.budget_id)
+    budget = _require_owned_budget(db, valid_user, conversion.budget_id)
     with budget_ledger_lock(db, budget.id):
         new_conversion = create_currency_conversion(
             session=db,

@@ -43,7 +43,7 @@ class TestUpdateBudgetCategoryRoute:
     def test_category_not_found_returns_404(self, make_client):
         client = make_client()
         with patch(
-            "app.api.budget_category_routes.get_budget_category_by_id_service",
+            "app.api.budget_category_routes.update_budget_category_service",
             side_effect=DomainError("Budget Category not found", status.HTTP_404_NOT_FOUND),
         ):
             response = client.patch(
@@ -52,70 +52,30 @@ class TestUpdateBudgetCategoryRoute:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_ownership_rejection_propagates_status_code(self, make_client):
-        client = make_client()
-        budget_id = uuid4()
-        category_id = uuid4()
-        with (
-            patch(
-                "app.api.budget_category_routes.get_budget_category_by_id_service",
-                return_value=SimpleNamespace(
-                    id=category_id, budget_id=budget_id, name="Travel", code="TRAVEL"
-                ),
-            ),
-            patch(
-                "app.api.budget_category_routes.update_budget_category_service",
-                side_effect=DomainError("Budget Category not found", status.HTTP_404_NOT_FOUND),
-            ),
-        ):
-            response = client.patch(
-                f"/api/v1/budget-categories/{category_id}", json={"name": "Hijacked"}
-            )
-
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-
     def test_lock_rejection_propagates_status_code(self, make_client):
         client = make_client()
-        budget_id = uuid4()
-        category_id = uuid4()
-        with (
-            patch(
-                "app.api.budget_category_routes.get_budget_category_by_id_service",
-                return_value=SimpleNamespace(
-                    id=category_id, budget_id=budget_id, name="Travel", code="TRAVEL"
-                ),
-            ),
-            patch(
-                "app.api.budget_category_routes.update_budget_category_service",
-                side_effect=DomainError(
-                    "Budget categories cannot be changed once the budget is confirmed",
-                    status.HTTP_400_BAD_REQUEST,
-                ),
+        with patch(
+            "app.api.budget_category_routes.update_budget_category_service",
+            side_effect=DomainError(
+                "Budget categories cannot be changed once the budget is confirmed",
+                status.HTTP_400_BAD_REQUEST,
             ),
         ):
             response = client.patch(
-                f"/api/v1/budget-categories/{category_id}", json={"name": "Transport"}
+                f"/api/v1/budget-categories/{uuid4()}", json={"name": "Transport"}
             )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_happy_path_falls_back_to_existing_name_and_code(self, make_client):
+    def test_happy_path_passes_only_the_fields_the_client_sent(self, make_client):
         client = make_client()
-        budget_id = uuid4()
         category_id = uuid4()
-        existing = SimpleNamespace(
-            id=category_id, budget_id=budget_id, name="Travel", code="TRAVEL"
-        )
         with (
-            patch(
-                "app.api.budget_category_routes.get_budget_category_by_id_service",
-                return_value=existing,
-            ),
             patch(
                 "app.api.budget_category_routes.update_budget_category_service",
                 return_value=SimpleNamespace(
                     id=category_id,
-                    budget_id=budget_id,
+                    budget_id=uuid4(),
                     name="Travel",
                     code="NEWCODE",
                     created_by=uuid4(),
@@ -129,14 +89,10 @@ class TestUpdateBudgetCategoryRoute:
             )
 
         assert response.status_code == 200
-        _, call_args, call_kwargs = mock_service.mock_calls[0]
+        _, call_args, _ = mock_service.mock_calls[0]
         assert call_args[1] == client.user
-        assert call_kwargs == {
-            "budget_id": budget_id,
-            "category_id": category_id,
-            "name": "Travel",
-            "code": "NEWCODE",
-        }
+        assert call_args[2] == category_id
+        assert call_args[3] == {"code": "NEWCODE"}
         mock_set_span_attrs.assert_any_call(budget_category_id=category_id)
 
 
@@ -144,7 +100,7 @@ class TestDeleteBudgetCategoryRoute:
     def test_category_not_found_returns_404(self, make_client):
         client = make_client()
         with patch(
-            "app.api.budget_category_routes.get_budget_category_by_id_service",
+            "app.api.budget_category_routes.delete_budget_category_service",
             side_effect=DomainError("Budget Category not found", status.HTTP_404_NOT_FOUND),
         ):
             response = client.delete(f"/api/v1/budget-categories/{uuid4()}")
@@ -153,34 +109,21 @@ class TestDeleteBudgetCategoryRoute:
 
     def test_lock_rejection_propagates_status_code(self, make_client):
         client = make_client()
-        budget_id = uuid4()
-        category_id = uuid4()
-        with (
-            patch(
-                "app.api.budget_category_routes.get_budget_category_by_id_service",
-                return_value=SimpleNamespace(id=category_id, budget_id=budget_id),
-            ),
-            patch(
-                "app.api.budget_category_routes.delete_budget_category_service",
-                side_effect=DomainError(
-                    "Budget categories cannot be changed once the budget is confirmed",
-                    status.HTTP_400_BAD_REQUEST,
-                ),
+        with patch(
+            "app.api.budget_category_routes.delete_budget_category_service",
+            side_effect=DomainError(
+                "Budget categories cannot be changed once the budget is confirmed",
+                status.HTTP_400_BAD_REQUEST,
             ),
         ):
-            response = client.delete(f"/api/v1/budget-categories/{category_id}")
+            response = client.delete(f"/api/v1/budget-categories/{uuid4()}")
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_happy_path_deletes_and_sets_span_attribute(self, make_client):
         client = make_client()
-        budget_id = uuid4()
         category_id = uuid4()
         with (
-            patch(
-                "app.api.budget_category_routes.get_budget_category_by_id_service",
-                return_value=SimpleNamespace(id=category_id, budget_id=budget_id),
-            ),
             patch(
                 "app.api.budget_category_routes.delete_budget_category_service",
                 return_value=True,

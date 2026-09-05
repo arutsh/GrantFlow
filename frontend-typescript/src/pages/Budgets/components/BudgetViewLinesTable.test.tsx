@@ -60,7 +60,7 @@ describe("BudgetViewLinesTable Used column", () => {
   // header's aggregated pill (subtotal == the one line's amount).
   it("shows a green 100% pill when a line's reported spend exactly matches its allocation", () => {
     renderTable(
-      [makeLine({ id: "bl1", amount: 400, category: { id: "c1", name: "Coordinator", code: "COORD" } })],
+      [makeLine({ id: "bl1", amount: 400, category: { id: "c1", name: "Coordinator", code: "COORD", budget_id: "b1" } })],
       { bl1: 400 },
     );
 
@@ -72,7 +72,7 @@ describe("BudgetViewLinesTable Used column", () => {
 
   it("shows an amber pill when a line is only partially reported", () => {
     renderTable(
-      [makeLine({ id: "bl2", amount: 200, category: { id: "c2", name: "IT", code: "IT" } })],
+      [makeLine({ id: "bl2", amount: 200, category: { id: "c2", name: "IT", code: "IT", budget_id: "b1" } })],
       { bl2: 50 },
     );
 
@@ -83,7 +83,7 @@ describe("BudgetViewLinesTable Used column", () => {
 
   it("shows a red pill when a line's reported spend exceeds its allocation", () => {
     renderTable(
-      [makeLine({ id: "bl3", amount: 100, category: { id: "c3", name: "Travel", code: "TRV" } })],
+      [makeLine({ id: "bl3", amount: 100, category: { id: "c3", name: "Travel", code: "TRV", budget_id: "b1" } })],
       { bl3: 150 },
     );
 
@@ -93,7 +93,7 @@ describe("BudgetViewLinesTable Used column", () => {
 
   it("shows a neutral pill when nothing has been reported against a line yet", () => {
     renderTable(
-      [makeLine({ id: "bl4", amount: 300, category: { id: "c4", name: "Misc", code: "MISC" } })],
+      [makeLine({ id: "bl4", amount: 300, category: { id: "c4", name: "Misc", code: "MISC", budget_id: "b1" } })],
       {},
     );
 
@@ -104,7 +104,7 @@ describe("BudgetViewLinesTable Used column", () => {
 
   it("shows a loading pill instead of 0% while spend is still being fetched (#216)", () => {
     renderTable(
-      [makeLine({ id: "bl5", amount: 300, category: { id: "c5", name: "Misc", code: "MISC" } })],
+      [makeLine({ id: "bl5", amount: 300, category: { id: "c5", name: "Misc", code: "MISC", budget_id: "b1" } })],
       {},
       {},
       true,
@@ -121,8 +121,8 @@ describe("BudgetViewLinesTable mobile card list", () => {
   it("groups lines by category with a subtotal, mirroring the desktop table's grouping", () => {
     renderTable(
       [
-        makeLine({ id: "bl1", description: "Salary", amount: 400, category: { id: "c1", name: "Staff costs", code: "STAFF" } }),
-        makeLine({ id: "bl2", description: "Stipend", amount: 100, category: { id: "c1", name: "Staff costs", code: "STAFF" } }),
+        makeLine({ id: "bl1", description: "Salary", amount: 400, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
+        makeLine({ id: "bl2", description: "Stipend", amount: 100, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
       ],
       { bl1: 400, bl2: 0 },
     );
@@ -149,7 +149,7 @@ describe("BudgetViewLinesTable mobile card list", () => {
     render(
       <QueryClientProvider client={queryClient}>
         <BudgetViewLinesTable
-          lines={[makeLine({ id: "bl1", category: { id: "c1", name: "Misc", code: "MISC" } })]}
+          lines={[makeLine({ id: "bl1", category: { id: "c1", name: "Misc", code: "MISC", budget_id: "b1" } })]}
           onEdit={vi.fn()}
           onNew={vi.fn()}
           onClose={vi.fn()}
@@ -171,7 +171,7 @@ describe("BudgetViewLinesTable mobile card list", () => {
 describe("BudgetViewLinesTable currency toggle", () => {
   it("hides the toggle when the budget has no estimated_exchange_rate", () => {
     renderTable(
-      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF", budget_id: "b1" } })],
       { bl1: 400 },
     );
 
@@ -181,7 +181,7 @@ describe("BudgetViewLinesTable currency toggle", () => {
 
   it("shows the toggle when the budget has an estimated_exchange_rate", () => {
     renderTable(
-      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF", budget_id: "b1" } })],
       { bl1: 400 },
       { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
     );
@@ -191,7 +191,7 @@ describe("BudgetViewLinesTable currency toggle", () => {
 
   it("labels Amount/Used with the currency in the column header instead of repeating it inline", () => {
     renderTable(
-      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF", budget_id: "b1" } })],
       { bl1: 400 },
       { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
     );
@@ -203,7 +203,7 @@ describe("BudgetViewLinesTable currency toggle", () => {
   it("converts Amount and Used to the donor currency when Donor (estimated) is selected, stating the currency once in the header", async () => {
     const user = userEvent.setup();
     renderTable(
-      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF", budget_id: "b1" } })],
       { bl1: 400 },
       { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
     );
@@ -224,7 +224,7 @@ describe("BudgetViewLinesTable currency toggle", () => {
   it("splits Amount into two real columns — one per currency — when Both is selected", async () => {
     const user = userEvent.setup();
     renderTable(
-      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF" } })],
+      [makeLine({ id: "bl1", amount: 800, category: { id: "c1", name: "Staff", code: "STAFF", budget_id: "b1" } })],
       { bl1: 0 },
       { actual_currency: "EUR", estimated_exchange_rate: 0.8 },
     );
