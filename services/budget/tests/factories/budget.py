@@ -54,5 +54,7 @@ class BudgetLineFactory(factory.Factory):
     created_at = None
     updated_at = None
     category = factory.SubFactory(
-        BudgetCategoryFactory, budget_id=factory.SelfAttribute("..budget_id")
+        BudgetCategoryFactory,
+        budget=factory.SelfAttribute("..budget"),
+        budget_id=factory.SelfAttribute("..budget_id"),
     )

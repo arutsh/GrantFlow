@@ -6,3 +6,4 @@ from shared.schemas.budget_line_schema import BudgetLinesResponse  # noqa: F401
 from shared.schemas.budget_line_schema import BudgetCategory  # noqa: F401
 from shared.schemas.budget_line_schema import BudgetCategoryBase  # noqa: F401
 from shared.schemas.budget_line_schema import BudgetCategoryCreate  # noqa: F401
+from shared.schemas.budget_line_schema import BudgetCategoryUpdate  # noqa: F401

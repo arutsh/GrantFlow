@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Session
-from app.models.budget import BudgetCategoryModel
+from sqlalchemy.orm import Session, contains_eager
+from app.models.budget import BudgetCategoryModel, BudgetModel
 from uuid import UUID
 
 
@@ -68,11 +68,15 @@ def bulk_create_budget_categories(
 
 
 def get_budget_category(
-    session: Session, category_id: UUID, budget_id: UUID | None = None
+    session: Session, category_id: UUID, customer_id: UUID | None = None
 ) -> BudgetCategoryModel | None:
     query = session.query(BudgetCategoryModel).filter(BudgetCategoryModel.id == category_id)
-    if budget_id:
-        query = query.filter(BudgetCategoryModel.budget_id == budget_id)
+    if customer_id:
+        query = (
+            query.join(BudgetCategoryModel.budget)
+            .filter(BudgetModel.owner_id == customer_id)
+            .options(contains_eager(BudgetCategoryModel.budget))
+        )
     return query.first()
 
 
@@ -84,23 +88,21 @@ def list_budget_categories(session: Session, budget_id: UUID | None = None, limi
 
 
 def update_budget_category(
-    session: Session, category_id: UUID, user_id: UUID, name: str, code: str | None = None
-) -> BudgetCategoryModel | None:
-    existing_category = get_budget_category(session, category_id)
-    if not existing_category:
-        return None
-    existing_category.name = name
-    existing_category.code = code
-    existing_category.updated_by = user_id
+    session: Session,
+    category: BudgetCategoryModel,
+    user_id: UUID,
+    name: str,
+    code: str | None = None,
+) -> BudgetCategoryModel:
+    category.name = name
+    category.code = code
+    category.updated_by = user_id
     session.commit()
-    session.refresh(existing_category)
-    return existing_category
+    session.refresh(category)
+    return category
 
 
-def delete_budget_category(session: Session, category_id: UUID) -> bool:
-    category = get_budget_category(session, category_id)
-    if category:
-        session.delete(category)
-        session.commit()
-        return True
-    return False
+def delete_budget_category(session: Session, category: BudgetCategoryModel) -> bool:
+    session.delete(category)
+    session.commit()
+    return True

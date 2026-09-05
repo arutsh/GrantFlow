@@ -1,6 +1,10 @@
 from .budget_line_schema import BudgetLine, BudgetLineCreate, BudgetLineUpdate  # noqa: F401
 from .budget_schema import Budget, BudgetCreate  # noqa: F401
-from .budget_line_schema import BudgetCategory, BudgetCategoryCreate  # noqa: F401
+from .budget_line_schema import (  # noqa: F401
+    BudgetCategory,
+    BudgetCategoryCreate,
+    BudgetCategoryUpdate,
+)
 from .report_schema import (  # noqa: F401
     ReportStatus,
     Report,

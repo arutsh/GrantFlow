@@ -36,15 +36,18 @@ Relationship audit (`grep relationship(` across both services) found ~15 relatio
 
 **6. Alternative considered and rejected: migrate both services simultaneously in one PR.** Rejected — larger blast radius, harder to bisect a regression to "the async swap" vs. "the atomicity change," and the proposal's own ordering (users first as a dry run) only pays off if it lands and is validated before budget starts.
 
+**7. Convert `AuditMixin`'s `created_at`/`updated_at` from DB-side to Python-side defaults, as a prerequisite of this migration.** `shared/db/audit_mixin.py` currently computes both columns via `default=func.now()`/`onupdate=func.now()` — values that only exist once the DB executes the INSERT/UPDATE, which is exactly why `create_budget_category`/`update_budget_category` call `session.refresh()` today to get them back. `services/ai`'s models never needed that: their timestamps are set in Python (`datetime.now(timezone.utc)`) before the commit, which is only safe under `expire_on_commit=False` (Decision 2) because there's no DB-computed value left to miss. Adopting Decision 2 without this change means any commit path that reads these attributes without an explicit refresh — the budget-service's `bulk_create_budget_categories` was one such case, found and fixed 2026-09-05 — silently returns stale/`None` timestamps instead of raising. Fixing the mixin itself (once) is cheaper than auditing every commit site across the ~11 models that have it today plus the 17 pending the audit-mixin-rollout changes. This edit is scoped to *this* change, not `audit-mixin-rollout-tier3`/`tier4`/`auto-population`/`coverage-guard`, since those changes are about which models carry the mixin and how its adoption is enforced, not how its own columns compute their values.
+
 ## Risks / Trade-offs
 
 - [Missed lazy-load site slips through review, surfaces as a runtime `MissingGreenlet` in an untested code path] → Mitigation: run the full existing test suite (converted to async fixtures) plus a manual smoke pass through every route in both services before merging each service's migration.
-- [`expire_on_commit=False` masks a stale-attribute bug if code assumes post-commit attributes reflect DB-computed defaults (e.g. server-side timestamps)] → Mitigation: audit for any `session.refresh()` calls being removed and confirm no route depends on a DB-generated value it doesn't already explicitly refresh.
+- [`expire_on_commit=False` masks a stale-attribute bug if code assumes post-commit attributes reflect DB-computed defaults (e.g. server-side timestamps)] → Confirmed real, not hypothetical: `AuditMixin.created_at`/`updated_at` are exactly such DB-computed defaults. Resolved by Decision 7 (convert the mixin to Python-side timestamps before either service flips `expire_on_commit`) instead of auditing every commit site for a missing refresh.
 - [Test infra: budget/users tests currently use sync fixtures/sessions; switching to async requires new fixtures, following `services/ai/tests`' existing async pattern (already validated in this repo) rather than inventing one] → Mitigation covered by reusing that pattern directly.
 - [Threadpool removal changes concurrency characteristics under load — theoretically better, but unverified under this repo's actual traffic shape] → Accepted; no production traffic exists yet to validate against, and this is explicitly the cheapest time to take that risk (see proposal's "Why now").
 
 ## Migration Plan
 
+0. `AuditMixin` timestamp defaults: convert `created_at`/`updated_at` to Python-side values in `shared/db/audit_mixin.py`, confirm via the existing sync test suites (no async work yet) that nothing changes behaviorally, before either service touches its session config.
 1. Users-service: swap session/engine, centralize `get_db()`, convert `app/crud/*.py` to `select()`-style async, add `selectinload`/`joinedload` at each relationship-accessing callsite, convert test fixtures to async, full test pass + manual smoke test.
 2. Budget-service: same mechanical steps across its larger CRUD/route surface.
 3. Budget-service, layered on top of step 2: add `commit: bool = True` to CRUD write functions, rewire `create_budget_with_lines_service` to `flush()`-then-single-`commit()`, delete the compensating-transaction delete calls.
@@ -55,4 +58,3 @@ Relationship audit (`grep relationship(` across both services) found ~15 relatio
 ## Open Questions
 
 - Whether Alembic's `env.py` in each service needs any change given the driver-forcing happens in `db/session.py`, not the URL in `alembic.ini` — likely no, since ai-service's Alembic already runs sync against the same psycopg2 URL unmodified, but worth confirming per-service during implementation.
-- Whether `shared/db/`'s audit mixin (if it issues its own queries/session calls, e.g. an `after_flush` hook) needs any adjustment for `AsyncSession` — needs a read during implementation, not resolved here.

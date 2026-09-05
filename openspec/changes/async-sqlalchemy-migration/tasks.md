@@ -1,6 +1,13 @@
 Workflow rule: **one task group = one GitHub ticket = one PR, merged before the next group starts.** This change supersedes backlog issues #70 (migrate budget+users to async SQLAlchemy) and #59 (CRUD `commit=False`/`flush()` support); file a fresh ticket per group below via `scripts/new-issue.sh` at implementation time and close #70/#59 from the groups noted, rather than reusing their numbers directly. Every PR: `flake8 --max-line-length=100` clean; commits/pushes only with explicit user approval.
 
-## 1. Users-service async migration (dry run) — closes #70 (users half)
+## 0. AuditMixin timestamp defaults (shared prerequisite) — must land before either service sets `expire_on_commit`
+
+- [ ] 0.1 Change `shared/db/audit_mixin.py`'s `created_at`/`updated_at` from DB-side `default=func.now()`/`onupdate=func.now()` to Python-side defaults (e.g. `default=lambda: datetime.now(timezone.utc)` for `created_at`; explicit assignment on update, matching `services/ai/app/crud/user_provider_key.py`'s pattern)
+- [ ] 0.2 Grep budget/users CRUD and service modules for `session.refresh(...)` calls that exist solely to pick up `created_at`/`updated_at` after commit; confirm they're now redundant and drop them
+- [ ] 0.3 Run each service's existing (sync) test suite to confirm no behavior change from the mixin edit alone, before any async/session work begins
+- [ ] 0.4 Run `black`/`mypy`/`flake8 --max-line-length=100` clean; PR merged
+
+## 1. Users-service async migration (dry run) — depends on 0, closes #70 (users half)
 
 - [ ] 1.1 Swap `services/users/app/db/session.py` to `create_async_engine`/`async_sessionmaker`/`AsyncSession`, mirroring `services/ai/app/db/session.py`'s driver-forcing (`make_url(...).set(drivername="postgresql+asyncpg")`); keep psycopg2 available for Alembic only
 - [ ] 1.2 Update `get_db()` in `services/users/app/db/session.py` to `async def`, yielding the `AsyncSession`

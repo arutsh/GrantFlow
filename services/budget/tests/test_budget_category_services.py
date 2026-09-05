@@ -13,7 +13,7 @@ from app.services.budget_category_services import (
     update_budget_category_service,
     delete_budget_category_service,
 )
-from tests.factories.budget import BudgetFactory
+from tests.factories.budget import BudgetFactory, BudgetLineFactory
 from tests.factories.user import ValidUserFactory
 
 OWNER_ID = str(uuid4())
@@ -30,6 +30,15 @@ def _make_budget(db, owner_id=OWNER_ID, status=BudgetStatus.draft, **overrides):
 
 def _valid_user(customer_id=OWNER_ID, user_id=None):
     return ValidUserFactory(customer_id=customer_id, user_id=user_id or str(uuid4()))
+
+
+def _make_budget_line(db, budget, category, **overrides):
+    # Pass real objects, not ids — see budget_category_factory_subfactory_conflict memory.
+    line = BudgetLineFactory.build(budget=budget, category=category, **overrides)
+    db.add(line)
+    db.commit()
+    db.refresh(line)
+    return line
 
 
 class TestGetOrCreateCategoryScoping:
@@ -120,7 +129,7 @@ class TestUpdateBudgetCategoryService:
 
         editor = _valid_user(user_id=str(uuid4()))
         updated = update_budget_category_service(
-            db, editor, budget.id, category.id, name="Transport", code="TRANSPORT"
+            db, editor, category.id, {"name": "Transport", "code": "TRANSPORT"}
         )
 
         assert updated.name == "Transport"
@@ -136,7 +145,7 @@ class TestUpdateBudgetCategoryService:
 
         stranger = _valid_user(customer_id=STRANGER_ID)
         with pytest.raises(DomainError):
-            update_budget_category_service(db, stranger, budget.id, category.id, name="Hijacked")
+            update_budget_category_service(db, stranger, category.id, {"name": "Hijacked"})
 
     def test_rename_rejected_once_budget_is_confirmed(self, db):
         budget = _make_budget(db, status=BudgetStatus.confirmed)
@@ -146,18 +155,12 @@ class TestUpdateBudgetCategoryService:
         )
 
         with pytest.raises(DomainError):
-            update_budget_category_service(db, owner, budget.id, category.id, name="Transport")
+            update_budget_category_service(db, owner, category.id, {"name": "Transport"})
 
-    def test_rename_rejected_when_budget_id_does_not_match_category(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
+    def test_rename_rejected_for_unknown_category_id(self, db):
         owner = _valid_user()
-        category = get_or_create_category_service(
-            db, owner, budget_id=budget_a.id, category_name="Travel"
-        )
-
         with pytest.raises(DomainError):
-            update_budget_category_service(db, owner, budget_b.id, category.id, name="Hijacked")
+            update_budget_category_service(db, owner, uuid4(), {"name": "Hijacked"})
 
 
 class TestDeleteBudgetCategoryService:
@@ -168,13 +171,27 @@ class TestDeleteBudgetCategoryService:
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
-        result = delete_budget_category_service(db, owner, budget.id, category.id)
+        result = delete_budget_category_service(db, owner, category.id)
 
         assert result is True
         remaining = (
             db.query(BudgetCategoryModel).filter(BudgetCategoryModel.id == category.id).first()
         )
         assert remaining is None
+
+    def test_delete_nulls_out_category_id_on_referencing_lines(self, db):
+        budget = _make_budget(db)
+        owner = _valid_user()
+        category = get_or_create_category_service(
+            db, owner, budget_id=budget.id, category_name="Travel"
+        )
+        line = _make_budget_line(db, budget, category)
+        assert line.category_id == category.id
+
+        delete_budget_category_service(db, owner, category.id)
+
+        db.refresh(line)
+        assert line.category_id is None
 
     def test_delete_rejected_for_another_customers_budget(self, db):
         budget = _make_budget(db, owner_id=OWNER_ID)
@@ -185,7 +202,7 @@ class TestDeleteBudgetCategoryService:
 
         stranger = _valid_user(customer_id=STRANGER_ID)
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, stranger, budget.id, category.id)
+            delete_budget_category_service(db, stranger, category.id)
 
     def test_delete_rejected_once_budget_is_confirmed(self, db):
         budget = _make_budget(db, status=BudgetStatus.confirmed)
@@ -195,15 +212,9 @@ class TestDeleteBudgetCategoryService:
         )
 
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, owner, budget.id, category.id)
+            delete_budget_category_service(db, owner, category.id)
 
-    def test_delete_rejected_when_budget_id_does_not_match_category(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
+    def test_delete_rejected_for_unknown_category_id(self, db):
         owner = _valid_user()
-        category = get_or_create_category_service(
-            db, owner, budget_id=budget_a.id, category_name="Travel"
-        )
-
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, owner, budget_b.id, category.id)
+            delete_budget_category_service(db, owner, uuid4())
