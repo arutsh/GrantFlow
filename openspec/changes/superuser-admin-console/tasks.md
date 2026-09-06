@@ -36,3 +36,12 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [ ] 4.4 `frontend-typescript`: add an inline role/admin-status control to the user list rows, calling the new endpoint.
 - [ ] 4.5 Tests: non-superuser gets 403; a superuser can promote/demote a user directly; attempting to demote a company's sole active admin via this endpoint is rejected, same as the existing impersonation-based path.
 - [ ] 4.6 Run `services/users` backend tests + flake8, and frontend vitest/eslint/tsc, clean; PR merged (`Closes #<ticket>`).
+
+## 5. AI provider catalog activate/deactivate — depends on 1 (absorbs #78)
+
+- [ ] 5.1 `services/ai`: add `GET /ai/admin/providers` (list all `AIProvider` rows) and `PATCH /ai/admin/providers/{name}` (toggle `is_active`) — superuser-gated, no impersonation dependency.
+- [ ] 5.2 `services/ai`: write a `privileged_access_logs` entry for the toggle request (actor, target provider, timestamp).
+- [ ] 5.3 Wire both routes into `nginx-dev.conf`, `nginx.conf`, and `Caddyfile` under the existing `/api/v1/ai/` prefix.
+- [ ] 5.4 `frontend-typescript`: add a "Providers" tab on the `/admin` page listing providers with an inline active/inactive toggle, reusing the page shell from group 1.
+- [ ] 5.5 Tests: non-superuser gets 403; toggling `is_active` is reflected in whatever gates provider selection in `AiIntegrationsSection.tsx`/settings routes.
+- [ ] 5.6 Run `services/ai` backend tests + flake8, and frontend vitest/eslint/tsc, clean; PR merged (`Closes #78`).

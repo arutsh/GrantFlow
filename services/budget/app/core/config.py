@@ -12,7 +12,6 @@ elif env_mode == "production":
     ENV_FILE = BASE_DIR.parent / ".env.budget.prod"
 else:
     ENV_FILE = BASE_DIR.parent / ".env.budget.private.dev"
-print(f"Base dir-envfile: {BASE_DIR}, {ENV_FILE}")
 
 
 class Settings(BaseSettings):
@@ -42,8 +41,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
-print(f"Base dir: {BASE_DIR}")
-print(f"settings.debug: {settings.debug}")
-print(f"settings.budget_database_url: {settings.budget_database_url}")
-print(f"settings.customer_service_url: {settings.customer_service_url}")
-# print(f"Allowed origins: {settings.ALLOWED_ORIGINS}")

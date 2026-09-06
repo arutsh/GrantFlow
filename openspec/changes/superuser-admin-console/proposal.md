@@ -9,11 +9,12 @@ Superusers currently have no direct view across all customers and users — the 
 - User list view: table of all users across all customers (name, email, customer, role, status) with inline controls to view details and update role/admin status directly.
 - **BREAKING (spec-level, not runtime):** carves out a narrow, explicit exception to `customer-impersonation`'s "no cross-tenant access outside an active impersonation session" rule — new superuser-only endpoints that take `customer_id`/`user_id` explicitly, scoped to exactly these list-and-toggle actions. All existing impersonation-based flows (invite/remove/promote within a company, company detail edits) are unchanged and still impersonation-only.
 - New backend endpoints (service TBD in design.md): list all customers, list all users, toggle a customer's platform-AI-fallback default by `customer_id`, update a user's role/admin status by `user_id` — each independently superuser-gated, each attributed to the superuser's real identity in audit logs.
+- **Absorbs #78**: a "Providers" tab on the same `/admin` page listing `AIProvider` rows with a superuser-only activate/deactivate toggle (`GET`/`PATCH /ai/admin/providers/{name}`), rather than a separate standalone feature — same page, same gating, same audit pattern as the customer/user lists above.
 
 ## Capabilities
 
 ### New Capabilities
-- `superuser-admin-console`: superuser-only `/admin` page(s) listing all customers and all users, with direct (non-impersonation) read access and narrowly-scoped write actions (platform-AI-fallback toggle, user role/admin-status update).
+- `superuser-admin-console`: superuser-only `/admin` page(s) listing all customers, all users, and the AI provider catalog, with direct (non-impersonation) read access and narrowly-scoped write actions (platform-AI-fallback toggle, user role/admin-status update, provider active/inactive toggle).
 
 ### Modified Capabilities
 - `customer-impersonation`: the "no cross-tenant data access outside an active impersonation session" requirement gains an explicit, narrow exception for the new superuser-admin-console list/toggle endpoints — everything else about that requirement (list/detail endpoints for budgets, reports, etc.) is unchanged.
@@ -24,6 +25,6 @@ Superusers currently have no direct view across all customers and users — the 
 ## Impact
 
 - `services/users`: new superuser-gated list-customers / list-users endpoints, new update-user-role-by-id endpoint.
-- `services/ai`: new superuser-gated set-platform-fallback-by-customer-id endpoint (or extend existing route to accept an optional `customer_id` for superusers).
+- `services/ai`: new superuser-gated set-platform-fallback-by-customer-id endpoint (or extend existing route to accept an optional `customer_id` for superusers); new list-providers / toggle-provider-active endpoints (absorbs #78).
 - `frontend-typescript`: new `/admin` route + nav entry, new page(s) under `src/pages/Admin/` (or similar), new API client methods, `AuthContext`/routing gate on `role === "superuser"`.
 - `privileged-access-audit`: these new cross-tenant actions should be logged the same way impersonation-derived actions are, since they bypass the impersonation session entirely.

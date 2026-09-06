@@ -3,12 +3,95 @@ import { ColumnDef, createColumnHelper } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { BudgetLine, NewBudgetLine } from "../types/budget";
 import Button, { ConfirmDeleteButton } from "@/components/ui/Button";
-import { deleteBudgetLine } from "@/api/gatewayApi";
+import { SegmentedToggle } from "@/components/ui/SegmentedToggle";
+import { deleteBudgetLine, updateBudgetCategory } from "@/api/gatewayApi";
 import { useMutation } from "@tanstack/react-query";
 import { useDetailedBudget } from "../SingleBudgetViewContext";
 import { formatCurrency } from "@/utils/currency";
-import { Edit2, Trash2 } from "lucide-react";
+import { Edit2, List, Rows3, Trash2 } from "lucide-react";
 const columnHelper = createColumnHelper<any>();
+
+// Inline category-name rename affordance; Enter/blur confirms, Escape cancels.
+function CategoryRenameControl({
+  categoryId,
+  currentName,
+  onRename,
+}: {
+  categoryId: string;
+  currentName: string;
+  onRename: (categoryId: string, name: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const cancel = () => {
+    setDraft(currentName);
+    setError(null);
+    setEditing(false);
+  };
+
+  const confirm = async () => {
+    if (saving || !editing) return;
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === currentName) {
+      cancel();
+      return;
+    }
+    setSaving(true);
+    try {
+      await onRename(categoryId, trimmed);
+      setError(null);
+      setEditing(false);
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      setError(detail || "Failed to rename category.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <Button
+        variant="icon"
+        onClick={() => {
+          setDraft(currentName);
+          setError(null);
+          setEditing(true);
+        }}
+        title="Rename category"
+        className="ml-1 p-1 align-middle"
+      >
+        <Edit2 size={13} />
+      </Button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 ml-1 align-middle">
+      <input
+        autoFocus
+        value={draft}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            confirm();
+          } else if (e.key === "Escape") {
+            cancel();
+          }
+        }}
+        onBlur={confirm}
+        className="text-sm border border-slate-300 rounded px-1 py-0.5 w-36"
+      />
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </span>
+  );
+}
 
 const USED_TONE_CLASSES: Record<
   "good" | "warn" | "danger" | "neutral",
@@ -163,6 +246,8 @@ export function BudgetViewLinesTable({
   const { budget, setBudget, spendByLineId, isSpendPending } =
     useDetailedBudget();
   const [displayMode, setDisplayMode] = useState<CurrencyDisplayMode>("local");
+  // Ephemeral, not persisted — same footprint as displayMode above.
+  const [viewMode, setViewMode] = useState<"grouped" | "simple">("grouped");
   const rate = budget?.estimated_exchange_rate;
   // A rate of exactly 0 is meaningless (division by zero downstream in
   // toDonorAmount) — treat it the same as "no rate set" rather than letting
@@ -206,6 +291,24 @@ export function BudgetViewLinesTable({
     console.log("Delete clicked for line id:", budget_line_id);
     mutation.mutate(budget_line_id);
   };
+
+  const renameCategoryMutation = useMutation({
+    mutationFn: ({ categoryId, name }: { categoryId: string; name: string }) =>
+      updateBudgetCategory(categoryId, { name }),
+    onSuccess: (updatedCategory) => {
+      if (!budget) return;
+      const updatedLines = budget.lines?.map((line) =>
+        line.category?.id === updatedCategory.id
+          ? { ...line, category: { ...line.category, ...updatedCategory } }
+          : line,
+      );
+      setBudget({ ...budget, lines: updatedLines });
+    },
+  });
+
+  const renameCategory = (categoryId: string, name: string) =>
+    renameCategoryMutation.mutateAsync({ categoryId, name });
+
   const localCode = budget?.local_currency ?? "local";
   const donorCode = budget?.actual_currency ?? "donor";
 
@@ -331,7 +434,11 @@ export function BudgetViewLinesTable({
         aggregatedCell: (info) => (
           <UsedPill
             used={info.getValue() as number}
-            allocated={(info.row.getValue("amount") as number) ?? 0}
+            allocated={
+              (info.row.getValue(
+                displayMode === "both" ? "amount_local" : "amount",
+              ) as number) ?? 0
+            }
             currency={budget?.local_currency}
             displayMode={displayMode}
             actualCurrency={budget?.actual_currency}
@@ -448,6 +555,23 @@ export function BudgetViewLinesTable({
               </Button>
             </div>
           )}
+          <SegmentedToggle
+            className="hidden sm:inline-flex"
+            ariaLabel="Grouping display"
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { value: "grouped", label: "Grouped", icon: <Rows3 size={13} /> },
+              {
+                value: "simple",
+                label: "Simple",
+                icon: <List size={13} />,
+                title: !readOnly
+                  ? "Simple — category rename is only available in Grouped view"
+                  : "Simple",
+              },
+            ]}
+          />
           {!readOnly && (
             <Button variant="primary" onClick={onNew} className="text-sm">
               New Budget Line
@@ -457,7 +581,24 @@ export function BudgetViewLinesTable({
       </div>
 
       <div className="hidden sm:block">
-        <TableCommon data={tableData} columns={columns} bare />
+        <TableCommon
+          data={tableData}
+          columns={columns}
+          bare
+          grouping={viewMode === "grouped" ? ["category"] : []}
+          renderGroupExtra={(row) => {
+            const category = row.subRows?.[0]?.original?.category;
+            if (!category || readOnly) return null;
+            return (
+              <CategoryRenameControl
+                key={category.id}
+                categoryId={category.id}
+                currentName={category.name}
+                onRename={renameCategory}
+              />
+            );
+          }}
+        />
       </div>
 
       <div className="sm:hidden flex flex-col gap-4">
@@ -479,11 +620,19 @@ export function BudgetViewLinesTable({
                 className="border border-slate-200 rounded-lg"
               >
                 <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 rounded-t-lg">
-                  <span className="text-sm font-semibold text-slate-700">
+                  <span className="text-sm font-semibold text-slate-700 flex items-center">
                     {categoryName}{" "}
                     <span className="text-slate-400 font-normal">
                       ({categoryLines.length})
                     </span>
+                    {categoryLines[0]?.category && !readOnly && (
+                      <CategoryRenameControl
+                        key={categoryLines[0].category.id}
+                        categoryId={categoryLines[0].category.id}
+                        currentName={categoryLines[0].category.name}
+                        onRename={renameCategory}
+                      />
+                    )}
                   </span>
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-slate-800">
