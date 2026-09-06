@@ -19,6 +19,10 @@ The system SHALL let a user with edit access rename a budget category's name fro
 - **WHEN** the Budget Lines table is grouped and includes an "uncategorized" group (lines with no category)
 - **THEN** that group's header shows no rename affordance, since there is no category to rename
 
+#### Scenario: Rename affordance unavailable in Simple (ungrouped) view
+- **WHEN** the desktop Budget Lines table's Grouped/Simple toggle is set to Simple
+- **THEN** no rename affordance is shown anywhere in the table, since there is no category group header to attach it to; switching back to Grouped restores it
+
 ### Requirement: Duplicate category name on rename is surfaced inline
 When a rename would collide with another category already existing in the same budget, the system SHALL show the rejection inline near the rename input rather than failing silently.
 

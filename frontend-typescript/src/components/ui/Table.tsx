@@ -9,7 +9,7 @@ import {
   getGroupedRowModel,
   getExpandedRowModel,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { useState, ReactNode } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import Button from "./Button";
 
@@ -70,22 +70,26 @@ export function TableCommon({
   columns,
   onRowClick,
   bare = false,
+  grouping = ["category"],
+  renderGroupExtra,
 }: {
   data: any[];
   columns: any[];
   onRowClick?: (row: any) => void;
-  // When the table is already embedded in its own card (border/shadow/rounded
-  // container), pass `bare` to drop Table's own card chrome and avoid a
-  // double-boxed look.
+  // Drops card chrome when the caller already provides its own container.
   bare?: boolean;
+  // Columns to group rows by; pass [] for a flat, ungrouped list.
+  grouping?: string[];
+  // Rendered next to a group header's (count) badge, e.g. a rename affordance.
+  renderGroupExtra?: (row: any) => ReactNode;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const table = useReactTable({
     data,
     columns,
-    // state: { sorting, grouping: ["category"], expanded },
-    initialState: { grouping: ["category"] }, // let table manage expanded/sorting
+    state: { grouping },
+    // let table manage expanded/sorting
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
@@ -172,6 +176,7 @@ export function TableCommon({
                     <span className="text-slate-400">
                       ({row.subRows.length})
                     </span>
+                    {renderGroupExtra?.(row)}
                   </td>
                 );
               }

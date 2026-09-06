@@ -13,8 +13,6 @@ elif ENV == "production":
 else:
     ENV_FILE = BASE_DIR.parent / ".env.users.dev"
 
-print(f"Base dir-envfile: {BASE_DIR}, {ENV_FILE}")
-
 
 class Settings(BaseSettings):
     env: str = "development"
@@ -41,7 +39,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
-print(f"Base dir: {BASE_DIR}")
-print(f"settings.users_database_url: {settings.users_database_url}")
-print(f"settings.debug: {settings.debug}")
-# print(f"allowed origins: {settings.ALLOWED_ORIGINS}")

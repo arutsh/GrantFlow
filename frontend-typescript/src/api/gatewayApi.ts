@@ -1,6 +1,10 @@
 import { createAxiosInstance } from "./axiosConfig";
 
-import { BudgetLine, NewBudgetLine } from "@/pages/Budgets/types/budget";
+import {
+  BudgetCategory,
+  BudgetLine,
+  NewBudgetLine,
+} from "@/pages/Budgets/types/budget";
 
 export const GATEWAY_BASE_URL =
   import.meta.env.VITE_API_GATEWAY || "http://localhost:8082/api/v1";
@@ -76,6 +80,17 @@ export const updateBudgetLines = async (existing_budget_line: BudgetLine) => {
 
 export const deleteBudgetLine = async (budget_line_id: string) => {
   const { data } = await gatewayApi.delete(`budget-lines/${budget_line_id}/`);
+  return data;
+};
+
+export const updateBudgetCategory = async (
+  categoryId: string,
+  updates: { name?: string; code?: string }
+): Promise<BudgetCategory> => {
+  const { data } = await gatewayApi.patch(
+    `budget-categories/${categoryId}`,
+    updates
+  );
   return data;
 };
 

@@ -99,6 +99,11 @@ api.opengrantflow.com {
 		reverse_proxy budget:8000
 	}
 
+	# ---- BUDGET CATEGORIES SERVICE ----
+	handle /api/v1/budget-categories/* {
+		reverse_proxy budget:8000
+	}
+
 	# ---- REPORTS SERVICE ----
 	handle /api/v1/reports/* {
 		reverse_proxy budget:8000

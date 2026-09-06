@@ -1,17 +1,24 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, type Mock } from "vitest";
 import { BudgetViewLinesTable } from "./BudgetViewLinesTable";
 import { Budget, BudgetLine } from "../types/budget";
 import * as context from "../SingleBudgetViewContext";
+import * as gatewayApi from "@/api/gatewayApi";
 
 vi.mock("../SingleBudgetViewContext", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../SingleBudgetViewContext")>();
   return { ...actual, useDetailedBudget: vi.fn() };
 });
 
+vi.mock("@/api/gatewayApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/gatewayApi")>();
+  return { ...actual, updateBudgetCategory: vi.fn() };
+});
+
 const useDetailedBudgetMock = context.useDetailedBudget as unknown as Mock;
+const updateBudgetCategoryMock = gatewayApi.updateBudgetCategory as unknown as Mock;
 
 function makeBudget(overrides: Partial<Budget> = {}): Budget {
   return { id: "b1", name: "Demo budget", status: "confirmed", local_currency: "GBP", ...overrides };
@@ -114,6 +121,21 @@ describe("BudgetViewLinesTable Used column", () => {
     const pills = screen.getAllByText("…");
     expect(pills.length).toBeGreaterThan(0);
     expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+  });
+
+  it("shows the group subtotal's Used percentage in Both mode instead of a dash", async () => {
+    const user = userEvent.setup();
+    renderTable(
+      [makeLine({ id: "bl1", amount: 1000, category: { id: "c1", name: "Category1", code: "CAT1", budget_id: "b1" } })],
+      { bl1: 0 },
+      { actual_currency: "USD", estimated_exchange_rate: 0.8 },
+    );
+
+    await user.click(screen.getByRole("button", { name: "Both" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText("0%").length).toBeGreaterThan(0);
+    expect(within(table).queryByText("—")).not.toBeInTheDocument();
   });
 });
 
@@ -239,5 +261,179 @@ describe("BudgetViewLinesTable currency toggle", () => {
 
     expect(screen.getAllByText(/£800/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/€1,000 \(est\.\)/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("BudgetViewLinesTable Grouped/Simple toggle", () => {
+  const groupedLines = [
+    makeLine({ id: "bl1", description: "Salary", amount: 400, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
+    makeLine({ id: "bl2", description: "Stipend", amount: 100, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
+  ];
+
+  it("defaults to Grouped, showing a category subtotal row on desktop", () => {
+    renderTable(groupedLines, { bl1: 0, bl2: 0 });
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Staff costs")).toBeInTheDocument();
+    expect(within(table).getAllByText(/Subtotal:/).length).toBeGreaterThan(0);
+  });
+
+  it("exposes the toggle as a labeled group", () => {
+    renderTable(groupedLines, { bl1: 0, bl2: 0 });
+    expect(screen.getByRole("group", { name: /grouping display/i })).toBeInTheDocument();
+  });
+
+  it("switches to Simple, showing a flat list with no subtotal rows", async () => {
+    const user = userEvent.setup();
+    renderTable(groupedLines, { bl1: 0, bl2: 0 });
+
+    await user.click(screen.getByRole("button", { name: "Simple" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).queryByText(/Subtotal:/)).not.toBeInTheDocument();
+    expect(within(table).getByText("Salary")).toBeInTheDocument();
+    expect(within(table).getByText("Stipend")).toBeInTheDocument();
+  });
+
+  it("switching back to Grouped restores subtotal rows", async () => {
+    const user = userEvent.setup();
+    renderTable(groupedLines, { bl1: 0, bl2: 0 });
+
+    await user.click(screen.getByRole("button", { name: "Simple" }));
+    await user.click(screen.getByRole("button", { name: "Grouped" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByText(/Subtotal:/).length).toBeGreaterThan(0);
+  });
+
+  it("leaves mobile grouping unaffected when desktop switches to Simple", async () => {
+    const user = userEvent.setup();
+    renderTable(groupedLines, { bl1: 0, bl2: 0 });
+
+    // One "(2)" badge from the desktop group header, one from the mobile card header.
+    expect(screen.getAllByText("(2)").length).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Simple" }));
+
+    // Desktop ungroups (its badge disappears); mobile's stays.
+    expect(screen.getAllByText("(2)").length).toBe(1);
+  });
+});
+
+describe("BudgetViewLinesTable category rename", () => {
+  function renderTableWithSetBudget(
+    lines: BudgetLine[],
+    readOnly = false,
+  ) {
+    const setBudgetMock = vi.fn();
+    useDetailedBudgetMock.mockReturnValue({
+      budget: makeBudget({ lines }),
+      setBudget: setBudgetMock,
+      budgetCategories: [],
+      budgetCategoryNames: [],
+      existingExtraKeys: [],
+      spendByLineId: {},
+      isSpendPending: false,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BudgetViewLinesTable
+          lines={lines}
+          onEdit={vi.fn()}
+          onNew={vi.fn()}
+          onClose={vi.fn()}
+          readOnly={readOnly}
+        />
+      </QueryClientProvider>,
+    );
+    return { setBudgetMock };
+  }
+
+  beforeEach(() => {
+    updateBudgetCategoryMock.mockReset();
+  });
+
+  it("shows the rename pencil on desktop and mobile only for a real category", () => {
+    const lines = [
+      makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } }),
+      makeLine({ id: "bl2" }),
+    ];
+    renderTableWithSetBudget(lines);
+
+    expect(screen.getAllByTitle("Rename category").length).toBe(2);
+  });
+
+  it("loses the desktop rename pencil in Simple view but keeps the mobile one", async () => {
+    const user = userEvent.setup();
+    const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
+    renderTableWithSetBudget(lines);
+
+    expect(screen.getAllByTitle("Rename category").length).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Simple" }));
+
+    expect(screen.getAllByTitle("Rename category").length).toBe(1);
+  });
+
+  it("hides the rename pencil entirely on a read-only budget", () => {
+    const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
+    renderTableWithSetBudget(lines, true);
+
+    expect(screen.queryByTitle("Rename category")).not.toBeInTheDocument();
+  });
+
+  it("confirming a rename submits the PATCH and reflects the new name via setBudget", async () => {
+    const user = userEvent.setup();
+    updateBudgetCategoryMock.mockResolvedValueOnce({ id: "c1", name: "Transport", code: "TRV", budget_id: "b1" });
+    const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
+    const { setBudgetMock } = renderTableWithSetBudget(lines);
+
+    await user.click(screen.getAllByTitle("Rename category")[0]);
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Transport");
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(updateBudgetCategoryMock).toHaveBeenCalledWith("c1", { name: "Transport" });
+    });
+    await waitFor(() => expect(setBudgetMock).toHaveBeenCalled());
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("Escape cancels a rename without sending a request", async () => {
+    const user = userEvent.setup();
+    const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
+    renderTableWithSetBudget(lines);
+
+    await user.click(screen.getAllByTitle("Rename category")[0]);
+    await user.type(screen.getByRole("textbox"), "X");
+    await user.keyboard("{Escape}");
+
+    expect(updateBudgetCategoryMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Travel").length).toBeGreaterThan(0);
+  });
+
+  it("surfaces a duplicate-name rejection inline and leaves the name unchanged", async () => {
+    const user = userEvent.setup();
+    updateBudgetCategoryMock.mockRejectedValueOnce({
+      response: { data: { detail: "A category with this name already exists" } },
+    });
+    const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
+    renderTableWithSetBudget(lines);
+
+    await user.click(screen.getAllByTitle("Rename category")[0]);
+    const input = screen.getByRole("textbox");
+    await user.clear(input);
+    await user.type(input, "Duplicate");
+    await user.keyboard("{Enter}");
+
+    await screen.findByText("A category with this name already exists");
+    expect(screen.getByRole("textbox")).toHaveValue("Duplicate");
+    expect(screen.getAllByText("Travel").length).toBeGreaterThan(0);
   });
 });

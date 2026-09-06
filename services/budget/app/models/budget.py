@@ -34,7 +34,7 @@ class BudgetModel(Base, AuditMixin):
         GUID(),
         primary_key=True,
         index=True,
-        default=lambda: str(uuid.uuid4()),  # auto-generate UUID4
+        default=lambda: uuid.uuid4(),
     )
     owner_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False)
     funding_customer_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)

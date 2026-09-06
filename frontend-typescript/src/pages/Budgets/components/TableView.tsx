@@ -124,6 +124,7 @@ export function TableView({
       data={data}
       columns={columns}
       onRowClick={(row) => redirectToBudget(row.id)}
+      grouping={[]}
     />
   );
 }
