@@ -188,6 +188,47 @@ describe("BudgetViewLinesTable mobile card list", () => {
     renderTable([], {});
     expect(screen.getByText("No budget lines yet.")).toBeInTheDocument();
   });
+
+  it("keeps the mobile category header's subtotal visible with a long category name", () => {
+    const longName =
+      "A very long category name that would otherwise overflow the mobile header row";
+    renderTable(
+      [makeLine({ id: "bl1", amount: 500, category: { id: "c1", name: longName, code: "LONG", budget_id: "b1" } })],
+      { bl1: 0 },
+    );
+
+    const mobileNameEl = screen
+      .getAllByText(longName)
+      .find((el) => el.closest('[class~="sm:hidden"]'));
+    expect(mobileNameEl).toBeTruthy();
+    expect(mobileNameEl!.className).toContain("truncate");
+    expect(screen.getAllByText("£500").length).toBeGreaterThan(0);
+  });
+
+  it("renders Edit/Delete inline with the amount instead of a separate row, for both a short and a wrapping long description", () => {
+    renderTable(
+      [
+        makeLine({ id: "bl1", description: "Short", amount: 200, category: { id: "c1", name: "Misc", code: "MISC", budget_id: "b1" } }),
+        makeLine({
+          id: "bl2",
+          description: "A very long line item description that wraps across two lines on a narrow mobile card",
+          amount: 250,
+          category: { id: "c1", name: "Misc", code: "MISC", budget_id: "b1" },
+        }),
+      ],
+      { bl1: 0, bl2: 0 },
+    );
+
+    const mobileEditButtons = screen
+      .getAllByTitle("Edit line")
+      .filter((btn) => btn.closest('[class~="sm:hidden"]'));
+    expect(mobileEditButtons.length).toBe(2);
+    mobileEditButtons.forEach((btn) => {
+      const row = btn.closest('[class~="items-start"]');
+      expect(row).not.toBeNull();
+      expect(row!.textContent).toMatch(/£(200|250)/);
+    });
+  });
 });
 
 describe("BudgetViewLinesTable currency toggle", () => {
@@ -264,7 +305,7 @@ describe("BudgetViewLinesTable currency toggle", () => {
   });
 });
 
-describe("BudgetViewLinesTable Grouped/Simple toggle", () => {
+describe("BudgetViewLinesTable Grouped/List toggle", () => {
   const groupedLines = [
     makeLine({ id: "bl1", description: "Salary", amount: 400, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
     makeLine({ id: "bl2", description: "Stipend", amount: 100, category: { id: "c1", name: "Staff costs", code: "STAFF", budget_id: "b1" } }),
@@ -283,11 +324,11 @@ describe("BudgetViewLinesTable Grouped/Simple toggle", () => {
     expect(screen.getByRole("group", { name: /grouping display/i })).toBeInTheDocument();
   });
 
-  it("switches to Simple, showing a flat list with no subtotal rows", async () => {
+  it("switches to List, showing a flat list with no subtotal rows", async () => {
     const user = userEvent.setup();
     renderTable(groupedLines, { bl1: 0, bl2: 0 });
 
-    await user.click(screen.getByRole("button", { name: "Simple" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
 
     const table = screen.getByRole("table");
     expect(within(table).queryByText(/Subtotal:/)).not.toBeInTheDocument();
@@ -299,21 +340,21 @@ describe("BudgetViewLinesTable Grouped/Simple toggle", () => {
     const user = userEvent.setup();
     renderTable(groupedLines, { bl1: 0, bl2: 0 });
 
-    await user.click(screen.getByRole("button", { name: "Simple" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
     await user.click(screen.getByRole("button", { name: "Grouped" }));
 
     const table = screen.getByRole("table");
     expect(within(table).getAllByText(/Subtotal:/).length).toBeGreaterThan(0);
   });
 
-  it("leaves mobile grouping unaffected when desktop switches to Simple", async () => {
+  it("leaves mobile grouping unaffected when desktop switches to List", async () => {
     const user = userEvent.setup();
     renderTable(groupedLines, { bl1: 0, bl2: 0 });
 
     // One "(2)" badge from the desktop group header, one from the mobile card header.
     expect(screen.getAllByText("(2)").length).toBe(2);
 
-    await user.click(screen.getByRole("button", { name: "Simple" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
 
     // Desktop ungroups (its badge disappears); mobile's stays.
     expect(screen.getAllByText("(2)").length).toBe(1);
@@ -366,14 +407,14 @@ describe("BudgetViewLinesTable category rename", () => {
     expect(screen.getAllByTitle("Rename category").length).toBe(2);
   });
 
-  it("loses the desktop rename pencil in Simple view but keeps the mobile one", async () => {
+  it("loses the desktop rename pencil in List view but keeps the mobile one", async () => {
     const user = userEvent.setup();
     const lines = [makeLine({ id: "bl1", category: { id: "c1", name: "Travel", code: "TRV", budget_id: "b1" } })];
     renderTableWithSetBudget(lines);
 
     expect(screen.getAllByTitle("Rename category").length).toBe(2);
 
-    await user.click(screen.getByRole("button", { name: "Simple" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
 
     expect(screen.getAllByTitle("Rename category").length).toBe(1);
   });
