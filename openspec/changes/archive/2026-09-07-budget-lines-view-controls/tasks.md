@@ -7,7 +7,7 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 1.3 Add a "Grouped / Simple" `role="group"` toggle next to the existing Local/Donor/Both currency toggle, reusing `Button variant="toggle"`; render/show it only in the desktop block, since it has no effect on mobile.
 - [x] 1.4 Pass `grouping={viewMode === "grouped" ? ["category"] : []}` from `BudgetViewLinesTable` into `TableCommon`. Leave the mobile card rendering block untouched.
 - [x] 1.5 Add tests to `BudgetViewLinesTable.test.tsx`: Grouped (default) shows subtotal rows; Simple shows a flat list with no subtotal rows; toggle exposes `role="group"`; mobile rendering is unaffected by `viewMode`.
-- [ ] 1.6 Run frontend typecheck/build and test suite clean; PR merged (`Closes #<ticket>`).
+- [x] 1.6 Run frontend typecheck/build and test suite clean; PR merged (`Closes #<ticket>`).
 
 ## 2. Inline category rename — depends on 1 (shares `TableCommon` changes) and on `budget-category-scoping`'s `PATCH /budget-categories/{id}` route + `BudgetCategoryUpdate` schema being merged
 
@@ -18,4 +18,4 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 2.5 Add the same pencil/inline-edit affordance to the mobile category header (`BudgetViewLinesTable.tsx`'s hand-rolled grouped card header) — mobile stays always-grouped but still gets rename, since only the Simple/Grouped *toggle* is desktop-only, not rename itself.
 - [x] 2.6 Wire the rename confirm action to a `useMutation` calling `updateBudgetCategory`; on success, update `budget.lines[*].category.name` for every line sharing that category id via `setBudget` (mirror `AddBudgetLine.tsx`'s post-edit `onSuccess` mapping). On a duplicate-name (400) rejection, keep the input open and show the error inline instead of reverting silently.
 - [x] 2.7 Add tests to `BudgetViewLinesTable.test.tsx`: pencil shown only when editable and category is real (desktop + mobile); confirming edits submits the `PATCH` with the new name and updates the displayed name on success; Escape cancels without a request; a duplicate-name error surfaces inline and leaves the name unchanged.
-- [ ] 2.8 Run frontend typecheck/build and test suite clean; PR merged (`Closes #<ticket>`).
+- [x] 2.8 Run frontend typecheck/build and test suite clean; PR merged (`Closes #<ticket>`).
