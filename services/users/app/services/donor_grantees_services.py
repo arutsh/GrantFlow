@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
@@ -53,29 +53,34 @@ def _resolve_scoped_customer_id(
     return UUID(str(valid_user["customer_id"]))
 
 
-def create_donor_grantee_service(
-    session: Session, valid_user: dict, grantee_id: UUID, donor_id: UUID | None = None
+async def create_donor_grantee_service(
+    session: AsyncSession, valid_user: dict, grantee_id: UUID, donor_id: UUID | None = None
 ):
     donor_id = _resolve_scoped_customer_id(
         valid_user, donor_id, field_name="donor_id", require_donor_role=True
     )
-    return create_donor_grantee(session, donor_id=donor_id, grantee_id=grantee_id)
+    return await create_donor_grantee(session, donor_id=donor_id, grantee_id=grantee_id)
 
 
-def list_donor_grantees_service(
-    session: Session, valid_user: dict, request_type: str | None, customer_id: UUID | None = None
+async def list_donor_grantees_service(
+    session: AsyncSession,
+    valid_user: dict,
+    request_type: str | None,
+    customer_id: UUID | None = None,
 ):
     customer_id = _resolve_scoped_customer_id(valid_user, customer_id, field_name="customer_id")
 
     if request_type == "donor":
-        return list_donor_grantees(session, donor_id=customer_id)
+        return await list_donor_grantees(session, donor_id=customer_id)
     if request_type == "grantee":
-        return list_donor_grantees(session, grantee_id=customer_id)
+        return await list_donor_grantees(session, grantee_id=customer_id)
     raise DomainError("request_type must be 'donor' or 'grantee'", status.HTTP_400_BAD_REQUEST)
 
 
-def delete_donor_grantee_service(session: Session, valid_user: dict, donor_grantee_id: UUID):
-    donor_grantee = get_donor_grantee(session, donor_grantee_id)
+async def delete_donor_grantee_service(
+    session: AsyncSession, valid_user: dict, donor_grantee_id: UUID
+):
+    donor_grantee = await get_donor_grantee(session, donor_grantee_id)
     if not donor_grantee:
         raise DomainError("Donor-grantee relationship not found", status.HTTP_404_NOT_FOUND)
 
@@ -88,4 +93,4 @@ def delete_donor_grantee_service(session: Session, valid_user: dict, donor_grant
                 "Cannot delete another donor's relationship", status.HTTP_403_FORBIDDEN
             )
 
-    delete_donor_grantee(session, donor_grantee)
+    await delete_donor_grantee(session, donor_grantee)

@@ -14,7 +14,7 @@ class UserModel(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), primary_key=True, default=lambda: str(uuid.uuid4()), nullable=False, index=True
+        GUID(), primary_key=True, default=lambda: uuid.uuid4(), nullable=False, index=True
     )
 
     # Name fields with default empty string

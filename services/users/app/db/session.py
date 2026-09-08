@@ -1,19 +1,16 @@
 # /services/users/app/db/session.py
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from app.core.config import settings
 
-# SQLALCHEMY_DATABASE_URL = "sqlite:///./users.db"
-SQLALCHEMY_DATABASE_URL = settings.users_database_url
+# Swap driver to asyncpg regardless of what's in the env file.
+# psycopg2-binary is kept only for Alembic CLI migrations.
+_db_url = make_url(settings.users_database_url).set(drivername="postgresql+asyncpg")
+
+engine = create_async_engine(_db_url, echo=False)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-
-
-def get_db():
-    db = SessionLocal()
-    try:
+async def get_db():
+    async with AsyncSessionLocal() as db:
         yield db
-    finally:
-        db.close()

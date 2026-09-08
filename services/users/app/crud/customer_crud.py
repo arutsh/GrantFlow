@@ -1,40 +1,45 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import CustomerModel
 
 
-def get_customer(session: Session, customer_id: UUID):
-    return session.query(CustomerModel).filter(CustomerModel.id == customer_id).first()
+async def get_customer(session: AsyncSession, customer_id: UUID):
+    result = await session.execute(select(CustomerModel).where(CustomerModel.id == customer_id))
+    return result.scalar_one_or_none()
 
 
-def lock_customer_for_update(session: Session, customer_id: UUID) -> None:
+async def lock_customer_for_update(session: AsyncSession, customer_id: UUID) -> None:
     """Take a row lock on the customer for the rest of this transaction, so
     concurrent admin-management mutations (remove/demote) for the same
     company serialize instead of racing past each other's last-admin check."""
-    session.query(CustomerModel).filter(CustomerModel.id == customer_id).with_for_update().first()
+    await session.execute(
+        select(CustomerModel).where(CustomerModel.id == customer_id).with_for_update()
+    )
 
 
-def get_customers(
-    session: Session,
+async def get_customers(
+    session: AsyncSession,
     limit: int = 100,
     is_ngo: bool | None = None,
     search: str | None = None,
 ):
-    query = session.query(CustomerModel)
+    stmt = select(CustomerModel)
     if is_ngo is not None:
-        query = query.filter(CustomerModel.is_ngo == is_ngo)
+        stmt = stmt.where(CustomerModel.is_ngo == is_ngo)
     if search:
         # Escape ilike wildcards (% and _) in user input so they're matched
         # literally rather than acting as pattern metacharacters.
         escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        query = query.filter(CustomerModel.name.ilike(f"%{escaped}%", escape="\\"))
-    return query.limit(limit).all()
+        stmt = stmt.where(CustomerModel.name.ilike(f"%{escaped}%", escape="\\"))
+    result = await session.execute(stmt.limit(limit))
+    return list(result.scalars().all())
 
 
-def create_customer(
-    session: Session,
+async def create_customer(
+    session: AsyncSession,
     name: str,
     is_ngo: bool = True,
     is_donor: bool = False,
@@ -49,25 +54,25 @@ def create_customer(
         currency=currency,
     )
     session.add(customer)
-    session.commit()
-    session.refresh(customer)
+    await session.commit()
     return customer
 
 
-def get_customers_by_ids(session: Session, customer_ids: list[UUID]):
-    return session.query(CustomerModel).filter(CustomerModel.id.in_(customer_ids)).all()
+async def get_customers_by_ids(session: AsyncSession, customer_ids: list[UUID]):
+    result = await session.execute(select(CustomerModel).where(CustomerModel.id.in_(customer_ids)))
+    return list(result.scalars().all())
 
 
-def update_customer(session: Session, customer: CustomerModel, updates: dict) -> CustomerModel:
+async def update_customer(
+    session: AsyncSession, customer: CustomerModel, updates: dict
+) -> CustomerModel:
     for key, value in updates.items():
         setattr(customer, key, value)
-    session.commit()
-    session.refresh(customer)
+    await session.commit()
     return customer
 
 
-def deactivate_customer(session: Session, customer: CustomerModel) -> CustomerModel:
+async def deactivate_customer(session: AsyncSession, customer: CustomerModel) -> CustomerModel:
     customer.deactivated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    session.commit()
-    session.refresh(customer)
+    await session.commit()
     return customer

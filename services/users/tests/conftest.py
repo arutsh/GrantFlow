@@ -1,8 +1,8 @@
 """Users-service test bootstrap.
 
 Everything here must run before any test module imports `main`:
-importing it initializes OpenTelemetry and calls init_db() (a real
-Postgres connection) at module level.
+importing it initializes OpenTelemetry, and main.py's lifespan awaits
+init_db() (a real Postgres connection) on startup.
 """
 
 import os
@@ -13,14 +13,13 @@ os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 import app.db.init_db as _init_db_module  # noqa: E402
 
-# main.py calls init_db() at import time; tests have no database.
-_init_db_module.init_db = lambda: None
+# main.py's lifespan awaits init_db() on startup; tests have no database.
+_init_db_module.init_db = AsyncMock()
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from main import app  # noqa: E402
@@ -34,30 +33,33 @@ from tests.factories.user import ValidUserFactory  # noqa: E402
 
 
 @pytest.fixture
-def db():
-    """Real in-memory sqlite session covering Customer/DonorGrantee/
-    PrivilegedAccessLog — shared by any test that needs the model's real
-    FKs/@validates/unique constraint rather than mocking the crud layer (see
-    services/budget/tests/conftest.py for the sibling pattern).
-    """
-    # TestClient runs route handlers in a worker thread, so the sqlite
-    # connection needs check_same_thread=False; StaticPool keeps every
-    # connection pointing at the same in-memory DB rather than each getting
-    # its own empty one.
-    engine = create_engine(
-        "sqlite:///:memory:",
+def anyio_backend():
+    """asyncio only — matches services/ai/tests' sibling fixture."""
+    return "asyncio"
+
+
+@pytest.fixture
+async def db():
+    """Real in-memory async sqlite session (Customer/DonorGrantee/PrivilegedAccessLog);
+    mirrors services/ai/tests/test_email_verified_gate.py's TestClient+real-session pattern."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            CustomerModel.__table__,
-            DonorGranteeModel.__table__,
-            PrivilegedAccessLog.__table__,
-        ],
-    )
-    return sessionmaker(bind=engine)()
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                CustomerModel.__table__,
+                DonorGranteeModel.__table__,
+                PrivilegedAccessLog.__table__,
+            ],
+        )
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
 @pytest.fixture
@@ -71,7 +73,10 @@ def make_client():
         client = make_client(is_donor=True)      # override any JWT field
         client = make_client(db=db)              # route the get_db dependency to
                                                   # a real session (see the `db`
-                                                  # fixture above)
+                                                  # fixture above) — the calling
+                                                  # test must be async
+                                                  # (@pytest.mark.anyio), since
+                                                  # `db` is an async fixture
         client.user                             # the fake JWT payload dict
 
     Overrides both get_current_user and get_validated_user with the same fake

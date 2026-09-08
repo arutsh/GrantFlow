@@ -26,7 +26,6 @@ def create_report_line(
     )
     session.add(report_line)
     session.commit()
-    session.refresh(report_line)
     return report_line
 
 
@@ -58,7 +57,6 @@ def update_report_line(
     if extra_fields is not None:
         report_line.extra_fields = {**(report_line.extra_fields or {}), **extra_fields}
     session.commit()
-    session.refresh(report_line)
     return report_line
 
 

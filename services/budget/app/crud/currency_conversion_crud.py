@@ -30,7 +30,6 @@ def create_currency_conversion(
     )
     session.add(conversion)
     session.commit()
-    session.refresh(conversion)
     return conversion
 
 
@@ -66,7 +65,6 @@ def create_allocation(
     )
     session.add(allocation)
     session.commit()
-    session.refresh(allocation)
     return allocation
 
 

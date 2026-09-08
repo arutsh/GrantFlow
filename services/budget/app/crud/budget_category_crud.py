@@ -19,7 +19,6 @@ def create_budget_category(
     )
     session.add(budget_category)
     session.commit()
-    session.refresh(budget_category)
     return budget_category
 
 
@@ -98,7 +97,6 @@ def update_budget_category(
     category.code = code
     category.updated_by = user_id
     session.commit()
-    session.refresh(category)
     return category
 
 

@@ -22,29 +22,31 @@ from app.schemas.consent_schema import ConsentUpdateRequest, EmailChangeRequest
 from tests.factories.user import UserModelFactory
 
 
+@pytest.mark.anyio
 class TestGetMyConsent:
-    def test_returns_current_state(self):
+    async def test_returns_current_state(self):
         user = UserModelFactory.build(consent_data_processing_at=None, consent_marketing_at=None)
         with patch("app.api.user_routes.get_user", return_value=user):
-            resp = get_my_consent(current_user={"user_id": user.id}, db=MagicMock())
+            resp = await get_my_consent(current_user={"user_id": user.id}, db=MagicMock())
         assert resp.data_processing_granted is False
         assert resp.marketing_granted is False
 
-    def test_missing_user_is_404(self):
+    async def test_missing_user_is_404(self):
         with patch("app.api.user_routes.get_user", return_value=None):
             with pytest.raises(HTTPException) as exc_info:
-                get_my_consent(current_user={"user_id": uuid4()}, db=MagicMock())
+                await get_my_consent(current_user={"user_id": uuid4()}, db=MagicMock())
         assert exc_info.value.status_code == 404
 
 
+@pytest.mark.anyio
 class TestUpdateMyConsent:
-    def test_can_toggle_marketing_independently_of_data_processing(self):
+    async def test_can_toggle_marketing_independently_of_data_processing(self):
         user = UserModelFactory.build(consent_data_processing_at=None, consent_marketing_at=None)
         with patch("app.api.user_routes.get_user", return_value=user):
-            resp = update_my_consent(
+            resp = await update_my_consent(
                 ConsentUpdateRequest(marketing=True),
                 current_user={"user_id": user.id},
-                db=MagicMock(),
+                db=AsyncMock(),
             )
         assert resp.marketing_granted is True
         # Mandatory data-processing consent is untouched by this endpoint.
@@ -155,9 +157,7 @@ class TestRequestEmailChange:
         user = UserModelFactory.build(email="old@example.com", email_verified=False)
         with (
             patch("app.api.user_routes.get_user", return_value=user),
-            patch(
-                "app.api.user_routes.set_pending_email_verification_token"
-            ) as mock_set_token,
+            patch("app.api.user_routes.set_pending_email_verification_token") as mock_set_token,
         ):
             with pytest.raises(HTTPException) as exc_info:
                 asyncio.run(
@@ -171,8 +171,9 @@ class TestRequestEmailChange:
         mock_set_token.assert_not_called()
 
 
+@pytest.mark.anyio
 class TestDeleteMyAccount:
-    def test_self_service_deletion_revokes_sessions_and_scrubs_user(self):
+    async def test_self_service_deletion_revokes_sessions_and_scrubs_user(self):
         user = UserModelFactory.build()
         sessions = [SimpleNamespace(id=str(uuid4())), SimpleNamespace(id=str(uuid4()))]
         with (
@@ -190,7 +191,7 @@ class TestDeleteMyAccount:
             # mismatched types, which Python never considers equal, so this
             # request always 403'd in production despite this test passing
             # with same-type UUIDs on both sides.
-            resp = delete_my_account(
+            resp = await delete_my_account(
                 user_id=user.id, current_user={"user_id": str(user.id)}, db=MagicMock()
             )
         assert resp == {"deleted": True}
@@ -198,9 +199,9 @@ class TestDeleteMyAccount:
         assert mock_mark.call_count == len(sessions)
         mock_soft_delete.assert_called_once()
 
-    def test_cannot_delete_another_users_account(self):
+    async def test_cannot_delete_another_users_account(self):
         with pytest.raises(HTTPException) as exc_info:
-            delete_my_account(
+            await delete_my_account(
                 user_id=uuid4(), current_user={"user_id": str(uuid4())}, db=MagicMock()
             )
         assert exc_info.value.status_code == 403

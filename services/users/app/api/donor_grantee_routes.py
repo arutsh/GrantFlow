@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.donor_grantee_crud import donor_grantee_exists
 from app.db.session import get_db
@@ -17,12 +17,12 @@ router = APIRouter()
 
 
 @router.post("/donor-grantees/", response_model=DonorGrantee)
-def create_donor_grantee_endpoint(
+async def create_donor_grantee_endpoint(
     donor_grantee: DonorGranteeCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return create_donor_grantee_service(
+    return await create_donor_grantee_service(
         db,
         valid_user,
         grantee_id=donor_grantee.grantee_id,
@@ -31,35 +31,35 @@ def create_donor_grantee_endpoint(
 
 
 @router.get("/donor-grantees/", response_model=list[DonorGrantee])
-def list_donor_grantees_endpoint(
+async def list_donor_grantees_endpoint(
     request_type: str | None = None,
     customer_id: UUID | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
     # customer_id is only honored for a superuser caller (see
     # list_donor_grantees_service) — a regular caller is always scoped to
     # their own customer_id regardless of what they pass here.
-    return list_donor_grantees_service(
+    return await list_donor_grantees_service(
         db, valid_user, request_type=request_type, customer_id=customer_id
     )
 
 
 @router.delete("/donor-grantees/{donor_grantee_id}", status_code=204)
-def delete_donor_grantee_endpoint(
+async def delete_donor_grantee_endpoint(
     donor_grantee_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    delete_donor_grantee_service(db, valid_user, donor_grantee_id=donor_grantee_id)
+    await delete_donor_grantee_service(db, valid_user, donor_grantee_id=donor_grantee_id)
 
 
 @router.get("/donor-grantees/exists")
-def donor_grantee_exists_endpoint(
+async def donor_grantee_exists_endpoint(
     donor_id: UUID,
     grantee_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     # NOTE: internal service endpoint — no auth needed, matching the existing
     # POST /customers/by_ids/ convention; caller must ensure authorization.
-    return {"exists": donor_grantee_exists(db, donor_id=donor_id, grantee_id=grantee_id)}
+    return {"exists": await donor_grantee_exists(db, donor_id=donor_id, grantee_id=grantee_id)}

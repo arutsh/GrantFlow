@@ -47,9 +47,8 @@ Relationship audit (`grep relationship(` across both services) found ~15 relatio
 
 ## Migration Plan
 
-0. `AuditMixin` timestamp defaults: convert `created_at`/`updated_at` to Python-side values in `shared/db/audit_mixin.py`, confirm via the existing sync test suites (no async work yet) that nothing changes behaviorally, before either service touches its session config.
-1. Users-service: swap session/engine, centralize `get_db()`, convert `app/crud/*.py` to `select()`-style async, add `selectinload`/`joinedload` at each relationship-accessing callsite, convert test fixtures to async, full test pass + manual smoke test.
-2. Budget-service: same mechanical steps across its larger CRUD/route surface.
+1. Users-service, folded together as one PR: convert `AuditMixin`'s `created_at`/`updated_at` to Python-side values in `shared/db/audit_mixin.py` and confirm via the existing sync test suites (no async work yet) that nothing changes behaviorally; then swap session/engine, centralize `get_db()`, convert `app/crud/*.py` to `select()`-style async, add `selectinload`/`joinedload` at each relationship-accessing callsite, convert test fixtures to async, full test pass + manual smoke test.
+2. Budget-service: same mechanical steps across its larger CRUD/route surface (the mixin change already landed in step 1, nothing to redo here).
 3. Budget-service, layered on top of step 2: add `commit: bool = True` to CRUD write functions, rewire `create_budget_with_lines_service` to `flush()`-then-single-`commit()`, delete the compensating-transaction delete calls.
 4. Each service ships as its own PR/ticket chain (per this repo's one-chunk-one-ticket-one-PR workflow) — no shared PR.
 

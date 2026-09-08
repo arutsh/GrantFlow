@@ -1,5 +1,7 @@
 from uuid import UUID
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.session import SessionModel
 from app.utils.security import (
     hash_token,
@@ -10,7 +12,7 @@ from zoneinfo import ZoneInfo
 from app.utils.redis import _cache_set
 
 
-def create_session(session: Session, user_id: UUID, refresh_token_hash) -> SessionModel:
+async def create_session(session: AsyncSession, user_id: UUID, refresh_token_hash) -> SessionModel:
     issued_at = datetime.now(ZoneInfo("UTC"))
     new_session = SessionModel(
         user_id=user_id,
@@ -19,8 +21,7 @@ def create_session(session: Session, user_id: UUID, refresh_token_hash) -> Sessi
         refresh_token_hash=hash_token(refresh_token_hash),
     )
     session.add(new_session)
-    session.commit()
-    session.refresh(new_session)
+    await session.commit()
     # Store mapping in Redis: refresh_token → session_id
     redis_key = f"refresh:{refresh_token_hash}"
     _cache_set(redis_key, str(new_session.id), ttl=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
@@ -28,35 +29,42 @@ def create_session(session: Session, user_id: UUID, refresh_token_hash) -> Sessi
     return new_session
 
 
-def get_non_revoked_sessions(session: Session):
-    return session.query(SessionModel).filter(SessionModel.revoked.is_(False)).all()
+async def get_non_revoked_sessions(session: AsyncSession):
+    result = await session.execute(select(SessionModel).where(SessionModel.revoked.is_(False)))
+    return list(result.scalars().all())
 
 
-def get_non_revoked_sessions_for_user(session: Session, user_id: UUID) -> list[SessionModel]:
-    return (
-        session.query(SessionModel)
-        .filter(SessionModel.user_id == user_id, SessionModel.revoked.is_(False))
+async def get_non_revoked_sessions_for_user(
+    session: AsyncSession, user_id: UUID
+) -> list[SessionModel]:
+    result = await session.execute(
+        select(SessionModel)
+        .where(SessionModel.user_id == user_id, SessionModel.revoked.is_(False))
         .order_by(SessionModel.issued_at.desc())
-        .all()
     )
+    return list(result.scalars().all())
 
 
-def revoke_all_sessions_for_user(session: Session, user_id: UUID) -> list[SessionModel]:
+async def revoke_all_sessions_for_user(session: AsyncSession, user_id: UUID) -> list[SessionModel]:
     """Used by account deletion — revokes every active session for a user
     and returns them so the caller can also clear their Redis entries."""
-    sessions = get_non_revoked_sessions_for_user(session, user_id)
+    sessions = await get_non_revoked_sessions_for_user(session, user_id)
     for s in sessions:
         s.revoked = True
-    session.commit()
+    await session.commit()
     return sessions
 
 
-def revoke_session(session: Session, db_session: SessionModel) -> SessionModel:
+async def revoke_session(session: AsyncSession, db_session: SessionModel) -> SessionModel:
     db_session.revoked = True
-    session.commit()
-    session.refresh(db_session)
+    await session.commit()
     return db_session
 
 
-def get_session_by_id(session: Session, session_id: UUID) -> SessionModel | None:
-    return session.query(SessionModel).filter(SessionModel.id == session_id).first()
+async def get_session_by_id(session: AsyncSession, session_id: UUID) -> SessionModel | None:
+    result = await session.execute(
+        select(SessionModel)
+        .options(joinedload(SessionModel.user))
+        .where(SessionModel.id == session_id)
+    )
+    return result.scalar_one_or_none()

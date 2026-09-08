@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.customer_schema import Customer
 from app.schemas.admin_management_schema import CompanyUpdateRequest
 from app.db.session import get_db
@@ -20,22 +20,22 @@ router = APIRouter()
 
 
 @router.get("/customers/", response_model=list[Customer])
-def list_customers(
+async def list_customers(
     is_ngo: bool | None = None,
     search: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return get_customers(session=db, is_ngo=is_ngo, search=search)
+    return await get_customers(session=db, is_ngo=is_ngo, search=search)
 
 
 @router.post("/customers/", response_model=Customer)
-def create_customer_endpoint(
+async def create_customer_endpoint(
     customer: Customer,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    db_customer = create_customer(
+    db_customer = await create_customer(
         session=db,
         name=customer.name,
         is_ngo=customer.is_ngo,
@@ -47,37 +47,39 @@ def create_customer_endpoint(
 
 
 @router.get("/customers/{customer_id}", response_model=Customer)
-def get_customer_endpoint(
+async def get_customer_endpoint(
     customer_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return get_company_service(db, valid_user, customer_id)
+    return await get_company_service(db, valid_user, customer_id)
 
 
 @router.patch("/customers/{customer_id}", response_model=Customer)
-def update_customer_endpoint(
+async def update_customer_endpoint(
     customer_id: UUID,
     req: CompanyUpdateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return update_company_service(db, valid_user, customer_id, req.model_dump(exclude_unset=True))
+    return await update_company_service(
+        db, valid_user, customer_id, req.model_dump(exclude_unset=True)
+    )
 
 
 @router.post("/customers/{customer_id}/deactivate", response_model=Customer)
-def deactivate_customer_endpoint(
+async def deactivate_customer_endpoint(
     customer_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
-    return deactivate_company_service(db, valid_user, customer_id)
+    return await deactivate_company_service(db, valid_user, customer_id)
 
 
 @router.post("/customers/by_ids/", response_model=list[Customer])
-def get_customers_by_ids_endpoint(
+async def get_customers_by_ids_endpoint(
     customer_ids: list[UUID],
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     # NOTE: internal service endpoint — no auth needed, caller must ensure authorization
-    return get_customers_by_ids(session=db, customer_ids=customer_ids)
+    return await get_customers_by_ids(session=db, customer_ids=customer_ids)

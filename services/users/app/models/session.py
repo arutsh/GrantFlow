@@ -13,7 +13,7 @@ class SessionModel(Base):
     __tablename__ = "user_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        GUID(), primary_key=True, default=lambda: str(uuid.uuid4()), nullable=False, index=True
+        GUID(), primary_key=True, default=lambda: uuid.uuid4(), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

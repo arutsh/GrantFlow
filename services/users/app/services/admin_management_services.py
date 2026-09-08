@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
@@ -47,14 +47,14 @@ def _require_same_company(valid_user: dict, target_customer_id) -> UUID:
     return own_customer_id
 
 
-def _revoke_user_sessions(session: Session, user_id: UUID) -> None:
-    sessions = revoke_all_sessions_for_user(session, user_id)
+async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
+    sessions = await revoke_all_sessions_for_user(session, user_id)
     for s in sessions:
         mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
 
 async def invite_user_service(
-    session: Session,
+    session: AsyncSession,
     valid_user: dict,
     *,
     email: str,
@@ -79,80 +79,82 @@ async def invite_user_service(
         raise DomainError(str(e), status.HTTP_400_BAD_REQUEST) from e
 
 
-def _get_active_target_user(session: Session, target_user_id: UUID):
-    target = get_user(session, target_user_id)
+async def _get_active_target_user(session: AsyncSession, target_user_id: UUID):
+    target = await get_user(session, target_user_id)
     if not target or target.deleted_at is not None:
         raise DomainError("User not found", status.HTTP_404_NOT_FOUND)
     return target
 
 
-def remove_user_service(session: Session, valid_user: dict, target_user_id: UUID):
-    target = _get_active_target_user(session, target_user_id)
+async def remove_user_service(session: AsyncSession, valid_user: dict, target_user_id: UUID):
+    target = await _get_active_target_user(session, target_user_id)
     _require_same_company(valid_user, target.customer_id)
 
     # Held until this transaction commits/rolls back, so a concurrent
     # remove/demote for this company can't slip past the same check.
-    lock_customer_for_update(session, target.customer_id)
-    remaining_admins = count_admins(session, target.customer_id, exclude_user_id=target.id)
+    await lock_customer_for_update(session, target.customer_id)
+    remaining_admins = await count_admins(session, target.customer_id, exclude_user_id=target.id)
     if target.role == "admin" and remaining_admins == 0:
         raise DomainError("Cannot remove the last admin of a company", status.HTTP_400_BAD_REQUEST)
 
-    _revoke_user_sessions(session, target.id)
-    return soft_delete_user(session, target)
+    await _revoke_user_sessions(session, target.id)
+    return await soft_delete_user(session, target)
 
 
 async def update_user_role_service(
-    session: Session, valid_user: dict, target_user_id: UUID, new_role: str
+    session: AsyncSession, valid_user: dict, target_user_id: UUID, new_role: str
 ):
     if new_role == "superuser":
         raise DomainError("Cannot grant superuser role", status.HTTP_400_BAD_REQUEST)
     if new_role not in ("admin", "user"):
         raise DomainError("Invalid role", status.HTTP_400_BAD_REQUEST)
 
-    target = _get_active_target_user(session, target_user_id)
+    target = await _get_active_target_user(session, target_user_id)
     _require_same_company(valid_user, target.customer_id)
 
-    lock_customer_for_update(session, target.customer_id)
+    await lock_customer_for_update(session, target.customer_id)
     if (
         target.role == "admin"
         and new_role != "admin"
-        and count_admins(session, target.customer_id, exclude_user_id=target.id) == 0
+        and await count_admins(session, target.customer_id, exclude_user_id=target.id) == 0
     ):
         raise DomainError("Cannot demote the last admin of a company", status.HTTP_400_BAD_REQUEST)
 
     # Otherwise a still-live token keeps its stale role claim.
-    _revoke_user_sessions(session, target.id)
+    await _revoke_user_sessions(session, target.id)
     return await update_user(session, target, {"role": new_role})
 
 
-def get_company_service(session: Session, valid_user: dict, customer_id: UUID):
+async def get_company_service(session: AsyncSession, valid_user: dict, customer_id: UUID):
     _require_same_company(valid_user, customer_id)
-    customer = get_customer(session, customer_id)
+    customer = await get_customer(session, customer_id)
     if not customer:
         raise DomainError("Customer not found", status.HTTP_404_NOT_FOUND)
     return customer
 
 
-def update_company_service(session: Session, valid_user: dict, customer_id: UUID, updates: dict):
+async def update_company_service(
+    session: AsyncSession, valid_user: dict, customer_id: UUID, updates: dict
+):
     _require_same_company(valid_user, customer_id)
-    customer = get_customer(session, customer_id)
+    customer = await get_customer(session, customer_id)
     if not customer:
         raise DomainError("Customer not found", status.HTTP_404_NOT_FOUND)
 
     filtered = {k: v for k, v in updates.items() if k in COMPANY_UPDATE_FIELDS and v is not None}
-    return update_customer(session, customer, filtered)
+    return await update_customer(session, customer, filtered)
 
 
-def deactivate_company_service(session: Session, valid_user: dict, customer_id: UUID):
+async def deactivate_company_service(session: AsyncSession, valid_user: dict, customer_id: UUID):
     is_superuser_acting = (
         valid_user.get("role") == "superuser" or valid_user.get("is_impersonating") is True
     )
     if not is_superuser_acting:
         raise DomainError("Superuser role required", status.HTTP_403_FORBIDDEN)
 
-    customer = get_customer(session, customer_id)
+    customer = await get_customer(session, customer_id)
     if not customer:
         raise DomainError("Customer not found", status.HTTP_404_NOT_FOUND)
 
     logger.info("company_deactivated", customer_id=str(customer_id))
-    return deactivate_customer(session, customer)
+    return await deactivate_customer(session, customer)

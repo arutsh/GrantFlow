@@ -30,7 +30,6 @@ def create_budget_line(
     )
     session.add(budget_line)
     session.commit()
-    session.refresh(budget_line)
     return budget_line
 
 
@@ -55,8 +54,6 @@ def bulk_create_budget_lines(
     ]
     session.add_all(budget_lines)
     session.commit()
-    for budget_line in budget_lines:
-        session.refresh(budget_line)
     return budget_lines
 
 
@@ -100,7 +97,6 @@ def update_budget_line(
             **new_budget_line.extra_fields,
         }
     session.commit()
-    session.refresh(existing_line)
     return existing_line
 
 

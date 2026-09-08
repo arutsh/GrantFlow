@@ -2,7 +2,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import uuid4, UUID
 from app.schemas.user_schema import User, UserCreate, UserUpdate
 from app.schemas.consent_schema import ConsentState, ConsentUpdateRequest, EmailChangeRequest
@@ -15,9 +16,9 @@ from app.schemas.admin_management_schema import (
 )
 from app.models.user import UserModel
 from app.models.customer import CustomerModel
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.crud.user_crud import (
-    get_users_query,
+    build_users_select,
     is_superuser,
     update_user,
     get_user,
@@ -50,25 +51,16 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.post("/users/", response_model=User)
-async def create_user_endpoint(user: UserCreate, db: Session = Depends(get_db)):
+async def create_user_endpoint(user: UserCreate, db: AsyncSession = Depends(get_db)):
     if user.customer_id:
-        customer = db.query(CustomerModel).filter(CustomerModel.id == user.customer_id).first()
-        if not customer:
+        result = await db.execute(select(CustomerModel).where(CustomerModel.id == user.customer_id))
+        if result.scalar_one_or_none() is None:
             raise HTTPException(status_code=400, detail="Invalid customer_id")
 
     db_user = UserModel(id=str(uuid4()), **user.model_dump())
     db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    await db.commit()
 
     await _publish_user_event("user.created", db_user)
 
@@ -76,16 +68,17 @@ async def create_user_endpoint(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/users/{user_id}", response_model=User)
-def get_user_endpoint(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+async def get_user_endpoint(user_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
 
 @router.get("/users/", response_model=list[User])
-def list_users_endpoint(
-    db: Session = Depends(get_db), valid_user: dict = Depends(get_validated_user)
+async def list_users_endpoint(
+    db: AsyncSession = Depends(get_db), valid_user: dict = Depends(get_validated_user)
 ):
     # Superuser (not impersonating) lists everyone; an admin — real, or a
     # superuser impersonating (impersonation tokens carry role="admin" plus
@@ -94,44 +87,47 @@ def list_users_endpoint(
     # JWT claims here (not a DB self-lookup) is what makes this scope
     # correctly under impersonation: the real superuser's own DB row has no
     # bearing on which company they're currently acting as.
-    users = get_users_query(db)
+    stmt = build_users_select()
     if valid_user.get("role") == "superuser":
-        return users.filter(UserModel.deleted_at.is_(None)).all()
+        result = await db.execute(stmt.where(UserModel.deleted_at.is_(None)))
+        return list(result.scalars().all())
     if valid_user.get("role") == "admin" and valid_user.get("customer_id"):
-        return (
-            users.filter(UserModel.customer_id == valid_user["customer_id"])
-            .filter(UserModel.deleted_at.is_(None))
-            .all()
+        result = await db.execute(
+            stmt.where(UserModel.customer_id == valid_user["customer_id"]).where(
+                UserModel.deleted_at.is_(None)
+            )
         )
+        return list(result.scalars().all())
     raise HTTPException(status_code=403, detail="Not authorized to list users")
 
 
 @router.post("/users/by_ids/", response_model=list[User])
-def get_users_by_ids_endpoint(
+async def get_users_by_ids_endpoint(
     user_ids: list[UUID],
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     # NOTE: this end point is for internal service use only,
     # hence no need to check current_user permissions
     # calling service should ensure proper authorization
 
-    return get_users_query(db, user_ids).all()
+    result = await db.execute(build_users_select(user_ids))
+    return list(result.scalars().all())
 
 
 @router.patch("/users/{user_id}/", response_model=User)
 async def update_user_endpoint(
     user_id: UUID,
     user_update: UserUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_validated_user),
 ):
-    is_current_user_superuser = is_superuser(db, current_user["user_id"])
+    is_current_user_superuser = await is_superuser(db, current_user["user_id"])
 
     if str(current_user["user_id"]) != str(user_id) and not is_current_user_superuser:
         raise HTTPException(status_code=403, detail="Not authorized to update this user")
 
-    db_user = get_user(db, user_id)
-    current_user = get_user(db, current_user["user_id"])
+    db_user = await get_user(db, user_id)
+    current_user = await get_user(db, current_user["user_id"])
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -153,12 +149,12 @@ async def update_user_endpoint(
         and user_update.new_customer_name
         and db_user.status == "pending"
     ):
-        customer = create_customer(db, user_update.new_customer_name)
+        customer = await create_customer(db, user_update.new_customer_name)
         update_data["status"] = "active"
         promote_founder_to_admin = True
 
     elif user_update.customer_id:
-        customer = get_customer(session=db, customer_id=user_update.customer_id)
+        customer = await get_customer(session=db, customer_id=user_update.customer_id)
         if not customer:
             raise HTTPException(status_code=400, detail="Invalid customer_id")
 
@@ -167,41 +163,46 @@ async def update_user_endpoint(
     if promote_founder_to_admin:
         filtered_update_data["role"] = "admin"
     await update_user(db, db_user, filtered_update_data)
+    # expire_on_commit=False (required for async) means db_user.customer stays
+    # whatever was loaded before the commit above; sync it explicitly.
+    db_user.customer = customer
 
     return db_user
 
 
 @router.get("/users/me/consent", response_model=ConsentState)
-def get_my_consent(current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)):
-    user = get_user(db, current_user["user_id"])
+async def get_my_consent(
+    current_user: dict = Depends(get_validated_user), db: AsyncSession = Depends(get_db)
+):
+    user = await get_user(db, current_user["user_id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return ConsentState(**get_consent_state(user))
 
 
 @router.patch("/users/me/consent", response_model=ConsentState)
-def update_my_consent(
+async def update_my_consent(
     req: ConsentUpdateRequest,
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    user = get_user(db, current_user["user_id"])
+    user = await get_user(db, current_user["user_id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    set_marketing_consent(db, user, req.marketing)
+    await set_marketing_consent(db, user, req.marketing)
     return ConsentState(**get_consent_state(user))
 
 
 @router.get("/users/me/export")
 async def export_my_data(
-    current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)
+    current_user: dict = Depends(get_validated_user), db: AsyncSession = Depends(get_db)
 ):
     """Right to access (data-subject-rights spec): a downloadable, machine
     readable bundle of profile data, consent history, and a listing of the
     financial records the user created. Synchronous — orgs on this
     platform are small enough that this doesn't need async/email delivery
     (see design.md's open question; revisit if that stops being true)."""
-    user = get_user(db, current_user["user_id"])
+    user = await get_user(db, current_user["user_id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -226,13 +227,13 @@ async def export_my_data(
 async def request_email_change(
     req: EmailChangeRequest,
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Rectification (data-subject-rights spec): the new address is stored
     unverified; the account keeps logging in with the old address until the
     verification link (same /auth/verify-email endpoint used at signup) is
     followed."""
-    user = get_user(db, current_user["user_id"])
+    user = await get_user(db, current_user["user_id"])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -244,7 +245,7 @@ async def request_email_change(
         )
 
     try:
-        raw_token = set_pending_email_verification_token(db, user, req.new_email)
+        raw_token = await set_pending_email_verification_token(db, user, req.new_email)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -260,7 +261,7 @@ async def request_email_change(
 @router.post("/users/invite", response_model=InviteUserResponse)
 async def invite_user_endpoint(
     req: InviteUserRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
     user, raw_token = await invite_user_service(
@@ -272,13 +273,13 @@ async def invite_user_endpoint(
         role=req.role,
     )
 
-    inviter = get_user(db, valid_user["user_id"])
+    inviter = await get_user(db, valid_user["user_id"])
     inviter_name = (
         f"{inviter.first_name or ''} {inviter.last_name or ''}".strip() or inviter.email
         if inviter
         else ""
     )
-    company = get_customer(db, user.customer_id)
+    company = await get_customer(db, user.customer_id)
     try:
         enqueue_invite_email(
             user.email,
@@ -297,8 +298,8 @@ async def invite_user_endpoint(
 
 
 @router.post("/users/accept-invite", response_model=AcceptInviteResponse)
-def accept_invite_endpoint(req: AcceptInviteRequest, db: Session = Depends(get_db)):
-    user = get_user_by_verification_token(db, req.email, req.token)
+async def accept_invite_endpoint(req: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+    user = await get_user_by_verification_token(db, req.email, req.token)
     expires_at = user.email_verification_expires_at if user else None
     if (
         not user
@@ -308,19 +309,19 @@ def accept_invite_endpoint(req: AcceptInviteRequest, db: Session = Depends(get_d
     ):
         raise HTTPException(status_code=400, detail="Invalid or expired invite token")
 
-    accept_invite(db, user, req.password)
+    await accept_invite(db, user, req.password)
     return AcceptInviteResponse(email_verified=True)
 
 
 @router.delete("/users/{user_id}/remove")
-def remove_company_user_endpoint(
+async def remove_company_user_endpoint(
     user_id: UUID,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
     """Admin-scoped removal of another user in the caller's own company —
     distinct from the self-service DELETE /users/{user_id} above."""
-    remove_user_service(db, valid_user, user_id)
+    await remove_user_service(db, valid_user, user_id)
     return {"removed": True}
 
 
@@ -328,30 +329,30 @@ def remove_company_user_endpoint(
 async def update_user_role_endpoint(
     user_id: UUID,
     req: RoleUpdateRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     valid_user: dict = Depends(get_validated_user),
 ):
     return await update_user_role_service(db, valid_user, user_id, req.role)
 
 
 @router.delete("/users/{user_id}")
-def delete_my_account(
+async def delete_my_account(
     user_id: UUID,
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Right to erasure (data-subject-rights spec) — self-service only, no
     admin-initiated deletion of other accounts here."""
     if str(current_user["user_id"]) != str(user_id):
         raise HTTPException(status_code=403, detail="Not authorized to delete this account")
 
-    user = get_user(db, user_id)
+    user = await get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    sessions = revoke_all_sessions_for_user(db, user_id)
+    sessions = await revoke_all_sessions_for_user(db, user_id)
     for s in sessions:
         mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
-    soft_delete_user(db, user)
+    await soft_delete_user(db, user)
     return {"deleted": True}

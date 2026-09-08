@@ -53,8 +53,6 @@ if os.getenv("VSCODE_DEBUGGER") == "1":
     except Exception:
         pass
 
-init_db()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,6 +60,7 @@ async def lifespan(app: FastAPI):
     from opentelemetry import trace
 
     logger.info("app_startup", service="users")
+    await init_db()
     chat_proxy_timeout = 600.0 if settings.debug else 60.0
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(chat_proxy_timeout))
     try:
