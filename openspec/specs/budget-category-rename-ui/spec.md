@@ -23,9 +23,20 @@ The system SHALL let a user with edit access rename a budget category's name fro
 - **WHEN** the Budget Lines table is grouped and includes an "uncategorized" group (lines with no category)
 - **THEN** that group's header shows no rename affordance, since there is no category to rename
 
-#### Scenario: Rename affordance unavailable in Simple (ungrouped) view
-- **WHEN** the desktop Budget Lines table's Grouped/Simple toggle is set to Simple
+#### Scenario: Rename affordance unavailable in List (ungrouped) view
+- **WHEN** the desktop Budget Lines table's Grouped/List toggle is set to List
 - **THEN** no rename affordance is shown anywhere in the table, since there is no category group header to attach it to; switching back to Grouped restores it
+
+### Requirement: Mobile category header does not overflow when the rename control is active
+The system SHALL keep the mobile Budget Lines category header (name, count, subtotal, used-%) fully visible and non-overlapping regardless of category-name length or whether the inline rename control is open, by truncating the category name and allowing the header row to wrap rather than clip its contents.
+
+#### Scenario: Long category name on mobile
+- **WHEN** the mobile Budget Lines card list renders a category whose name is long enough to otherwise overflow the header row
+- **THEN** the name is truncated and the subtotal and used-% pill on the same row remain fully visible
+
+#### Scenario: Rename control opened on mobile
+- **WHEN** a user activates the inline rename control on a category header in the mobile card list
+- **THEN** the rename input and its confirm/cancel controls are fully visible, and the subtotal/used-% pill on that row is not pushed off-screen or clipped
 
 ### Requirement: Duplicate category name on rename is surfaced inline
 When a rename would collide with another category already existing in the same budget, the system SHALL show the rejection inline near the rename input rather than failing silently.

@@ -11,4 +11,4 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 - [x] 1.7 Add/update a test in `BudgetViewLinesTable.test.tsx` asserting Edit/Delete render inline with the amount (not in a separate row) for both a short and a long (wrapping) description.
 - [ ] 1.8 Manually verify in a mobile viewport (~375-390px): toggle is hidden, category header with a long name and an opened rename control both stay within the card, the desktop toggle shows "Grouped"/"List", and both a short and a long line-item description keep Edit/Delete visible inline with the amount. (Not completed by Claude — the local dev server on port 3000 is a different app, not this frontend; needs the user's actual local URL to check live.)
 - [x] 1.9a Run the frontend test suite clean (`npx vitest run` from `frontend-typescript/`): 39 files, 302 tests pass, including the new/updated assertions in `BudgetViewLinesTable.test.tsx`.
-- [ ] 1.9b PR merged.
+- [x] 1.9b PR merged (#281).
