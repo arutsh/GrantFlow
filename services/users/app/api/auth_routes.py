@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -23,7 +23,7 @@ from app.schemas.auth_schema import (
 )
 from app.schemas.session_schema import SessionSummary
 
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.utils.security import (
     hash_password,
     verify_password,
@@ -72,14 +72,6 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def _role_flags(customer) -> dict:
     """is_ngo/is_donor for the JWT, false when there is no customer."""
     if not customer:
@@ -92,7 +84,7 @@ def _email_verified_claim(user) -> dict:
     return {"email_verified": bool(user.email_verified)}
 
 
-def _customer_role_claims(db: Session, customer_id) -> dict:
+async def _customer_role_claims(db: AsyncSession, customer_id) -> dict:
     """Same as _role_flags, but for callers with only a customer_id, no
     already-loaded customer (e.g. a just-inserted user with nothing eager-
     loaded yet). Prefer passing the loaded customer via _role_flags directly
@@ -107,7 +99,7 @@ def _customer_role_claims(db: Session, customer_id) -> dict:
     if not customer_id:
         return {"is_ngo": False, "is_donor": False}
     try:
-        customer = get_customer(db, customer_id)
+        customer = await get_customer(db, customer_id)
     except Exception:
         logger.exception("Failed to look up customer %s for role claims", customer_id)
         return {"is_ngo": False, "is_donor": False}
@@ -118,7 +110,7 @@ def _customer_role_claims(db: Session, customer_id) -> dict:
 async def register_endpoint(
     req: RegisterRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     # No existing account to key on yet, so both scopes use the IP —
     # volumetric abuse from one source is the threat, not one account.
@@ -146,7 +138,7 @@ async def register_endpoint(
 
     clear_failed_attempts(client_ip, bucket="register")
 
-    raw_token = set_email_verification_token(db, user)
+    raw_token = await set_email_verification_token(db, user)
     try:
         enqueue_verification_email(user.email, raw_token, user.first_name)
     except Exception:
@@ -163,10 +155,10 @@ async def register_endpoint(
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(
+async def login(
     req: LoginRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     client_ip = request.client.host if request is not None and request.client else "unknown"
 
@@ -176,13 +168,13 @@ def login(
             detail="Too many failed login attempts. Try again later.",
         )
 
-    user = get_user_by_email(db, req.email)
+    user = await get_user_by_email(db, req.email)
     if (
         not user
         or not user.hashed_password
         or getattr(user, "deleted_at", None) is not None
         or (user.customer and getattr(user.customer, "deactivated_at", None) is not None)
-        or not verify_password(req.password, user.hashed_password)
+        or not await verify_password(req.password, user.hashed_password)
     ):
         record_failed_attempt(req.email, client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -195,7 +187,7 @@ def login(
 
     refresh_token = create_refresh_token()
 
-    session = create_session(
+    session = await create_session(
         session=db,
         user_id=user.id,
         refresh_token_hash=refresh_token,
@@ -216,14 +208,14 @@ def login(
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
-def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
     redis_key = f"refresh:{refresh_token}"
     session_id = _cache_get(redis_key)
     _delete_key(redis_key)
     if not session_id:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
-    s = get_session_by_id(db, session_id)
+    s = await get_session_by_id(db, session_id)
     if not s or s.revoked:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
@@ -238,7 +230,7 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         # Rotate new refresh token
         new_refresh = create_refresh_token()
         s.refresh_token_hash = hash_token(new_refresh)
-        db.commit()
+        await db.commit()
 
         access_token = create_access_token(
             {
@@ -259,10 +251,10 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/verify-email", response_model=VerifyEmailResponse)
-def verify_email(
+async def verify_email(
     req: VerifyEmailRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     # Same class of attacker-guessable input (email + token) that login-rate-
     # limiting was added to defend — reuses that mechanism under a separate
@@ -274,7 +266,7 @@ def verify_email(
             detail="Too many verification attempts. Try again later.",
         )
 
-    user = get_user_by_verification_token(db, req.email, req.token)
+    user = await get_user_by_verification_token(db, req.email, req.token)
     if not user:
         record_failed_attempt(req.email, client_ip, bucket="verify_email")
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
@@ -285,11 +277,11 @@ def verify_email(
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
 
     clear_failed_attempts(req.email, bucket="verify_email")
-    user = mark_email_verified(db, user)
+    user = await mark_email_verified(db, user)
 
     # This is the account's first session — verification is the login moment.
     refresh_token = create_refresh_token()
-    session = create_session(
+    session = await create_session(
         session=db,
         user_id=user.id,
         refresh_token_hash=refresh_token,
@@ -300,7 +292,7 @@ def verify_email(
             "session_id": session.id,
             "role": user.role,
             "customer_id": user.customer_id,
-            **_customer_role_claims(db, user.customer_id),
+            **await _customer_role_claims(db, user.customer_id),
             **_email_verified_claim(user),
         }
     )
@@ -314,10 +306,10 @@ def verify_email(
 
 
 @router.post("/auth/resend-verification", response_model=ResendVerificationResponse)
-def resend_verification(
+async def resend_verification(
     req: ResendVerificationRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Anonymous and enumeration-safe: same response regardless of account state."""
     client_ip = request.client.host if request is not None and request.client else "unknown"
@@ -329,9 +321,9 @@ def resend_verification(
     record_failed_attempt(req.email, client_ip, bucket="resend_verification")
 
     debug_token = None
-    user = get_user_by_email(db, req.email)
+    user = await get_user_by_email(db, req.email)
     if user and not user.email_verified:
-        raw_token = set_email_verification_token(db, user)
+        raw_token = await set_email_verification_token(db, user)
         try:
             enqueue_verification_email(user.email, raw_token, user.first_name)
         except Exception:
@@ -343,10 +335,10 @@ def resend_verification(
 
 
 @router.post("/auth/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(
+async def forgot_password(
     req: ForgotPasswordRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Anonymous and enumeration-safe: same response regardless of account state."""
     client_ip = request.client.host if request is not None and request.client else "unknown"
@@ -358,9 +350,9 @@ def forgot_password(
     record_failed_attempt(req.email, client_ip, bucket="forgot_password")
 
     debug_token = None
-    user = get_user_by_email(db, req.email)
+    user = await get_user_by_email(db, req.email)
     if user:
-        raw_token = set_password_reset_token(db, user)
+        raw_token = await set_password_reset_token(db, user)
         if raw_token:
             try:
                 enqueue_password_reset_email(user.email, raw_token, user.first_name)
@@ -373,10 +365,10 @@ def forgot_password(
 
 
 @router.post("/auth/reset-password", response_model=ResetPasswordResponse)
-def reset_password_endpoint(
+async def reset_password_endpoint(
     req: ResetPasswordRequest,
     request: Request = None,  # type: ignore[assignment]
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Anonymous: consumes the reset token, sets the new password, and
     revokes every session for the account. No session is issued here."""
@@ -387,7 +379,7 @@ def reset_password_endpoint(
             detail="Too many reset attempts. Try again later.",
         )
 
-    user = get_user_by_password_reset_token(db, req.email, req.token)
+    user = await get_user_by_password_reset_token(db, req.email, req.token)
     if not user:
         record_failed_attempt(req.email, client_ip, bucket="reset_password")
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
@@ -402,9 +394,9 @@ def reset_password_endpoint(
         raise HTTPException(status_code=400, detail=str(e))
 
     clear_failed_attempts(req.email, bucket="reset_password")
-    reset_password(db, user, req.new_password)
+    await reset_password(db, user, req.new_password)
 
-    sessions = revoke_all_sessions_for_user(db, user.id)
+    sessions = await revoke_all_sessions_for_user(db, user.id)
     for s in sessions:
         mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
@@ -412,11 +404,11 @@ def reset_password_endpoint(
 
 
 @router.post("/auth/change-password")
-def change_password(
+async def change_password(
     req: ChangePasswordRequest,
     request: Request = None,  # type: ignore[assignment]
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     client_ip = request.client.host if request is not None and request.client else "unknown"
     # Keyed on user id, not email — always available from the token.
@@ -428,11 +420,11 @@ def change_password(
             detail="Too many failed attempts. Try again later.",
         )
 
-    user = get_user(db, current_user["user_id"])
+    user = await get_user(db, current_user["user_id"])
     if (
         not user
         or not user.hashed_password
-        or not verify_password(req.current_password, user.hashed_password)
+        or not await verify_password(req.current_password, user.hashed_password)
     ):
         record_failed_attempt(subject, client_ip, bucket="change_password")
         raise HTTPException(status_code=401, detail="Current password is incorrect")
@@ -448,41 +440,45 @@ def change_password(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    user.hashed_password = hash_password(req.new_password)
-    db.commit()
+    user.hashed_password = await hash_password(req.new_password)
+    await db.commit()
 
     # Revoke every other session, like logout()/delete_my_account() do; keep this one alive.
     current_session_id = current_user.get("session_id")
-    for session in get_non_revoked_sessions_for_user(db, user.id):
+    for session in await get_non_revoked_sessions_for_user(db, user.id):
         if str(session.id) == str(current_session_id):
             continue
-        _revoke_session_everywhere(db, session)
+        await _revoke_session_everywhere(db, session)
 
     return {"changed": True}
 
 
-def _revoke_session_everywhere(db: Session, session) -> None:
+async def _revoke_session_everywhere(db: AsyncSession, session) -> None:
     """Revoke a session in both stores: Postgres (`SessionModel.revoked`,
     the source of truth used by the active-sessions listing) and Redis
     (the cross-service check every service's `get_current_user` consults —
     see shared/security/session_revocation.py for why a DB lookup alone
     can't be shared across services)."""
-    revoke_session(db, session)
+    await revoke_session(db, session)
     mark_session_revoked(str(session.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
 
 @router.post("/auth/logout")
-def logout(current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)):
+async def logout(
+    current_user: dict = Depends(get_validated_user), db: AsyncSession = Depends(get_db)
+):
     session_id = current_user.get("session_id")
-    session = get_session_by_id(db, session_id) if session_id else None
+    session = await get_session_by_id(db, session_id) if session_id else None
     if session and not session.revoked:
-        _revoke_session_everywhere(db, session)
+        await _revoke_session_everywhere(db, session)
     return {"logged_out": True}
 
 
 @router.get("/auth/sessions", response_model=list[SessionSummary])
-def list_sessions(current_user: dict = Depends(get_validated_user), db: Session = Depends(get_db)):
-    sessions = get_non_revoked_sessions_for_user(db, current_user["user_id"])
+async def list_sessions(
+    current_user: dict = Depends(get_validated_user), db: AsyncSession = Depends(get_db)
+):
+    sessions = await get_non_revoked_sessions_for_user(db, current_user["user_id"])
     current_session_id = str(current_user.get("session_id") or "")
     return [
         SessionSummary(
@@ -496,24 +492,24 @@ def list_sessions(current_user: dict = Depends(get_validated_user), db: Session 
 
 
 @router.delete("/auth/sessions/{session_id}")
-def revoke_one_session(
+async def revoke_one_session(
     session_id: UUID,
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    session = get_session_by_id(db, session_id)
+    session = await get_session_by_id(db, session_id)
     if not session or str(session.user_id) != str(current_user["user_id"]):
         raise HTTPException(status_code=404, detail="Session not found")
     if not session.revoked:
-        _revoke_session_everywhere(db, session)
+        await _revoke_session_everywhere(db, session)
     return {"revoked": True}
 
 
 @router.post("/auth/impersonate", response_model=ImpersonateResponse)
-def start_impersonation(
+async def start_impersonation(
     req: ImpersonateRequest,
     current_user: dict = Depends(get_validated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     request: Request = None,  # type: ignore[assignment]
 ):
     """Stateless: no impersonation_sessions table, no refresh token — short
@@ -521,7 +517,7 @@ def start_impersonation(
     if current_user.get("role") != "superuser":
         raise HTTPException(status_code=403, detail="Superuser role required")
 
-    customer = get_customer(db, req.customer_id)
+    customer = await get_customer(db, req.customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 

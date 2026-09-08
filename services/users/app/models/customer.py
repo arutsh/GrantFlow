@@ -14,7 +14,7 @@ class CustomerModel(Base):
         GUID(),
         primary_key=True,
         index=True,
-        default=lambda: str(uuid.uuid4()),
+        default=lambda: uuid.uuid4(),
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     country: Mapped[str] = mapped_column(String, nullable=False)

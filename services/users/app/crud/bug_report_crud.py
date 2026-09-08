@@ -1,13 +1,13 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bug_report import BugReportModel
 
 
-def create_bug_report(
-    session: Session,
+async def create_bug_report(
+    session: AsyncSession,
     bug_report_id: UUID,
     user_id: UUID,
     description: str,
@@ -26,6 +26,5 @@ def create_bug_report(
         screenshot_storage_key=screenshot_storage_key,
     )
     session.add(bug_report)
-    session.commit()
-    session.refresh(bug_report)
+    await session.commit()
     return bug_report

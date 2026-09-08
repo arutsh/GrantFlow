@@ -11,8 +11,9 @@ which mock the crud layer) because the behavior under test IS the crud
 query's WHERE clause — mocking it would just assert the mock's behavior.
 """
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.crud.user_crud import get_users_by_ids, soft_delete_user
 from app.models.base import Base
@@ -21,18 +22,29 @@ from app.models.user import UserModel
 from shared.schemas.user_schema import UserRole, UserStatus
 
 
-def _make_session():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+@pytest.fixture
+async def db():
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     # UserModel.customer is lazy="joined", so the customers table has to
     # exist even for a user with customer_id=None (LEFT OUTER JOIN still
     # needs the table on the right-hand side to be a real table).
-    Base.metadata.create_all(engine, tables=[UserModel.__table__, CustomerModel.__table__])
-    return sessionmaker(bind=engine)()
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all, tables=[UserModel.__table__, CustomerModel.__table__]
+        )
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
+@pytest.mark.anyio
 class TestDeletedUserStillResolvable:
-    def test_by_ids_lookup_still_returns_the_tombstoned_user(self):
-        db = _make_session()
+    async def test_by_ids_lookup_still_returns_the_tombstoned_user(self, db):
         user = UserModel(
             email="real@example.com",
             first_name="Real",
@@ -42,12 +54,12 @@ class TestDeletedUserStillResolvable:
             hashed_password="hash",
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)  # id round-trips as UUID, not the str default (#277)
 
-        soft_delete_user(db, user)
+        await soft_delete_user(db, user)
 
-        [resolved] = get_users_by_ids(db, [user.id])
+        [resolved] = await get_users_by_ids(db, [user.id])
         assert resolved.id == user.id
         assert resolved.first_name == "Deleted"
         assert resolved.last_name == "User"

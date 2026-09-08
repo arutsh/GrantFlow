@@ -5,8 +5,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from main import app
@@ -28,20 +27,19 @@ def _token(email_verified: bool) -> str:
 
 
 @pytest.fixture
-def sessions_db():
-    # auth_routes.py declares its own module-local get_db (see
-    # project_user_routes_duplicate_get_db in memory for the sibling case in
-    # user_routes.py) — this fixture exists only so
-    # test_verified_token_is_not_blocked_by_the_verification_gate doesn't
-    # need a real Postgres reachable at settings.users_database_url, which
-    # varies with $ENV and isn't resolvable outside docker-compose.local.yml.
-    engine = create_engine(
-        "sqlite:///:memory:",
+async def sessions_db():
+    # Avoids needing a real Postgres reachable at settings.users_database_url.
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine, tables=[SessionModel.__table__])
-    return sessionmaker(bind=engine)()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[SessionModel.__table__])
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
 class TestSessionsEndpointRequiresVerifiedEmail:
@@ -54,7 +52,8 @@ class TestSessionsEndpointRequiresVerifiedEmail:
         assert resp.status_code == 403
         assert resp.json()["detail"] == "email_not_verified"
 
-    def test_verified_token_is_not_blocked_by_the_verification_gate(self, sessions_db):
+    @pytest.mark.anyio
+    async def test_verified_token_is_not_blocked_by_the_verification_gate(self, sessions_db):
         # get_current_user/get_validated_user are deliberately left
         # unmocked (see module docstring) so the gate itself runs for real;
         # only get_db is overridden, so this stays a real end-to-end check

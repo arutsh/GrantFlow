@@ -23,7 +23,6 @@ def create_attachment(
     )
     session.add(attachment)
     session.commit()
-    session.refresh(attachment)
     return attachment
 
 

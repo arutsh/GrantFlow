@@ -7,6 +7,12 @@ correctly through the shared sink builder."""
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.models.base import Base
 from app.models.privileged_access_log import PrivilegedAccessLog
 from shared.security.privileged_access import make_privileged_access_sink
 
@@ -16,6 +22,16 @@ CUSTOMER_ID = str(uuid4())
 
 def _request(method="GET", path="/api/auth/impersonate"):
     return SimpleNamespace(method=method, url=SimpleNamespace(path=path))
+
+
+@pytest.fixture
+def db():
+    """Shadows the shared async conftest `db` fixture — this sink is deliberately sync."""
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine, tables=[PrivilegedAccessLog.__table__])
+    return sessionmaker(bind=engine)()
 
 
 class TestWritePrivilegedAccessLog:

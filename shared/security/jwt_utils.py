@@ -1,6 +1,7 @@
 import os
 from passlib.context import CryptContext
 from jose import jwt
+from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Optional
@@ -29,12 +30,12 @@ IMPERSONATION_TOKEN_EXPIRE_MINUTES = int(os.getenv("IMPERSONATION_TOKEN_EXPIRE_M
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+async def hash_password(password: str) -> str:
+    return await run_in_threadpool(pwd_context.hash, password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+async def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return await run_in_threadpool(pwd_context.verify, plain_password, hashed_password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

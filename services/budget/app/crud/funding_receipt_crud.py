@@ -21,7 +21,6 @@ def create_funding_receipt(
     )
     session.add(receipt)
     session.commit()
-    session.refresh(receipt)
     return receipt
 
 

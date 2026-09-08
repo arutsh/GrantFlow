@@ -4,6 +4,7 @@ from datetime import datetime
 
 from fastapi import UploadFile, status
 from opentelemetry import trace
+from starlette.concurrency import run_in_threadpool
 
 from app.core.exceptions import DomainError
 from app.core.logging import get_logger
@@ -62,7 +63,7 @@ def _validate_and_read_screenshot(file: UploadFile) -> tuple[bytes, str]:
     return data, file.filename
 
 
-def submit_bug_report_service(
+async def submit_bug_report_service(
     db,
     valid_user: dict,
     description: str,
@@ -77,9 +78,11 @@ def submit_bug_report_service(
     if screenshot is not None:
         data, filename = _validate_and_read_screenshot(screenshot)
         screenshot_storage_key = _storage_key(bug_report_id, filename)
-        storage_client.save(screenshot_storage_key, data, content_type=screenshot.content_type)
+        await run_in_threadpool(
+            storage_client.save, screenshot_storage_key, data, content_type=screenshot.content_type
+        )
 
-    bug_report = create_bug_report(
+    bug_report = await create_bug_report(
         db,
         bug_report_id=bug_report_id,
         user_id=valid_user["user_id"],

@@ -15,15 +15,14 @@ from uuid import uuid4
 import pytest
 from fastapi import UploadFile
 from starlette.datastructures import Headers
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.exceptions import DomainError
 from app.models.base import Base
 from app.models.bug_report import BugReportModel
 from app.services.bug_report_services import MAX_SCREENSHOT_SIZE, submit_bug_report_service
-from tests.factories.user import make_valid_user
+from tests.factories.user import ValidUserFactory
 
 # Real PNG magic bytes — the content-type sniff check rejects uploads whose
 # bytes don't match their declared Content-Type, so a successful-upload test
@@ -32,7 +31,7 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"fake png content for tests"
 
 
 def _valid_user(user_id=None):
-    return make_valid_user(user_id=user_id or str(uuid4()))
+    return ValidUserFactory(user_id=user_id or str(uuid4()))
 
 
 def _make_upload_file(content: bytes, filename="screenshot.png", content_type="image/png"):
@@ -48,14 +47,18 @@ def _client_timestamp():
 
 
 @pytest.fixture
-def db():
-    engine = create_engine(
-        "sqlite:///:memory:",
+async def db():
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine, tables=[BugReportModel.__table__])
-    return sessionmaker(bind=engine)()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=[BugReportModel.__table__])
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
 @pytest.fixture
@@ -70,9 +73,10 @@ def enqueue():
         yield mock_fn
 
 
+@pytest.mark.anyio
 class TestSubmitBugReportService:
-    def test_submission_without_screenshot(self, db, storage, enqueue):
-        result = submit_bug_report_service(
+    async def test_submission_without_screenshot(self, db, storage, enqueue):
+        result = await submit_bug_report_service(
             db,
             _valid_user(),
             description="Something broke",
@@ -86,10 +90,10 @@ class TestSubmitBugReportService:
         storage.save.assert_not_called()
         enqueue.assert_called_once()
 
-    def test_submission_with_screenshot(self, db, storage, enqueue):
+    async def test_submission_with_screenshot(self, db, storage, enqueue):
         upload = _make_upload_file(PNG_BYTES)
 
-        result = submit_bug_report_service(
+        result = await submit_bug_report_service(
             db,
             _valid_user(),
             description="Something broke",
@@ -104,11 +108,11 @@ class TestSubmitBugReportService:
         storage.save.assert_called_once()
         enqueue.assert_called_once()
 
-    def test_oversized_screenshot_rejected(self, db, storage, enqueue):
+    async def test_oversized_screenshot_rejected(self, db, storage, enqueue):
         upload = _make_upload_file(b"x" * (MAX_SCREENSHOT_SIZE + 1))
 
         with pytest.raises(DomainError):
-            submit_bug_report_service(
+            await submit_bug_report_service(
                 db,
                 _valid_user(),
                 description="Something broke",
@@ -120,11 +124,11 @@ class TestSubmitBugReportService:
         storage.save.assert_not_called()
         enqueue.assert_not_called()
 
-    def test_disallowed_content_type_rejected(self, db, storage, enqueue):
+    async def test_disallowed_content_type_rejected(self, db, storage, enqueue):
         upload = _make_upload_file(b"not an image", filename="notes.txt", content_type="text/plain")
 
         with pytest.raises(DomainError):
-            submit_bug_report_service(
+            await submit_bug_report_service(
                 db,
                 _valid_user(),
                 description="Something broke",
@@ -136,13 +140,13 @@ class TestSubmitBugReportService:
         storage.save.assert_not_called()
         enqueue.assert_not_called()
 
-    def test_spoofed_content_type_rejected(self, db, storage, enqueue):
+    async def test_spoofed_content_type_rejected(self, db, storage, enqueue):
         # Declares image/png but the bytes are plain text — the allowlist
         # check alone would let this through; the magic-byte sniff must not.
         upload = _make_upload_file(b"not actually a png", filename="fake.png")
 
         with pytest.raises(DomainError):
-            submit_bug_report_service(
+            await submit_bug_report_service(
                 db,
                 _valid_user(),
                 description="Something broke",
@@ -154,10 +158,10 @@ class TestSubmitBugReportService:
         storage.save.assert_not_called()
         enqueue.assert_not_called()
 
-    def test_enqueues_with_reporter_and_last_api_call(self, db, storage, enqueue):
+    async def test_enqueues_with_reporter_and_last_api_call(self, db, storage, enqueue):
         user = _valid_user(user_id="11111111-1111-1111-1111-111111111111")
 
-        submit_bug_report_service(
+        await submit_bug_report_service(
             db,
             user,
             description="Something broke",
@@ -173,10 +177,10 @@ class TestSubmitBugReportService:
         # No active OTEL span in this test process — graceful None, not a crash.
         assert kwargs["trace_id"] is None
 
-    def test_notification_failure_does_not_fail_submission(self, db, storage, enqueue):
+    async def test_notification_failure_does_not_fail_submission(self, db, storage, enqueue):
         enqueue.side_effect = Exception("broker unreachable")
 
-        result = submit_bug_report_service(
+        result = await submit_bug_report_service(
             db,
             _valid_user(),
             description="Something broke",

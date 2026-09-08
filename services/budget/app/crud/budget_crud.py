@@ -50,7 +50,6 @@ def create_budget(
     budget = BudgetModel(**kwargs)
     session.add(budget)
     session.commit()
-    session.refresh(budget)
     return budget
 
 
@@ -93,7 +92,6 @@ def update_budget_name(session: Session, budget_id: UUID, new_name: str) -> Budg
         return None
     budget.name = new_name
     session.commit()
-    session.refresh(budget)
     return budget
 
 
@@ -160,7 +158,6 @@ def update_budget(
     elif confirmed_at is not None:
         budget.confirmed_at = confirmed_at
     session.commit()
-    session.refresh(budget)
     return budget
 
 
@@ -284,5 +281,4 @@ def recalculate_budget_total(session: Session, budget_id: UUID) -> BudgetModel |
     )
     budget.total_amount = total
     session.commit()
-    session.refresh(budget)
     return budget

@@ -26,7 +26,6 @@ def create_report(
     )
     session.add(report)
     session.commit()
-    session.refresh(report)
     return report
 
 
@@ -142,7 +141,6 @@ def update_report(
     if period_end is not None:
         report.period_end = period_end
     session.commit()
-    session.refresh(report)
     return report
 
 
@@ -168,5 +166,4 @@ def transition_status(
         report.reviewed_by = user_id
         report.review_notes = review_notes
     session.commit()
-    session.refresh(report)
     return report
