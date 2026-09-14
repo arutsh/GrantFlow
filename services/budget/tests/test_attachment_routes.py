@@ -19,8 +19,8 @@ from uuid import uuid4
 import pytest
 from fastapi import UploadFile
 from starlette.datastructures import Headers
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.exceptions import DomainError, PermissionDenied
 from app.models.base import Base
@@ -60,20 +60,28 @@ def _make_upload_file(content: bytes, filename="receipt.pdf", content_type="appl
 
 
 @pytest.fixture
-def db():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(
-        engine,
-        tables=[
-            BudgetModel.__table__,
-            BudgetLineModel.__table__,
-            BudgetCategoryModel.__table__,
-            ReportModel.__table__,
-            ReportLineModel.__table__,
-            AttachmentModel.__table__,
-        ],
+async def db():
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
-    return sessionmaker(bind=engine)()
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                BudgetModel.__table__,
+                BudgetLineModel.__table__,
+                BudgetCategoryModel.__table__,
+                ReportModel.__table__,
+                ReportLineModel.__table__,
+                AttachmentModel.__table__,
+            ],
+        )
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
 @pytest.fixture
@@ -82,7 +90,7 @@ def storage():
         yield mock_storage
 
 
-def _make_budget(db, owner_id=OWNER_ID, funding_customer_id=None):
+async def _make_budget(db, owner_id=OWNER_ID, funding_customer_id=None):
     budget = BudgetModel(
         name="Test Budget",
         owner_id=owner_id,
@@ -93,20 +101,20 @@ def _make_budget(db, owner_id=OWNER_ID, funding_customer_id=None):
         local_currency="GBP",
     )
     db.add(budget)
-    db.commit()
-    db.refresh(budget)
+    await db.commit()
+    await db.refresh(budget)
     return budget
 
 
-def _make_budget_line(db, budget_id, amount=1000.0):
+async def _make_budget_line(db, budget_id, amount=1000.0):
     line = BudgetLineModel(budget_id=budget_id, description="Admin costs", amount=amount)
     db.add(line)
-    db.commit()
-    db.refresh(line)
+    await db.commit()
+    await db.refresh(line)
     return line
 
 
-def _make_report(db, budget_id, status=ReportStatus.draft):
+async def _make_report(db, budget_id, status=ReportStatus.draft):
     report = ReportModel(
         budget_id=budget_id,
         name="Report",
@@ -115,12 +123,12 @@ def _make_report(db, budget_id, status=ReportStatus.draft):
         period_end=date(2026, 12, 31),
     )
     db.add(report)
-    db.commit()
-    db.refresh(report)
+    await db.commit()
+    await db.refresh(report)
     return report
 
 
-def _make_report_line(db, report_id, budget_line_id):
+async def _make_report_line(db, report_id, budget_line_id):
     line = ReportLineModel(
         report_id=report_id,
         budget_line_id=budget_line_id,
@@ -129,20 +137,21 @@ def _make_report_line(db, report_id, budget_line_id):
         expense_date=date(2026, 6, 15),
     )
     db.add(line)
-    db.commit()
-    db.refresh(line)
+    await db.commit()
+    await db.refresh(line)
     return line
 
 
+@pytest.mark.anyio
 class TestUploadAttachment:
-    def test_upload_happy_path(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_upload_happy_path(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         upload = _make_upload_file(PDF_BYTES)
 
-        result = upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
+        result = await upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
 
         assert result.report_line_id == report_line.id
         assert result.filename == "receipt.pdf"
@@ -152,126 +161,136 @@ class TestUploadAttachment:
         saved_key = storage.save.call_args.args[0]
         assert saved_key == result.storage_key
 
-    def test_oversized_file_rejected(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_oversized_file_rejected(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         upload = _make_upload_file(b"x" * (MAX_ATTACHMENT_SIZE + 1))
 
         with pytest.raises(DomainError):
-            upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
+            await upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
         storage.save.assert_not_called()
 
-    def test_disallowed_content_type_rejected(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_disallowed_content_type_rejected(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         upload = _make_upload_file(b"text", filename="notes.txt", content_type="text/plain")
 
         with pytest.raises(DomainError):
-            upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
+            await upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
         storage.save.assert_not_called()
 
-    def test_spoofed_content_type_rejected(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_spoofed_content_type_rejected(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         # Declares application/pdf but the bytes are plain text — allowlist
         # check alone would let this through; the magic-byte sniff must not.
         upload = _make_upload_file(b"not actually a pdf", filename="fake.pdf")
 
         with pytest.raises(DomainError):
-            upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
+            await upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
         storage.save.assert_not_called()
 
-    def test_rejected_on_non_draft_report(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_rejected_on_non_draft_report(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         upload = _make_upload_file(PDF_BYTES)
 
         with pytest.raises(DomainError):
-            upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
+            await upload_attachment_service(db, _valid_user(OWNER_ID), report_line.id, upload)
         storage.save.assert_not_called()
 
-    def test_funder_cannot_upload(self, db, storage):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_funder_cannot_upload(self, db, storage):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
         upload = _make_upload_file(PDF_BYTES)
 
         with pytest.raises(PermissionDenied):
-            upload_attachment_service(db, _valid_user(FUNDER_ID), report_line.id, upload)
+            await upload_attachment_service(db, _valid_user(FUNDER_ID), report_line.id, upload)
 
-    def test_multiple_attachments_per_line(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
+    async def test_multiple_attachments_per_line(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
 
-        upload_attachment_service(
+        await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
-        upload_attachment_service(
+        await upload_attachment_service(
             db,
             _valid_user(OWNER_ID),
             report_line.id,
             _make_upload_file(PDF_BYTES, filename="proof.pdf"),
         )
 
-        attachments = list_attachments_service(db, _valid_user(OWNER_ID), report_line.id)
+        attachments = await list_attachments_service(db, _valid_user(OWNER_ID), report_line.id)
         assert len(attachments) == 2
 
 
+@pytest.mark.anyio
 class TestDownloadAttachment:
-    def test_owner_and_funder_can_download(self, db, storage):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_owner_and_funder_can_download(self, db, storage):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
         storage.open_stream.return_value = io.BytesIO(b"pdf-bytes")
 
-        owner_result, _ = download_attachment_service(db, _valid_user(OWNER_ID), attachment.id)
-        funder_result, _ = download_attachment_service(db, _valid_user(FUNDER_ID), attachment.id)
+        owner_result, _ = await download_attachment_service(
+            db, _valid_user(OWNER_ID), attachment.id
+        )
+        funder_result, _ = await download_attachment_service(
+            db, _valid_user(FUNDER_ID), attachment.id
+        )
 
         assert owner_result.id == attachment.id
         assert funder_result.id == attachment.id
         storage.open_stream.assert_called_with(attachment.storage_key)
 
-    def test_stranger_cannot_download(self, db, storage):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_stranger_cannot_download(self, db, storage):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
 
         with pytest.raises(DomainError):
-            download_attachment_service(db, _valid_user(STRANGER_ID), attachment.id)
+            await download_attachment_service(db, _valid_user(STRANGER_ID), attachment.id)
 
 
+@pytest.mark.anyio
 class TestDownloadUrl:
-    def test_owner_and_funder_can_get_url(self, db, storage):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_owner_and_funder_can_get_url(self, db, storage):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
         storage.presigned_download_url.return_value = "https://minio.local/signed-url"
 
-        owner_url = get_attachment_download_url_service(db, _valid_user(OWNER_ID), attachment.id)
-        funder_url = get_attachment_download_url_service(db, _valid_user(FUNDER_ID), attachment.id)
+        owner_url = await get_attachment_download_url_service(
+            db, _valid_user(OWNER_ID), attachment.id
+        )
+        funder_url = await get_attachment_download_url_service(
+            db, _valid_user(FUNDER_ID), attachment.id
+        )
 
         assert owner_url == "https://minio.local/signed-url"
         assert funder_url == "https://minio.local/signed-url"
@@ -281,50 +300,51 @@ class TestDownloadUrl:
             filename=attachment.filename,
         )
 
-    def test_stranger_cannot_get_url(self, db, storage):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_stranger_cannot_get_url(self, db, storage):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
 
         with pytest.raises(DomainError):
-            get_attachment_download_url_service(db, _valid_user(STRANGER_ID), attachment.id)
+            await get_attachment_download_url_service(db, _valid_user(STRANGER_ID), attachment.id)
         storage.presigned_download_url.assert_not_called()
 
 
+@pytest.mark.anyio
 class TestDeleteAttachment:
-    def test_delete_removes_blob_and_row(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_delete_removes_blob_and_row(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
 
-        delete_attachment_service(db, _valid_user(OWNER_ID), attachment.id)
+        await delete_attachment_service(db, _valid_user(OWNER_ID), attachment.id)
 
         storage.delete.assert_called_once_with(attachment.storage_key)
-        remaining = list_attachments_service(db, _valid_user(OWNER_ID), report_line.id)
+        remaining = await list_attachments_service(db, _valid_user(OWNER_ID), report_line.id)
         assert remaining == []
 
-    def test_delete_rejected_on_non_draft_report(self, db, storage):
-        budget = _make_budget(db)
-        budget_line = _make_budget_line(db, budget.id)
-        report = _make_report(db, budget.id)
-        report_line = _make_report_line(db, report.id, budget_line.id)
-        attachment = upload_attachment_service(
+    async def test_delete_rejected_on_non_draft_report(self, db, storage):
+        budget = await _make_budget(db)
+        budget_line = await _make_budget_line(db, budget.id)
+        report = await _make_report(db, budget.id)
+        report_line = await _make_report_line(db, report.id, budget_line.id)
+        attachment = await upload_attachment_service(
             db, _valid_user(OWNER_ID), report_line.id, _make_upload_file(PDF_BYTES)
         )
         report.status = ReportStatus.submitted
-        db.commit()
+        await db.commit()
         storage.reset_mock()
 
         with pytest.raises(DomainError):
-            delete_attachment_service(db, _valid_user(OWNER_ID), attachment.id)
+            await delete_attachment_service(db, _valid_user(OWNER_ID), attachment.id)
         storage.delete.assert_not_called()
 
 

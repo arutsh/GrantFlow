@@ -23,8 +23,8 @@ MAX_ATTACHMENT_SIZE = 15 * 1024 * 1024
 ALLOWED_CONTENT_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/heic"}
 
 
-def _get_attachment_or_404(db, attachment_id: UUID):
-    attachment = get_attachment(db, attachment_id)
+async def _get_attachment_or_404(db, attachment_id: UUID):
+    attachment = await get_attachment(db, attachment_id)
     if not attachment:
         raise DomainError("Attachment Not found", status.HTTP_400_BAD_REQUEST)
     return attachment
@@ -62,9 +62,9 @@ def _sniff_content_type(data: bytes) -> str | None:
     return None
 
 
-def upload_attachment_service(db, valid_user: dict, report_line_id: UUID, file: UploadFile):
-    report_line = _get_report_line_or_404(db, report_line_id)
-    report = _get_owned_report(db, valid_user, report_line.report_id)
+async def upload_attachment_service(db, valid_user: dict, report_line_id: UUID, file: UploadFile):
+    report_line = await _get_report_line_or_404(db, report_line_id)
+    report = await _get_owned_report(db, valid_user, report_line.report_id)
     if report.status != ReportStatus.draft:
         raise DomainError(
             "Attachments can only be uploaded to a draft report", status.HTTP_400_BAD_REQUEST
@@ -92,7 +92,7 @@ def upload_attachment_service(db, valid_user: dict, report_line_id: UUID, file: 
     storage_key = _storage_key(report.budget_id, report_line_id, filename)
     storage_client.save(storage_key, data, content_type=file.content_type)
 
-    return create_attachment(
+    return await create_attachment(
         session=db,
         user_id=valid_user["user_id"],
         report_line_id=report_line_id,
@@ -103,27 +103,27 @@ def upload_attachment_service(db, valid_user: dict, report_line_id: UUID, file: 
     )
 
 
-def list_attachments_service(db, valid_user: dict, report_line_id: UUID):
-    report_line = _get_report_line_or_404(db, report_line_id)
-    report = _get_report_or_404(db, report_line.report_id)
-    get_viewable_budget(db, valid_user, report.budget_id)
-    return list_attachments(db, report_line_id=report_line_id)
+async def list_attachments_service(db, valid_user: dict, report_line_id: UUID):
+    report_line = await _get_report_line_or_404(db, report_line_id)
+    report = await _get_report_or_404(db, report_line.report_id)
+    await get_viewable_budget(db, valid_user, report.budget_id)
+    return await list_attachments(db, report_line_id=report_line_id)
 
 
-def download_attachment_service(db, valid_user: dict, attachment_id: UUID):
-    attachment = _get_attachment_or_404(db, attachment_id)
-    report_line = _get_report_line_or_404(db, attachment.report_line_id)
-    report = _get_report_or_404(db, report_line.report_id)
-    get_viewable_budget(db, valid_user, report.budget_id)
+async def download_attachment_service(db, valid_user: dict, attachment_id: UUID):
+    attachment = await _get_attachment_or_404(db, attachment_id)
+    report_line = await _get_report_line_or_404(db, attachment.report_line_id)
+    report = await _get_report_or_404(db, report_line.report_id)
+    await get_viewable_budget(db, valid_user, report.budget_id)
     stream = storage_client.open_stream(attachment.storage_key)
     return attachment, stream
 
 
-def get_attachment_download_url_service(db, valid_user: dict, attachment_id: UUID) -> str:
-    attachment = _get_attachment_or_404(db, attachment_id)
-    report_line = _get_report_line_or_404(db, attachment.report_line_id)
-    report = _get_report_or_404(db, report_line.report_id)
-    get_viewable_budget(db, valid_user, report.budget_id)
+async def get_attachment_download_url_service(db, valid_user: dict, attachment_id: UUID) -> str:
+    attachment = await _get_attachment_or_404(db, attachment_id)
+    report_line = await _get_report_line_or_404(db, attachment.report_line_id)
+    report = await _get_report_or_404(db, report_line.report_id)
+    await get_viewable_budget(db, valid_user, report.budget_id)
     return storage_client.presigned_download_url(
         attachment.storage_key,
         content_type=attachment.content_type,
@@ -131,10 +131,10 @@ def get_attachment_download_url_service(db, valid_user: dict, attachment_id: UUI
     )
 
 
-def delete_attachment_service(db, valid_user: dict, attachment_id: UUID):
-    attachment = _get_attachment_or_404(db, attachment_id)
-    report_line = _get_report_line_or_404(db, attachment.report_line_id)
-    report = _get_owned_report(db, valid_user, report_line.report_id)
+async def delete_attachment_service(db, valid_user: dict, attachment_id: UUID):
+    attachment = await _get_attachment_or_404(db, attachment_id)
+    report_line = await _get_report_line_or_404(db, attachment.report_line_id)
+    report = await _get_owned_report(db, valid_user, report_line.report_id)
     if report.status != ReportStatus.draft:
         raise DomainError(
             "Attachments can only be deleted on a draft report", status.HTTP_400_BAD_REQUEST
@@ -143,6 +143,6 @@ def delete_attachment_service(db, valid_user: dict, attachment_id: UUID):
     # fails, the result is an orphaned blob (harmless, cleaned up later),
     # never a dangling row that still looks downloadable.
     storage_key = attachment.storage_key
-    delete_attachment(db, attachment)
+    await delete_attachment(db, attachment)
     storage_client.delete(storage_key)
     return True

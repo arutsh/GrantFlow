@@ -1,7 +1,8 @@
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 
 from fastapi import status
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 from uuid import UUID
 
 from app.core.exceptions import DomainError, PermissionDenied
@@ -31,8 +32,8 @@ from app.schemas.currency_ledger_schema import (
 from app.services.report_services import _get_report_or_404, get_viewable_budget, is_owner
 
 
-@contextmanager
-def budget_ledger_lock(db, budget_id: UUID):
+@asynccontextmanager
+async def budget_ledger_lock(db, budget_id: UUID):
     """Serializes ledger-mutating operations (recording a conversion, or
     creating/editing a report line — anything that reads unconsumed-lot or
     unsatisfied-expense balances and then writes allocation rows) for one
@@ -52,7 +53,8 @@ def budget_ledger_lock(db, budget_id: UUID):
 
     No-ops outside Postgres (e.g. the sqlite-backed unit test suite), where
     advisory locks don't exist and tests run single-threaded anyway."""
-    engine = db.get_bind()
+    # get_bind() returns the plain sync-interfaced Engine, not an AsyncEngine — wrap it back.
+    engine = AsyncEngine(db.get_bind())
     if engine.dialect.name != "postgresql":
         yield
         return
@@ -64,38 +66,38 @@ def budget_ledger_lock(db, budget_id: UUID):
     # back a plain str on Postgres but a real UUID on sqlite — coerce
     # either input shape the same way rather than assuming one.
     key = UUID(str(budget_id)).int & 0x7FFFFFFFFFFFFFFF
-    with engine.connect() as conn:
-        conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
         try:
             yield
         finally:
-            conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+            await conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
-def _require_owned_budget(db, valid_user: dict, budget_id: UUID):
-    budget = get_viewable_budget(db, valid_user, budget_id)
+async def _require_owned_budget(db, valid_user: dict, budget_id: UUID):
+    budget = await get_viewable_budget(db, valid_user, budget_id)
     if not is_owner(budget, valid_user):
         raise PermissionDenied()
     return budget
 
 
-def _get_funding_receipt_or_404(db, receipt_id: UUID):
-    receipt = get_funding_receipt(db, receipt_id)
+async def _get_funding_receipt_or_404(db, receipt_id: UUID):
+    receipt = await get_funding_receipt(db, receipt_id)
     if not receipt:
         raise DomainError("Funding Receipt Not found", status.HTTP_400_BAD_REQUEST)
     return receipt
 
 
-def _get_currency_conversion_or_404(db, conversion_id: UUID):
-    conversion = get_currency_conversion(db, conversion_id)
+async def _get_currency_conversion_or_404(db, conversion_id: UUID):
+    conversion = await get_currency_conversion(db, conversion_id)
     if not conversion:
         raise DomainError("Currency Conversion Not found", status.HTTP_400_BAD_REQUEST)
     return conversion
 
 
-def record_receipt_service(db, valid_user: dict, receipt: FundingReceiptCreate):
-    budget = _require_owned_budget(db, valid_user, receipt.budget_id)
-    return create_funding_receipt(
+async def record_receipt_service(db, valid_user: dict, receipt: FundingReceiptCreate):
+    budget = await _require_owned_budget(db, valid_user, receipt.budget_id)
+    return await create_funding_receipt(
         session=db,
         user_id=valid_user["user_id"],
         budget_id=budget.id,
@@ -104,24 +106,24 @@ def record_receipt_service(db, valid_user: dict, receipt: FundingReceiptCreate):
     )
 
 
-def get_funding_receipt_service(db, valid_user: dict, receipt_id: UUID):
-    receipt = _get_funding_receipt_or_404(db, receipt_id)
-    get_viewable_budget(db, valid_user, receipt.budget_id)
+async def get_funding_receipt_service(db, valid_user: dict, receipt_id: UUID):
+    receipt = await _get_funding_receipt_or_404(db, receipt_id)
+    await get_viewable_budget(db, valid_user, receipt.budget_id)
     return receipt
 
 
-def list_funding_receipts_service(db, valid_user: dict, budget_id: UUID):
+async def list_funding_receipts_service(db, valid_user: dict, budget_id: UUID):
     # Owner or funder may view the ledger (matches the currency-ledger-ui
     # panel being visible to both) — only recording a receipt/conversion
     # stays owner-only, via _require_owned_budget below.
-    get_viewable_budget(db, valid_user, budget_id)
-    return list_funding_receipts(db, budget_id=budget_id)
+    await get_viewable_budget(db, valid_user, budget_id)
+    return await list_funding_receipts(db, budget_id=budget_id)
 
 
-def _consume_fifo(items, amount: float, create_row) -> None:
+async def _consume_fifo(items, amount: float, create_row) -> None:
     """Walks `items` (an already oldest-first-ordered list of (entity,
     available_balance) pairs), greedily drawing down `amount` against each
-    entity's balance in turn and calling create_row(entity, take) for every
+    entity's balance in turn and awaiting create_row(entity, take) for every
     partial draw. Shared by allocate_fifo_service (one expense drawing from
     many conversion lots) and _backfill_unsatisfied_expenses (one new lot
     backfilling many outstanding expenses) — same algorithm, with the roles
@@ -131,11 +133,11 @@ def _consume_fifo(items, amount: float, create_row) -> None:
         if remaining <= FLOAT_EPSILON:
             break
         take = min(remaining, balance)
-        create_row(entity, take)
+        await create_row(entity, take)
         remaining -= take
 
 
-def allocate_fifo_service(db, report_line: ReportLineModel) -> None:
+async def allocate_fifo_service(db, report_line: ReportLineModel) -> None:
     """Re-derives this report line's allocation from scratch: clears any
     existing allocation rows, then walks the budget's unconsumed conversion
     lots oldest-first, allocating the expense against them. Re-running this
@@ -144,13 +146,13 @@ def allocate_fifo_service(db, report_line: ReportLineModel) -> None:
     an existing lot is left unsatisfied (no allocation row) — the ledger
     balance is simply allowed to go negative until a later conversion
     backfills it (see record_conversion_service)."""
-    delete_allocations_for_report_line(db, report_line.id)
+    await delete_allocations_for_report_line(db, report_line.id)
     if report_line.amount is None:
         return
 
-    report = _get_report_or_404(db, report_line.report_id)
-    _consume_fifo(
-        list_unconsumed_lots(db, report.budget_id),
+    report = await _get_report_or_404(db, report_line.report_id)
+    await _consume_fifo(
+        await list_unconsumed_lots(db, report.budget_id),
         report_line.amount,
         lambda conversion, take: create_allocation(
             session=db,
@@ -161,15 +163,15 @@ def allocate_fifo_service(db, report_line: ReportLineModel) -> None:
     )
 
 
-def _backfill_unsatisfied_expenses(
+async def _backfill_unsatisfied_expenses(
     db, budget_id: UUID, conversion: CurrencyConversionModel
 ) -> None:
     """Before any of a newly recorded conversion's balance is available to
     new expenses, satisfy this budget's outstanding unsatisfied report-line
     expenses oldest-first — so a weekend petty-cash expense converted the
     following Monday still traces to that specific conversion."""
-    _consume_fifo(
-        list_unsatisfied_report_lines(db, budget_id),
+    await _consume_fifo(
+        await list_unsatisfied_report_lines(db, budget_id),
         conversion.local_amount,
         lambda report_line, take: create_allocation(
             session=db,
@@ -180,10 +182,10 @@ def _backfill_unsatisfied_expenses(
     )
 
 
-def record_conversion_service(db, valid_user: dict, conversion: CurrencyConversionCreate):
-    budget = _require_owned_budget(db, valid_user, conversion.budget_id)
-    with budget_ledger_lock(db, budget.id):
-        new_conversion = create_currency_conversion(
+async def record_conversion_service(db, valid_user: dict, conversion: CurrencyConversionCreate):
+    budget = await _require_owned_budget(db, valid_user, conversion.budget_id)
+    async with budget_ledger_lock(db, budget.id):
+        new_conversion = await create_currency_conversion(
             session=db,
             user_id=valid_user["user_id"],
             budget_id=budget.id,
@@ -191,34 +193,33 @@ def record_conversion_service(db, valid_user: dict, conversion: CurrencyConversi
             local_amount=conversion.local_amount,
             converted_at=conversion.converted_at,
         )
-        _backfill_unsatisfied_expenses(db, budget.id, new_conversion)
+        await _backfill_unsatisfied_expenses(db, budget.id, new_conversion)
     return new_conversion
 
 
-def get_currency_conversion_service(db, valid_user: dict, conversion_id: UUID):
-    conversion = _get_currency_conversion_or_404(db, conversion_id)
-    get_viewable_budget(db, valid_user, conversion.budget_id)
+async def get_currency_conversion_service(db, valid_user: dict, conversion_id: UUID):
+    conversion = await _get_currency_conversion_or_404(db, conversion_id)
+    await get_viewable_budget(db, valid_user, conversion.budget_id)
     return conversion
 
 
-def list_currency_conversions_service(db, valid_user: dict, budget_id: UUID):
-    get_viewable_budget(db, valid_user, budget_id)
-    return list_currency_conversions(db, budget_id=budget_id)
+async def list_currency_conversions_service(db, valid_user: dict, budget_id: UUID):
+    await get_viewable_budget(db, valid_user, budget_id)
+    return await list_currency_conversions(db, budget_id=budget_id)
 
 
-def get_ledger_balance_service(db, valid_user: dict, budget_id: UUID) -> LedgerBalance:
+async def get_ledger_balance_service(db, valid_user: dict, budget_id: UUID) -> LedgerBalance:
     """Per-currency balances, never blended: the unconverted donor-currency
     balance (receipts not yet converted) and the unconsumed local-currency
     balance (converted funds not yet allocated to a report-line expense,
     which can be negative — see allocate_fifo_service). Owner or funder may
     read this, matching the other ledger read endpoints."""
-    budget = get_viewable_budget(db, valid_user, budget_id)
+    budget = await get_viewable_budget(db, valid_user, budget_id)
 
-    conversions = list_currency_conversions(db, budget_id=budget_id)
-    donor_balance = sum(r.amount for r in list_funding_receipts(db, budget_id=budget_id)) - sum(
-        c.donor_amount for c in conversions
-    )
-    local_balance = sum(c.local_amount for c in conversions) - sum_report_line_amounts(
+    conversions = await list_currency_conversions(db, budget_id=budget_id)
+    receipts = await list_funding_receipts(db, budget_id=budget_id)
+    donor_balance = sum(r.amount for r in receipts) - sum(c.donor_amount for c in conversions)
+    local_balance = sum(c.local_amount for c in conversions) - await sum_report_line_amounts(
         db, budget_id
     )
 

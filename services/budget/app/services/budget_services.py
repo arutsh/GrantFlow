@@ -91,7 +91,7 @@ async def create_budget_service(
         validate_donor_grantee_relationship(
             budget.funding_customer_id, owner_id, raise_domain_error=True
         )
-    new_budget = create_budget(
+    new_budget = await create_budget(
         session=db,
         user_id=valid_user["user_id"],
         name=budget.name,
@@ -106,6 +106,7 @@ async def create_budget_service(
         total_amount=budget.total_amount,
         donor_total_amount=budget.donor_total_amount,
         estimated_exchange_rate=budget.estimated_exchange_rate,
+        load_lines=include_user_datails,
     )
     if not include_user_datails:
         return new_budget
@@ -183,8 +184,13 @@ def _effective_funder_after_update(
     return existing.funding_customer_id, existing.external_funder_name
 
 
-def _resolve_updatable_budget(
-    budget_id: UUID, valid_user: dict, is_confirm_attempt: bool, db
+async def _resolve_updatable_budget(
+    budget_id: UUID,
+    valid_user: dict,
+    is_confirm_attempt: bool,
+    db,
+    load_lines: bool = False,
+    load_reports: bool = False,
 ) -> tuple[BudgetModel, bool]:
     """Authorization for PATCH /budgets/{id}. Returns (budget, is_funder_confirm).
 
@@ -196,7 +202,7 @@ def _resolve_updatable_budget(
     catching the owner-lookup's not-found error, so both paths are plain
     reads with no exception-driven control flow between them.
     """
-    budget = get_budget(db, budget_id)
+    budget = await get_budget(db, budget_id, load_lines=load_lines, load_reports=load_reports)
     if not budget:
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
 
@@ -230,8 +236,8 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
     # see the attempt regardless of what else is in the payload.
     is_confirm_attempt = budget.status == BudgetStatus.confirmed
 
-    valid_budget, is_funder_confirm = _resolve_updatable_budget(
-        budget_id, valid_user, is_confirm_attempt, db
+    valid_budget, is_funder_confirm = await _resolve_updatable_budget(
+        budget_id, valid_user, is_confirm_attempt, db, load_reports=True
     )
 
     if is_funder_confirm and _is_metadata_edit(budget):
@@ -326,9 +332,9 @@ async def update_budget_service(budget_id: UUID, budget: BudgetCreate, valid_use
         # and makes it atomic: if anything below still fails, nothing here
         # is persisted either.
         for report in list(valid_budget.reports):
-            db.delete(report)
+            await db.delete(report)
 
-    updated_budget = update_budget(
+    updated_budget = await update_budget(
         session=db,
         budget_id=budget_id,
         name=budget.name,
@@ -357,7 +363,7 @@ async def restore_budget_service(budget_id: UUID, valid_user: dict, db):
     design.md's "Owner-only authorization" decision), so is_confirm_attempt
     is always False here even though the target may end up `confirmed`.
     """
-    valid_budget, _ = _resolve_updatable_budget(budget_id, valid_user, False, db)
+    valid_budget, _ = await _resolve_updatable_budget(budget_id, valid_user, False, db)
 
     if valid_budget.status != BudgetStatus.archived:
         raise DomainError(
@@ -368,7 +374,7 @@ async def restore_budget_service(budget_id: UUID, valid_user: dict, db):
     restoring_to_confirmed = bool(valid_budget.confirmed_at and valid_budget.start_date)
     target_status = BudgetStatus.confirmed if restoring_to_confirmed else BudgetStatus.draft
 
-    updated_budget = update_budget(
+    updated_budget = await update_budget(
         session=db,
         budget_id=budget_id,
         status=target_status,
@@ -386,7 +392,9 @@ async def save_budget_as_template_service(
     """Promotes an unedited Excel-import budget into a reusable DonorTemplateModel."""
     from app.crud.budget_donor_template_crud import create_donor_template
 
-    valid_budget, _ = _resolve_updatable_budget(budget_id, valid_user, False, db)
+    valid_budget, _ = await _resolve_updatable_budget(
+        budget_id, valid_user, False, db, load_lines=True
+    )
 
     if not _can_save_as_template(valid_budget):
         raise DomainError(
@@ -396,7 +404,7 @@ async def save_budget_as_template_service(
             status.HTTP_400_BAD_REQUEST,
         )
 
-    template = create_donor_template(
+    template = await create_donor_template(
         db,
         name=name,
         fingerprint=valid_budget.excel_import_fingerprint,
@@ -405,7 +413,7 @@ async def save_budget_as_template_service(
 
     if valid_budget.donor_template_id is None:
         valid_budget.donor_template_id = template.id
-        db.commit()
+        await db.commit()
 
     return template
 
@@ -413,7 +421,11 @@ async def save_budget_as_template_service(
 async def get_budget_service(budget_id, valid_user, db, include_user_details: bool = False):
 
     customer_id = valid_user.get("customer_id")
-    budget = get_budget(db, budget_id, customer_id) if customer_id else None
+    budget = (
+        await get_budget(db, budget_id, customer_id, load_lines=include_user_details)
+        if customer_id
+        else None
+    )
     if not budget:
         raise DomainError(
             "Budget Not found",
@@ -440,7 +452,7 @@ async def get_viewable_budget_service(
     """Like get_budget_service, but a donor who funds this budget (not just its
     owner) can also view it. Used only by the read/detail route — update and
     delete keep the stricter owner-only get_budget_service unchanged."""
-    budget = get_budget(db, budget_id)
+    budget = await get_budget(db, budget_id, load_lines=include_user_details)
     if not budget or not _can_view_budget(budget, valid_user):
         raise DomainError(
             "Budget Not found",
@@ -457,17 +469,19 @@ async def list_budget_service(valid_user, db, include_user_details: bool = False
     if not customer_id:
         return []
 
-    budgets = list_budgets(db, customer_id=customer_id)
+    budgets = await list_budgets(db, customer_id=customer_id, load_lines=include_user_details)
     if not include_user_details:
         return budgets
     return await populate_budget_with_user_details(budgets=budgets, valid_user=valid_user)
 
 
-def get_funded_budgets_summary_service(funding_customer_id: UUID, db) -> dict:
-    return get_funded_budgets_summary(db, funding_customer_id)
+async def get_funded_budgets_summary_service(funding_customer_id: UUID, db) -> dict:
+    return await get_funded_budgets_summary(db, funding_customer_id)
 
 
-def get_grantee_dashboard_summary_service(customer_id: UUID | None, db) -> GranteeDashboardSummary:
+async def get_grantee_dashboard_summary_service(
+    customer_id: UUID | None, db
+) -> GranteeDashboardSummary:
     """Grantee-facing dashboard aggregation (GET /budgets/dashboard/summary).
     Owner-scoped only (no donor/superuser branch — see design.md's "no new
     permission model" non-goal). Currency figures are always grouped by
@@ -476,11 +490,11 @@ def get_grantee_dashboard_summary_service(customer_id: UUID | None, db) -> Grant
     if not customer_id:
         return GranteeDashboardSummary()
 
-    status_counts = count_budgets_by_status(db, customer_id)
-    committed = sum_committed_by_currency(db, customer_id)
-    received = sum_received_by_currency(db, customer_id)
-    converted = sum_converted_by_currency(db, customer_id)
-    breakdown_rows = budget_breakdown(db, customer_id)
+    status_counts = await count_budgets_by_status(db, customer_id)
+    committed = await sum_committed_by_currency(db, customer_id)
+    received = await sum_received_by_currency(db, customer_id)
+    converted = await sum_converted_by_currency(db, customer_id)
+    breakdown_rows = await budget_breakdown(db, customer_id)
 
     received_map = dict(received)
     converted_map = dict(converted)
@@ -531,7 +545,7 @@ def get_grantee_dashboard_summary_service(customer_id: UUID | None, db) -> Grant
 
 # TODO return in pydantic?
 async def get_funded_grantees_service(funding_customer_id: UUID, valid_user: dict, db) -> list:
-    grantees = get_funded_grantees(db, funding_customer_id)
+    grantees = await get_funded_grantees(db, funding_customer_id)
     owner_ids = [g["owner_id"] for g in grantees if g["owner_id"]]
     try:
         customers_map = await get_customers_by_ids(owner_ids, valid_user.get("token", ""))
@@ -551,7 +565,7 @@ async def get_funded_grantees_service(funding_customer_id: UUID, valid_user: dic
 
 
 async def get_funded_budgets_service(funding_customer_id: UUID, valid_user: dict, db) -> list:
-    budgets = list_budgets(db, funding_customer_id=funding_customer_id)
+    budgets = await list_budgets(db, funding_customer_id=funding_customer_id, load_lines=True)
     return await populate_budget_with_user_details(budgets=budgets, valid_user=valid_user)
 
 
@@ -561,9 +575,9 @@ async def delete_budget_service(budget_id: UUID, valid_user: dict, db):
 
     if valid_budget:
         try:
-            return delete_budget(session=db, budget=valid_budget)
+            return await delete_budget(session=db, budget=valid_budget)
         except IntegrityError:
-            db.rollback()
+            await db.rollback()
             raise DomainError(
                 "Budget cannot be deleted while it has existing reports, funding receipts, "
                 "or currency conversions",
@@ -608,7 +622,7 @@ async def create_budget_with_lines_service(
         )
         set_span_attributes(budget_id=new_budget.id)
 
-        categories_by_name = get_or_create_categories_by_names_service(
+        categories_by_name = await get_or_create_categories_by_names_service(
             db,
             valid_user,
             budget_id=new_budget.id,
@@ -626,10 +640,10 @@ async def create_budget_with_lines_service(
                 }
             )
 
-        created_lines = bulk_create_budget_lines(
+        created_lines = await bulk_create_budget_lines(
             db, valid_user["user_id"], new_budget.id, line_specs
         )
-        recalculate_budget_total(db, new_budget.id)
+        await recalculate_budget_total(db, new_budget.id)
 
         # Excel-import provenance, set only by chat's import-excel orchestration.
         if any(
@@ -645,7 +659,7 @@ async def create_budget_with_lines_service(
             new_budget.excel_import_fingerprint = request.excel_import_fingerprint
             new_budget.excel_import_structure = request.excel_import_structure
             new_budget.excel_import_lines_locked_count = request.excel_import_lines_locked_count
-            db.commit()
+            await db.commit()
 
         from app.schemas.budget_line_schema import BudgetLine
 
@@ -658,16 +672,16 @@ async def create_budget_with_lines_service(
     except (HTTPException, DomainError):
         # Validation/permission errors — roll back any lines created before re-raising
         for line in reversed(created_lines):
-            delete_budget_line(db, line)
+            await delete_budget_line(db, line)
         if new_budget:
-            delete_budget(db, new_budget)
+            await delete_budget(db, new_budget)
         raise
     except Exception as e:
         # Unexpected DB/infra error — compensating transaction then 500
         for line in reversed(created_lines):
-            delete_budget_line(db, line)
+            await delete_budget_line(db, line)
         if new_budget:
-            delete_budget(db, new_budget)
+            await delete_budget(db, new_budget)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create budget with lines. Changes have been rolled back.",
@@ -739,6 +753,7 @@ def _budget_update_response(budget: BudgetModel) -> BudgetUpdate:
 
 
 async def populate_budget_with_user_details(budgets: List[BudgetModel], valid_user: dict):
+    # can_save_as_template (below) reads .lines — callers must pass load_lines=True upstream.
     # Collect unique user and customer IDs (str: lookup maps below are keyed by string ids)
     user_ids = {str(b.created_by) for b in budgets if b.created_by}
     user_ids |= {str(b.updated_by) for b in budgets if b.updated_by}

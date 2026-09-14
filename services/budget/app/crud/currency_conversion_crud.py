@@ -1,7 +1,7 @@
 from datetime import date
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.models.currency_ledger import CurrencyConversionModel, ReportLineConversionAllocationModel
@@ -12,8 +12,8 @@ from app.models.report import ReportLineModel, ReportModel
 FLOAT_EPSILON = 1e-9
 
 
-def create_currency_conversion(
-    session: Session,
+async def create_currency_conversion(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     donor_amount: float,
@@ -29,31 +29,31 @@ def create_currency_conversion(
         updated_by=user_id,
     )
     session.add(conversion)
-    session.commit()
+    await session.commit()
     return conversion
 
 
-def get_currency_conversion(
-    session: Session, conversion_id: UUID
+async def get_currency_conversion(
+    session: AsyncSession, conversion_id: UUID
 ) -> CurrencyConversionModel | None:
-    return (
-        session.query(CurrencyConversionModel)
-        .filter(CurrencyConversionModel.id == conversion_id)
-        .first()
+    result = await session.execute(
+        select(CurrencyConversionModel).where(CurrencyConversionModel.id == conversion_id)
     )
+    return result.scalar_one_or_none()
 
 
-def list_currency_conversions(
-    session: Session, budget_id: UUID | None = None
+async def list_currency_conversions(
+    session: AsyncSession, budget_id: UUID | None = None
 ) -> list[CurrencyConversionModel]:
-    query = session.query(CurrencyConversionModel)
+    query = select(CurrencyConversionModel)
     if budget_id:
-        query = query.filter(CurrencyConversionModel.budget_id == budget_id)
-    return query.order_by(CurrencyConversionModel.converted_at).all()
+        query = query.where(CurrencyConversionModel.budget_id == budget_id)
+    result = await session.execute(query.order_by(CurrencyConversionModel.converted_at))
+    return list(result.scalars().all())
 
 
-def create_allocation(
-    session: Session,
+async def create_allocation(
+    session: AsyncSession,
     report_line_id: UUID,
     conversion_id: UUID,
     amount_allocated: float,
@@ -64,29 +64,29 @@ def create_allocation(
         amount_allocated=amount_allocated,
     )
     session.add(allocation)
-    session.commit()
+    await session.commit()
     return allocation
 
 
-def delete_allocations_for_report_line(session: Session, report_line_id: UUID) -> None:
+async def delete_allocations_for_report_line(session: AsyncSession, report_line_id: UUID) -> None:
     """Clears a report line's existing allocation rows so it can be safely
     re-derived from scratch (see allocate_fifo_service)."""
-    (
-        session.query(ReportLineConversionAllocationModel)
-        .filter(ReportLineConversionAllocationModel.report_line_id == report_line_id)
-        .delete()
+    await session.execute(
+        delete(ReportLineConversionAllocationModel).where(
+            ReportLineConversionAllocationModel.report_line_id == report_line_id
+        )
     )
-    session.commit()
+    await session.commit()
 
 
-def list_unconsumed_lots(
-    session: Session, budget_id: UUID
+async def list_unconsumed_lots(
+    session: AsyncSession, budget_id: UUID
 ) -> list[tuple[CurrencyConversionModel, float]]:
     """This budget's currency conversions with remaining (unallocated)
     balance, oldest-converted first — the FIFO order expenses draw down
     against. One grouped-aggregate query, not one sum-query per conversion."""
     allocated = (
-        session.query(
+        select(
             ReportLineConversionAllocationModel.conversion_id.label("conversion_id"),
             func.sum(ReportLineConversionAllocationModel.amount_allocated).label("allocated"),
         )
@@ -96,31 +96,32 @@ def list_unconsumed_lots(
     remaining = (
         CurrencyConversionModel.local_amount - func.coalesce(allocated.c.allocated, 0.0)
     ).label("remaining")
-    rows = (
-        session.query(CurrencyConversionModel, remaining)
+    result = await session.execute(
+        select(CurrencyConversionModel, remaining)
         .outerjoin(allocated, allocated.c.conversion_id == CurrencyConversionModel.id)
-        .filter(CurrencyConversionModel.budget_id == budget_id)
+        .where(CurrencyConversionModel.budget_id == budget_id)
         .order_by(CurrencyConversionModel.converted_at, CurrencyConversionModel.created_at)
-        .all()
     )
+    rows = result.all()
     return [(conversion, remaining) for conversion, remaining in rows if remaining > FLOAT_EPSILON]
 
 
-def sum_report_line_amounts(session: Session, budget_id: UUID) -> float:
+async def sum_report_line_amounts(session: AsyncSession, budget_id: UUID) -> float:
     """Total of every report-line amount for this budget, regardless of
     allocation state — used to compute the ledger's unconsumed
     local-currency balance."""
     total = (
-        session.query(func.sum(ReportLineModel.amount))
-        .join(ReportModel, ReportLineModel.report_id == ReportModel.id)
-        .filter(ReportModel.budget_id == budget_id)
-        .scalar()
-    )
+        await session.execute(
+            select(func.sum(ReportLineModel.amount))
+            .join(ReportModel, ReportLineModel.report_id == ReportModel.id)
+            .where(ReportModel.budget_id == budget_id)
+        )
+    ).scalar()
     return total or 0.0
 
 
-def list_unsatisfied_report_lines(
-    session: Session, budget_id: UUID
+async def list_unsatisfied_report_lines(
+    session: AsyncSession, budget_id: UUID
 ) -> list[tuple[ReportLineModel, float]]:
     """This budget's report lines whose amount isn't yet fully covered by
     existing allocations, oldest-created first — walked to retroactively
@@ -128,7 +129,7 @@ def list_unsatisfied_report_lines(
     2026-07-26 amended note). One grouped-aggregate query, not one
     sum-query per report line."""
     allocated = (
-        session.query(
+        select(
             ReportLineConversionAllocationModel.report_line_id.label("report_line_id"),
             func.sum(ReportLineConversionAllocationModel.amount_allocated).label("allocated"),
         )
@@ -138,12 +139,12 @@ def list_unsatisfied_report_lines(
     remaining = (ReportLineModel.amount - func.coalesce(allocated.c.allocated, 0.0)).label(
         "remaining"
     )
-    rows = (
-        session.query(ReportLineModel, remaining)
+    result = await session.execute(
+        select(ReportLineModel, remaining)
         .join(ReportModel, ReportLineModel.report_id == ReportModel.id)
         .outerjoin(allocated, allocated.c.report_line_id == ReportLineModel.id)
-        .filter(ReportModel.budget_id == budget_id, ReportLineModel.amount.isnot(None))
+        .where(ReportModel.budget_id == budget_id, ReportLineModel.amount.isnot(None))
         .order_by(ReportLineModel.created_at, ReportLineModel.id)
-        .all()
     )
+    rows = result.all()
     return [(line, remaining) for line, remaining in rows if remaining > FLOAT_EPSILON]

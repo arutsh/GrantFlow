@@ -1,11 +1,12 @@
 from datetime import date
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.report import ReportLineModel
 from uuid import UUID
 
 
-def create_report_line(
-    session: Session,
+async def create_report_line(
+    session: AsyncSession,
     user_id: UUID,
     report_id: UUID,
     budget_line_id: UUID,
@@ -25,23 +26,29 @@ def create_report_line(
         updated_by=user_id,
     )
     session.add(report_line)
-    session.commit()
+    await session.commit()
     return report_line
 
 
-def get_report_line(session: Session, report_line_id: UUID) -> ReportLineModel | None:
-    return session.query(ReportLineModel).filter(ReportLineModel.id == report_line_id).first()
+async def get_report_line(session: AsyncSession, report_line_id: UUID) -> ReportLineModel | None:
+    result = await session.execute(
+        select(ReportLineModel).where(ReportLineModel.id == report_line_id)
+    )
+    return result.scalar_one_or_none()
 
 
-def list_report_lines(session: Session, report_id: UUID | None = None) -> list[ReportLineModel]:
-    query = session.query(ReportLineModel)
+async def list_report_lines(
+    session: AsyncSession, report_id: UUID | None = None
+) -> list[ReportLineModel]:
+    query = select(ReportLineModel)
     if report_id:
-        query = query.filter(ReportLineModel.report_id == report_id)
-    return query.all()
+        query = query.where(ReportLineModel.report_id == report_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def update_report_line(
-    session: Session,
+async def update_report_line(
+    session: AsyncSession,
     report_line: ReportLineModel,
     description: str | None = None,
     amount: float | None = None,
@@ -56,11 +63,11 @@ def update_report_line(
         report_line.expense_date = expense_date
     if extra_fields is not None:
         report_line.extra_fields = {**(report_line.extra_fields or {}), **extra_fields}
-    session.commit()
+    await session.commit()
     return report_line
 
 
-def delete_report_line(session: Session, report_line: ReportLineModel) -> bool:
-    session.delete(report_line)
-    session.commit()
+async def delete_report_line(session: AsyncSession, report_line: ReportLineModel) -> bool:
+    await session.delete(report_line)
+    await session.commit()
     return True

@@ -1,12 +1,13 @@
 from datetime import date
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.currency_ledger import FundingReceiptModel
 from uuid import UUID
 
 
-def create_funding_receipt(
-    session: Session,
+async def create_funding_receipt(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     amount: float,
@@ -20,18 +21,24 @@ def create_funding_receipt(
         updated_by=user_id,
     )
     session.add(receipt)
-    session.commit()
+    await session.commit()
     return receipt
 
 
-def get_funding_receipt(session: Session, receipt_id: UUID) -> FundingReceiptModel | None:
-    return session.query(FundingReceiptModel).filter(FundingReceiptModel.id == receipt_id).first()
+async def get_funding_receipt(
+    session: AsyncSession, receipt_id: UUID
+) -> FundingReceiptModel | None:
+    result = await session.execute(
+        select(FundingReceiptModel).where(FundingReceiptModel.id == receipt_id)
+    )
+    return result.scalar_one_or_none()
 
 
-def list_funding_receipts(
-    session: Session, budget_id: UUID | None = None
+async def list_funding_receipts(
+    session: AsyncSession, budget_id: UUID | None = None
 ) -> list[FundingReceiptModel]:
-    query = session.query(FundingReceiptModel)
+    query = select(FundingReceiptModel)
     if budget_id:
-        query = query.filter(FundingReceiptModel.budget_id == budget_id)
-    return query.order_by(FundingReceiptModel.received_at).all()
+        query = query.where(FundingReceiptModel.budget_id == budget_id)
+    result = await session.execute(query.order_by(FundingReceiptModel.received_at))
+    return list(result.scalars().all())

@@ -216,14 +216,14 @@ class TestMetadataLockOnConfirmed:
                 asyncio.run(update_budget_service(existing.id, payload, _valid_user(), DB))
 
 
+@pytest.mark.anyio
 class TestClearingDonorFields:
     """Regression test: update_budget's CRUD used to treat an incoming None
     the same as "field omitted", so blanking the donor commitment/rate in
-    the edit form could never actually clear them — the old value silently
-    survived every save (see update_budget_service's donor_total_amount_set/
-    estimated_exchange_rate_set kwargs)."""
+    the edit form could never actually clear them (see update_budget_service's
+    donor_total_amount_set/estimated_exchange_rate_set kwargs)."""
 
-    def test_donor_total_amount_and_rate_can_be_cleared(self, db):
+    async def test_donor_total_amount_and_rate_can_be_cleared(self, db):
         from app.models.budget import BudgetModel
 
         budget = BudgetModel(
@@ -234,23 +234,21 @@ class TestClearingDonorFields:
             estimated_exchange_rate=0.8,
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(donor_total_amount=None, estimated_exchange_rate=None)
 
         with patch("app.services.budget_services.validate_customer_can_fund", return_value=None):
-            import asyncio
-
-            result = asyncio.run(update_budget_service(budget.id, payload, _valid_user(), db))
+            result = await update_budget_service(budget.id, payload, _valid_user(), db)
 
         assert result.donor_total_amount is None
         assert result.estimated_exchange_rate is None
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.donor_total_amount is None
         assert budget.estimated_exchange_rate is None
 
-    def test_omitting_the_fields_leaves_them_unchanged(self, db):
+    async def test_omitting_the_fields_leaves_them_unchanged(self, db):
         from app.models.budget import BudgetModel
 
         budget = BudgetModel(
@@ -261,37 +259,32 @@ class TestClearingDonorFields:
             estimated_exchange_rate=0.8,
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(name="Renamed")
 
         with patch("app.services.budget_services.validate_customer_can_fund", return_value=None):
-            import asyncio
-
-            result = asyncio.run(update_budget_service(budget.id, payload, _valid_user(), db))
+            result = await update_budget_service(budget.id, payload, _valid_user(), db)
 
         assert result.name == "Renamed"
         assert result.donor_total_amount == 10000
         assert result.estimated_exchange_rate == 0.8
 
 
-def _asyncio_run_update(budget_id, payload, db):
-    import asyncio
-
-    return asyncio.run(update_budget_service(budget_id, payload, _valid_user(), db))
+async def _run_update(budget_id, payload, db):
+    return await update_budget_service(budget_id, payload, _valid_user(), db)
 
 
+@pytest.mark.anyio
 class TestClearingFundingCustomerId:
     """Regression test: like donor_total_amount/estimated_exchange_rate above,
     update_budget's CRUD used to treat an incoming funding_customer_id=None
-    the same as "field omitted" — so a grantee switching a budget from a
-    donor-linked funder back to a free-text one could never actually clear
-    the old funding_customer_id. Now derived from external_funder_name being
+    the same as "field omitted" — now derived from external_funder_name being
     explicitly sent alongside it (the two are either/or) rather than a
     dedicated _set flag — see update_budget's combination comment."""
 
-    def test_funding_customer_id_can_be_cleared(self, db):
+    async def test_funding_customer_id_can_be_cleared(self, db):
         from app.models.budget import BudgetModel
 
         donor_id = uuid4()
@@ -302,19 +295,19 @@ class TestClearingFundingCustomerId:
             funding_customer_id=donor_id,
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(funding_customer_id=None, external_funder_name="Custom Funder")
 
-        result = _asyncio_run_update(budget.id, payload, db)
+        result = await _run_update(budget.id, payload, db)
 
         assert result.funding_customer_id is None
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.funding_customer_id is None
         assert budget.external_funder_name == "Custom Funder"
 
-    def test_omitting_funding_customer_id_leaves_it_unchanged(self, db):
+    async def test_omitting_funding_customer_id_leaves_it_unchanged(self, db):
         from app.models.budget import BudgetModel
 
         donor_id = uuid4()
@@ -325,17 +318,17 @@ class TestClearingFundingCustomerId:
             funding_customer_id=donor_id,
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(name="Renamed")
 
-        result = _asyncio_run_update(budget.id, payload, db)
+        result = await _run_update(budget.id, payload, db)
 
         assert result.name == "Renamed"
         assert str(result.funding_customer_id) == str(donor_id)
 
-    def test_funding_customer_id_can_be_set_from_unset(self, db):
+    async def test_funding_customer_id_can_be_set_from_unset(self, db):
         from app.models.budget import BudgetModel
 
         budget = BudgetModel(
@@ -345,32 +338,35 @@ class TestClearingFundingCustomerId:
             external_funder_name="Custom Funder",
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         donor_id = uuid4()
         payload = BudgetUpdate(funding_customer_id=donor_id, external_funder_name="")
 
-        with patch(
-            "app.services.budget_services.validate_customer_can_fund", return_value=None
-        ), patch(
-            "app.services.budget_services.validate_donor_grantee_relationship", return_value=None
+        with (
+            patch("app.services.budget_services.validate_customer_can_fund", return_value=None),
+            patch(
+                "app.services.budget_services.validate_donor_grantee_relationship",
+                return_value=None,
+            ),
         ):
-            result = _asyncio_run_update(budget.id, payload, db)
+            result = await _run_update(budget.id, payload, db)
 
         assert str(result.funding_customer_id) == str(donor_id)
-        db.refresh(budget)
+        await db.refresh(budget)
         assert str(budget.funding_customer_id) == str(donor_id)
         assert budget.external_funder_name == ""
 
 
+@pytest.mark.anyio
 class TestFunderEitherOrRequired:
     """A budget must always have either an approved donor or a funder name —
     enforced at creation by BudgetCreate.check_funder, but nothing enforced
     the same rule on PATCH until now, so an edit could silently clear both
     and leave the budget with neither."""
 
-    def test_clearing_both_funder_fields_is_rejected(self, db):
+    async def test_clearing_both_funder_fields_is_rejected(self, db):
         from app.models.budget import BudgetModel
 
         budget = BudgetModel(
@@ -380,15 +376,15 @@ class TestFunderEitherOrRequired:
             funding_customer_id=uuid4(),
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(funding_customer_id=None, external_funder_name="")
 
         with pytest.raises((DomainError, HTTPException)):
-            _asyncio_run_update(budget.id, payload, db)
+            await _run_update(budget.id, payload, db)
 
-    def test_clearing_external_funder_name_with_no_donor_linked_is_rejected(self, db):
+    async def test_clearing_external_funder_name_with_no_donor_linked_is_rejected(self, db):
         from app.models.budget import BudgetModel
 
         budget = BudgetModel(
@@ -398,20 +394,18 @@ class TestFunderEitherOrRequired:
             external_funder_name="Custom Funder",
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(external_funder_name="")
 
         with pytest.raises((DomainError, HTTPException)):
-            _asyncio_run_update(budget.id, payload, db)
+            await _run_update(budget.id, payload, db)
 
-    def test_resaving_the_same_donor_alongside_other_edits_is_accepted(self, db):
-        """Sanity check: the either/or guard only fires when the resulting
-        state has neither, not whenever the funder fields are touched — the
-        "full metadata every save" convention means every edit form resends
-        the current donor (or "" for a free-text funder) on every save, even
-        when the funder itself wasn't touched."""
+    async def test_resaving_the_same_donor_alongside_other_edits_is_accepted(self, db):
+        """The either/or guard only fires when the resulting state has
+        neither — every edit form resends the current donor even when the
+        funder itself wasn't touched."""
         from app.models.budget import BudgetModel
 
         donor_id = uuid4()
@@ -422,8 +416,8 @@ class TestFunderEitherOrRequired:
             funding_customer_id=donor_id,
         )
         db.add(budget)
-        db.commit()
-        db.refresh(budget)
+        await db.commit()
+        await db.refresh(budget)
 
         payload = BudgetUpdate(
             name="Renamed", funding_customer_id=donor_id, external_funder_name=""
@@ -439,7 +433,7 @@ class TestFunderEitherOrRequired:
                 return_value=None,
             ),
         ):
-            result = _asyncio_run_update(budget.id, payload, db)
+            result = await _run_update(budget.id, payload, db)
 
         assert result.name == "Renamed"
         assert str(result.funding_customer_id) == str(donor_id)

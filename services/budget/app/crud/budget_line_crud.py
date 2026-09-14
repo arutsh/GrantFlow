@@ -1,12 +1,14 @@
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.models.budget import BudgetLineModel, BudgetModel
 from uuid import UUID
 
 from app.schemas import BudgetLineCreate
 
 
-def create_budget_line(
-    session: Session,
+async def create_budget_line(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     category_id: UUID | None,
@@ -29,12 +31,15 @@ def create_budget_line(
         updated_by=user_id,
     )
     session.add(budget_line)
-    session.commit()
+    await session.commit()
+    # The response schema always nests `category`; refresh it explicitly rather than
+    # relying on it happening to already sit in the identity map.
+    await session.refresh(budget_line, attribute_names=["category"])
     return budget_line
 
 
-def bulk_create_budget_lines(
-    session: Session,
+async def bulk_create_budget_lines(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     lines: list[dict],
@@ -53,39 +58,54 @@ def bulk_create_budget_lines(
         for line in lines
     ]
     session.add_all(budget_lines)
-    session.commit()
-    return budget_lines
+    await session.commit()
+
+    line_ids = [budget_line.id for budget_line in budget_lines]
+    result = await session.execute(
+        select(BudgetLineModel)
+        .where(BudgetLineModel.id.in_(line_ids))
+        .options(selectinload(BudgetLineModel.category))
+    )
+    return list(result.scalars().all())
 
 
-def get_budget_line(session: Session, budget_line_id: UUID) -> BudgetLineModel | None:
-    return session.query(BudgetLineModel).filter(BudgetLineModel.id == budget_line_id).first()
+async def get_budget_line(session: AsyncSession, budget_line_id: UUID) -> BudgetLineModel | None:
+    # The BudgetLine response schema always nests `category`, so every caller needs it.
+    result = await session.execute(
+        select(BudgetLineModel)
+        .where(BudgetLineModel.id == budget_line_id)
+        .options(selectinload(BudgetLineModel.category))
+    )
+    return result.scalar_one_or_none()
 
 
-def list_budget_lines(
-    session: Session,
+async def list_budget_lines(
+    session: AsyncSession,
     budget_id: UUID | None = None,
     customer_id: UUID | None = None,
     limit: int = 100,
 ):
-    query = session.query(BudgetLineModel)
+    query = select(BudgetLineModel).options(selectinload(BudgetLineModel.category))
     if budget_id:
-        query = query.filter(BudgetLineModel.budget_id == budget_id)
+        query = query.where(BudgetLineModel.budget_id == budget_id)
     if customer_id:
-        query = query.join(BudgetLineModel.budget).filter(BudgetModel.owner_id == customer_id)
-    return query.limit(limit).all()
+        query = query.join(BudgetLineModel.budget).where(BudgetModel.owner_id == customer_id)
+    result = await session.execute(query.limit(limit))
+    return list(result.scalars().all())
 
 
-def list_budget_lines_by_category(
-    session: Session, category_id: UUID | None = None, limit: int = 100
+async def list_budget_lines_by_category(
+    session: AsyncSession, category_id: UUID | None = None, limit: int = 100
 ):
-    query = session.query(BudgetLineModel)
+    query = select(BudgetLineModel)
     if category_id:
-        query = query.filter(BudgetLineModel.category_id == category_id)
-    return query.limit(limit).all()
+        query = query.where(BudgetLineModel.category_id == category_id)
+    result = await session.execute(query.limit(limit))
+    return list(result.scalars().all())
 
 
-def update_budget_line(
-    session: Session, existing_line, new_budget_line: BudgetLineCreate
+async def update_budget_line(
+    session: AsyncSession, existing_line, new_budget_line: BudgetLineCreate
 ) -> BudgetLineModel | None:
     if new_budget_line.description is not None:
         existing_line.description = new_budget_line.description
@@ -96,11 +116,11 @@ def update_budget_line(
             **(existing_line.extra_fields or {}),
             **new_budget_line.extra_fields,
         }
-    session.commit()
+    await session.commit()
     return existing_line
 
 
-def delete_budget_line(session: Session, budget_line: BudgetLineModel) -> bool:
-    session.delete(budget_line)
-    session.commit()
+async def delete_budget_line(session: AsyncSession, budget_line: BudgetLineModel) -> bool:
+    await session.delete(budget_line)
+    await session.commit()
     return True

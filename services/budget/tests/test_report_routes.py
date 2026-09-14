@@ -11,7 +11,6 @@ bottom covers route wiring (auth dependency, status codes) with the service
 layer mocked, matching test_donor_scoped_endpoints.py's convention.
 """
 
-import asyncio
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -48,7 +47,7 @@ def _valid_user(customer_id):
     return make_valid_user(customer_id=customer_id)
 
 
-def _make_budget(
+async def _make_budget(
     db,
     owner_id=OWNER_ID,
     funding_customer_id=None,
@@ -66,12 +65,14 @@ def _make_budget(
         local_currency="GBP",
     )
     db.add(budget)
-    db.commit()
-    db.refresh(budget)
+    await db.commit()
+    await db.refresh(budget)
     return budget
 
 
-def _make_report(db, budget_id, status=ReportStatus.draft, period_start=None, period_end=None):
+async def _make_report(
+    db, budget_id, status=ReportStatus.draft, period_start=None, period_end=None
+):
     report = ReportModel(
         budget_id=budget_id,
         name="Interim report",
@@ -80,24 +81,25 @@ def _make_report(db, budget_id, status=ReportStatus.draft, period_start=None, pe
         period_end=period_end or date(2026, 3, 31),
     )
     db.add(report)
-    db.commit()
-    db.refresh(report)
+    await db.commit()
+    await db.refresh(report)
     return report
 
 
+@pytest.mark.anyio
 class TestCreateReportService:
-    def test_defaults_period_to_budget_full_span_when_omitted(self, db):
-        budget = _make_budget(db)
+    async def test_defaults_period_to_budget_full_span_when_omitted(self, db):
+        budget = await _make_budget(db)
         payload = ReportCreate(budget_id=budget.id, name="Final report")
 
-        result = create_report_service(db, _valid_user(OWNER_ID), payload)
+        result = await create_report_service(db, _valid_user(OWNER_ID), payload)
 
         assert result.period_start == budget.start_date
         assert result.period_end == budget.start_date + relativedelta(months=12)
         assert result.status == ReportStatus.draft
 
-    def test_creates_with_explicit_narrower_period(self, db):
-        budget = _make_budget(db)
+    async def test_creates_with_explicit_narrower_period(self, db):
+        budget = await _make_budget(db)
         payload = ReportCreate(
             budget_id=budget.id,
             name="Q1 report",
@@ -105,30 +107,28 @@ class TestCreateReportService:
             period_end=date(2026, 3, 31),
         )
 
-        result = create_report_service(db, _valid_user(OWNER_ID), payload)
+        result = await create_report_service(db, _valid_user(OWNER_ID), payload)
 
         assert result.period_start == date(2026, 1, 1)
         assert result.period_end == date(2026, 3, 31)
 
-    def test_rejected_when_only_period_start_supplied(self, db):
-        # Regression: previously silently discarded the supplied period_start
-        # and defaulted both fields to the budget's full span instead of
-        # rejecting the ambiguous partial input ("period-stomping").
-        budget = _make_budget(db)
+    async def test_rejected_when_only_period_start_supplied(self, db):
+        # Regression: previously silently period-stomped instead of rejecting.
+        budget = await _make_budget(db)
         payload = ReportCreate(budget_id=budget.id, name="Partial", period_start=date(2026, 2, 1))
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_rejected_when_only_period_end_supplied(self, db):
-        budget = _make_budget(db)
+    async def test_rejected_when_only_period_end_supplied(self, db):
+        budget = await _make_budget(db)
         payload = ReportCreate(budget_id=budget.id, name="Partial", period_end=date(2026, 2, 1))
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_rejected_when_period_is_inverted(self, db):
-        budget = _make_budget(db)
+    async def test_rejected_when_period_is_inverted(self, db):
+        budget = await _make_budget(db)
         payload = ReportCreate(
             budget_id=budget.id,
             name="Inverted",
@@ -137,42 +137,41 @@ class TestCreateReportService:
         )
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_rejected_when_budget_not_confirmed(self, db):
-        budget = _make_budget(db, status=BudgetStatus.draft)
+    async def test_rejected_when_budget_not_confirmed(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.draft)
         payload = ReportCreate(budget_id=budget.id, name="Too early")
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_rejected_when_confirmed_budget_has_no_start_date(self, db):
-        # update_budget_service enforces start_date before confirming a budget,
-        # but this guards a hypothetical future path that sets confirmed directly.
-        budget = _make_budget(db, start_date=None)
+    async def test_rejected_when_confirmed_budget_has_no_start_date(self, db):
+        # Guards a hypothetical future path that sets confirmed directly.
+        budget = await _make_budget(db, start_date=None)
         payload = ReportCreate(budget_id=budget.id, name="No start date")
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_rejected_for_user_without_budget_access(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+    async def test_rejected_for_user_without_budget_access(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
         payload = ReportCreate(budget_id=budget.id, name="Not yours")
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(STRANGER_ID), payload)
+            await create_report_service(db, _valid_user(STRANGER_ID), payload)
 
-    def test_funder_has_access_to_create(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
+    async def test_funder_has_access_to_create(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
         payload = ReportCreate(budget_id=budget.id, name="Funder-created")
 
-        result = create_report_service(db, _valid_user(FUNDER_ID), payload)
+        result = await create_report_service(db, _valid_user(FUNDER_ID), payload)
 
         assert result.budget_id == budget.id
 
-    def test_rejected_on_period_overlap_including_against_rejected_report(self, db):
-        budget = _make_budget(db)
-        _make_report(
+    async def test_rejected_on_period_overlap_including_against_rejected_report(self, db):
+        budget = await _make_budget(db)
+        await _make_report(
             db,
             budget.id,
             status=ReportStatus.rejected,
@@ -187,11 +186,11 @@ class TestCreateReportService:
         )
 
         with pytest.raises(DomainError):
-            create_report_service(db, _valid_user(OWNER_ID), payload)
+            await create_report_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_non_overlapping_period_allowed_regardless_of_existing_status(self, db):
-        budget = _make_budget(db)
-        _make_report(
+    async def test_non_overlapping_period_allowed_regardless_of_existing_status(self, db):
+        budget = await _make_budget(db)
+        await _make_report(
             db,
             budget.id,
             status=ReportStatus.submitted,
@@ -205,73 +204,74 @@ class TestCreateReportService:
             period_end=date(2026, 12, 31),
         )
 
-        result = create_report_service(db, _valid_user(OWNER_ID), payload)
+        result = await create_report_service(db, _valid_user(OWNER_ID), payload)
 
         assert result.period_start == date(2026, 7, 1)
 
 
+@pytest.mark.anyio
 class TestReportAccess:
-    def test_owner_can_get_and_list(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id)
+    async def test_owner_can_get_and_list(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id)
 
-        assert get_report_service(db, _valid_user(OWNER_ID), report.id).id == report.id
-        assert len(list_reports_service(db, _valid_user(OWNER_ID), budget.id)) == 1
+        result = await get_report_service(db, _valid_user(OWNER_ID), report.id)
+        assert result.id == report.id
+        assert len(await list_reports_service(db, _valid_user(OWNER_ID), budget.id)) == 1
 
-    def test_funder_can_get_and_list(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id)
+    async def test_funder_can_get_and_list(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id)
 
-        assert get_report_service(db, _valid_user(FUNDER_ID), report.id).id == report.id
-        assert len(list_reports_service(db, _valid_user(FUNDER_ID), budget.id)) == 1
+        result = await get_report_service(db, _valid_user(FUNDER_ID), report.id)
+        assert result.id == report.id
+        assert len(await list_reports_service(db, _valid_user(FUNDER_ID), budget.id)) == 1
 
-    def test_stranger_cannot_get_or_list(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id)
+    async def test_stranger_cannot_get_or_list(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id)
 
         with pytest.raises(DomainError):
-            get_report_service(db, _valid_user(STRANGER_ID), report.id)
+            await get_report_service(db, _valid_user(STRANGER_ID), report.id)
         with pytest.raises(DomainError):
-            list_reports_service(db, _valid_user(STRANGER_ID), budget.id)
+            await list_reports_service(db, _valid_user(STRANGER_ID), budget.id)
 
 
+@pytest.mark.anyio
 class TestListAllReportsService:
-    """GET /reports/ — owner's cross-budget reports directory (ticket #182;
-    scoped to owner-only, not owner-or-funder, see design.md Decision 11's
-    follow-up splitting this into /reports/ vs /reports/funded/)."""
+    """GET /reports/ — owner's cross-budget reports directory."""
 
-    def test_owner_sees_reports_across_all_their_budgets(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
-        other_owner_budget = _make_budget(db, owner_id=STRANGER_ID)
-        report_a = _make_report(db, budget_a.id)
-        report_b = _make_report(
+    async def test_owner_sees_reports_across_all_their_budgets(self, db):
+        budget_a = await _make_budget(db)
+        budget_b = await _make_budget(db)
+        other_owner_budget = await _make_budget(db, owner_id=STRANGER_ID)
+        report_a = await _make_report(db, budget_a.id)
+        report_b = await _make_report(
             db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
         )
-        _make_report(db, other_owner_budget.id)
+        await _make_report(db, other_owner_budget.id)
 
-        results = list_all_reports_service(db, _valid_user(OWNER_ID))
+        results = await list_all_reports_service(db, _valid_user(OWNER_ID))
 
         assert {r.id for r in results} == {report_a.id, report_b.id}
 
-    def test_donor_does_not_see_reports_on_budgets_they_only_fund(self, db):
-        """The owner-scoped directory must not leak funder-visible reports —
-        those belong to /reports/funded/ (TestListFundedReportsService)."""
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        _make_report(db, budget.id)
+    async def test_donor_does_not_see_reports_on_budgets_they_only_fund(self, db):
+        # Owner-scoped directory must not leak funder-visible reports.
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        await _make_report(db, budget.id)
 
-        assert list_all_reports_service(db, _valid_user(FUNDER_ID)) == []
+        assert await list_all_reports_service(db, _valid_user(FUNDER_ID)) == []
 
-    def test_stranger_sees_nothing(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        _make_report(db, budget.id)
+    async def test_stranger_sees_nothing(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        await _make_report(db, budget.id)
 
-        assert list_all_reports_service(db, _valid_user(STRANGER_ID)) == []
+        assert await list_all_reports_service(db, _valid_user(STRANGER_ID)) == []
 
-    def test_status_filter(self, db):
-        budget = _make_budget(db)
-        draft = _make_report(db, budget.id, status=ReportStatus.draft)
-        _make_report(
+    async def test_status_filter(self, db):
+        budget = await _make_budget(db)
+        draft = await _make_report(db, budget.id, status=ReportStatus.draft)
+        await _make_report(
             db,
             budget.id,
             status=ReportStatus.submitted,
@@ -279,49 +279,55 @@ class TestListAllReportsService:
             period_end=date(2026, 6, 30),
         )
 
-        results = list_all_reports_service(db, _valid_user(OWNER_ID), status=ReportStatus.draft)
+        results = await list_all_reports_service(
+            db, _valid_user(OWNER_ID), status=ReportStatus.draft
+        )
 
         assert [r.id for r in results] == [draft.id]
 
-    def test_budget_id_filter(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
-        report_a = _make_report(db, budget_a.id)
-        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+    async def test_budget_id_filter(self, db):
+        budget_a = await _make_budget(db)
+        budget_b = await _make_budget(db)
+        report_a = await _make_report(db, budget_a.id)
+        await _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
 
-        results = list_all_reports_service(db, _valid_user(OWNER_ID), budget_id=budget_a.id)
+        results = await list_all_reports_service(db, _valid_user(OWNER_ID), budget_id=budget_a.id)
 
         assert [r.id for r in results] == [report_a.id]
 
-    def test_funding_customer_id_filter(self, db):
-        funded_budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
-        unfunded_budget = _make_budget(db, owner_id=OWNER_ID)
-        funded_report = _make_report(db, funded_budget.id)
-        _make_report(
+    async def test_funding_customer_id_filter(self, db):
+        funded_budget = await _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+        unfunded_budget = await _make_budget(db, owner_id=OWNER_ID)
+        funded_report = await _make_report(db, funded_budget.id)
+        await _make_report(
             db,
             unfunded_budget.id,
             period_start=date(2026, 4, 1),
             period_end=date(2026, 6, 30),
         )
 
-        results = list_all_reports_service(db, _valid_user(OWNER_ID), funding_customer_id=FUNDER_ID)
+        results = await list_all_reports_service(
+            db, _valid_user(OWNER_ID), funding_customer_id=FUNDER_ID
+        )
 
         assert [r.id for r in results] == [funded_report.id]
 
-    def test_filters_combine(self, db):
-        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
-        matching = _make_report(db, budget_a.id, status=ReportStatus.draft)
-        _make_report(
+    async def test_filters_combine(self, db):
+        budget_a = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        matching = await _make_report(db, budget_a.id, status=ReportStatus.draft)
+        await _make_report(
             db,
             budget_a.id,
             status=ReportStatus.submitted,
             period_start=date(2026, 4, 1),
             period_end=date(2026, 6, 30),
         )
-        _make_report(db, budget_b.id, status=ReportStatus.draft)
+        await _make_report(db, budget_b.id, status=ReportStatus.draft)
 
-        results = list_all_reports_service(
+        results = await list_all_reports_service(
             db,
             _valid_user(OWNER_ID),
             status=ReportStatus.draft,
@@ -330,16 +336,16 @@ class TestListAllReportsService:
 
         assert [r.id for r in results] == [matching.id]
 
-    def test_budget_and_funder_fields_present_on_each_returned_report(self, db):
-        budget = _make_budget(
+    async def test_budget_and_funder_fields_present_on_each_returned_report(self, db):
+        budget = await _make_budget(
             db,
             funding_customer_id=FUNDER_ID,
         )
         budget.external_funder_name = "Acme Foundation"
-        db.commit()
-        _make_report(db, budget.id)
+        await db.commit()
+        await _make_report(db, budget.id)
 
-        [result] = list_all_reports_service(db, _valid_user(OWNER_ID))
+        [result] = await list_all_reports_service(db, _valid_user(OWNER_ID))
 
         assert result.budget_name == "Test Budget"
         assert result.budget_status == BudgetStatus.confirmed
@@ -347,20 +353,9 @@ class TestListAllReportsService:
         assert result.external_funder_name == "Acme Foundation"
 
 
+@pytest.mark.anyio
 class TestListFundedReportsService:
-    """GET /reports/funded/ — donor's cross-budget reports directory: each
-    grantee's reports against the budgets this donor funds. The funder-side
-    counterpart to TestListAllReportsService, added when that directory was
-    split into separate owner/donor routes (design.md Decision 11's
-    follow-up), mirroring /budgets/ vs /budgets/funded/.
-
-    list_funded_reports_service is async (it resolves grantee names via an
-    HTTP call), and no async pytest plugin is installed in this service
-    (confirmed: no pytest-asyncio/anyio-pytest in the environment) — so
-    every call below goes through asyncio.run() from a plain `def test_`,
-    matching how the rest of this suite has no precedent for calling an
-    async service function directly (existing async services are only
-    exercised through the sync TestClient route layer elsewhere)."""
+    """GET /reports/funded/ — donor's cross-budget reports directory."""
 
     def _patched_customers(self, customers_map=None):
         return patch(
@@ -369,45 +364,44 @@ class TestListFundedReportsService:
             return_value=customers_map or {},
         )
 
-    def test_donor_sees_reports_across_all_budgets_they_fund(self, db):
-        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
-        unrelated_budget = _make_budget(db)
-        report_a = _make_report(db, budget_a.id)
-        report_b = _make_report(
+    async def test_donor_sees_reports_across_all_budgets_they_fund(self, db):
+        budget_a = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        unrelated_budget = await _make_budget(db)
+        report_a = await _make_report(db, budget_a.id)
+        report_b = await _make_report(
             db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
         )
-        _make_report(db, unrelated_budget.id)
+        await _make_report(db, unrelated_budget.id)
 
         with self._patched_customers():
-            results = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+            results = await list_funded_reports_service(db, _valid_user(FUNDER_ID))
 
         assert {r.id for r in results} == {report_a.id, report_b.id}
 
-    def test_grantee_does_not_see_reports_on_budgets_they_only_own(self, db):
-        """The donor-scoped directory must not leak owner-visible reports —
-        those belong to /reports/ (TestListAllReportsService)."""
-        budget = _make_budget(db, owner_id=OWNER_ID)
-        _make_report(db, budget.id)
+    async def test_grantee_does_not_see_reports_on_budgets_they_only_own(self, db):
+        # Donor-scoped directory must not leak owner-visible reports.
+        budget = await _make_budget(db, owner_id=OWNER_ID)
+        await _make_report(db, budget.id)
 
         with self._patched_customers():
-            results = asyncio.run(list_funded_reports_service(db, _valid_user(OWNER_ID)))
+            results = await list_funded_reports_service(db, _valid_user(OWNER_ID))
 
         assert results == []
 
-    def test_stranger_sees_nothing(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        _make_report(db, budget.id)
+    async def test_stranger_sees_nothing(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        await _make_report(db, budget.id)
 
         with self._patched_customers():
-            results = asyncio.run(list_funded_reports_service(db, _valid_user(STRANGER_ID)))
+            results = await list_funded_reports_service(db, _valid_user(STRANGER_ID))
 
         assert results == []
 
-    def test_status_filter(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        draft = _make_report(db, budget.id, status=ReportStatus.draft)
-        _make_report(
+    async def test_status_filter(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        draft = await _make_report(db, budget.id, status=ReportStatus.draft)
+        await _make_report(
             db,
             budget.id,
             status=ReportStatus.submitted,
@@ -416,48 +410,52 @@ class TestListFundedReportsService:
         )
 
         with self._patched_customers():
-            results = asyncio.run(
-                list_funded_reports_service(db, _valid_user(FUNDER_ID), status=ReportStatus.draft)
+            results = await list_funded_reports_service(
+                db, _valid_user(FUNDER_ID), status=ReportStatus.draft
             )
 
         assert [r.id for r in results] == [draft.id]
 
-    def test_budget_id_filter(self, db):
-        budget_a = _make_budget(db, funding_customer_id=FUNDER_ID)
-        budget_b = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report_a = _make_report(db, budget_a.id)
-        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+    async def test_budget_id_filter(self, db):
+        budget_a = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        budget_b = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report_a = await _make_report(db, budget_a.id)
+        await _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
 
         with self._patched_customers():
-            results = asyncio.run(
-                list_funded_reports_service(db, _valid_user(FUNDER_ID), budget_id=budget_a.id)
+            results = await list_funded_reports_service(
+                db, _valid_user(FUNDER_ID), budget_id=budget_a.id
             )
 
         assert [r.id for r in results] == [report_a.id]
 
-    def test_owner_id_filter_narrows_to_one_grantee(self, db):
+    async def test_owner_id_filter_narrows_to_one_grantee(self, db):
         grantee_a = str(uuid4())
         grantee_b = str(uuid4())
-        budget_a = _make_budget(db, owner_id=grantee_a, funding_customer_id=FUNDER_ID)
-        budget_b = _make_budget(db, owner_id=grantee_b, funding_customer_id=FUNDER_ID)
-        report_a = _make_report(db, budget_a.id)
-        _make_report(db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30))
+        budget_a = await _make_budget(db, owner_id=grantee_a, funding_customer_id=FUNDER_ID)
+        budget_b = await _make_budget(db, owner_id=grantee_b, funding_customer_id=FUNDER_ID)
+        report_a = await _make_report(db, budget_a.id)
+        await _make_report(
+            db, budget_b.id, period_start=date(2026, 4, 1), period_end=date(2026, 6, 30)
+        )
 
         with self._patched_customers():
-            results = asyncio.run(
-                list_funded_reports_service(db, _valid_user(FUNDER_ID), owner_id=grantee_a)
+            results = await list_funded_reports_service(
+                db, _valid_user(FUNDER_ID), owner_id=grantee_a
             )
 
         assert [r.id for r in results] == [report_a.id]
 
-    def test_budget_owner_and_funder_fields_present_with_resolved_owner_name(self, db):
-        budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+    async def test_budget_owner_and_funder_fields_present_with_resolved_owner_name(self, db):
+        budget = await _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
         budget.external_funder_name = "Acme Foundation"
-        db.commit()
-        _make_report(db, budget.id)
+        await db.commit()
+        await _make_report(db, budget.id)
 
         with self._patched_customers({OWNER_ID: {"name": "Hope Relief NGO"}}):
-            [result] = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+            [result] = await list_funded_reports_service(db, _valid_user(FUNDER_ID))
 
         assert result.budget_name == "Test Budget"
         assert result.budget_status == BudgetStatus.confirmed
@@ -465,164 +463,170 @@ class TestListFundedReportsService:
         assert result.owner_name == "Hope Relief NGO"
         assert result.external_funder_name == "Acme Foundation"
 
-    def test_owner_name_is_none_when_customers_service_fails(self, db):
-        budget = _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
-        _make_report(db, budget.id)
+    async def test_owner_name_is_none_when_customers_service_fails(self, db):
+        budget = await _make_budget(db, owner_id=OWNER_ID, funding_customer_id=FUNDER_ID)
+        await _make_report(db, budget.id)
 
         with patch(
             "app.services.report_services.get_customers_by_ids",
             new_callable=AsyncMock,
             side_effect=Exception("customers service unavailable"),
         ):
-            [result] = asyncio.run(list_funded_reports_service(db, _valid_user(FUNDER_ID)))
+            [result] = await list_funded_reports_service(db, _valid_user(FUNDER_ID))
 
         assert result.owner_name is None
 
 
+@pytest.mark.anyio
 class TestUpdateDeleteOwnership:
-    def test_funder_cannot_update_or_delete(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id)
+    async def test_funder_cannot_update_or_delete(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id)
         update = ReportUpdate(name="Renamed")
 
         with pytest.raises(PermissionDenied):
-            update_report_service(db, _valid_user(FUNDER_ID), report.id, update)
+            await update_report_service(db, _valid_user(FUNDER_ID), report.id, update)
         with pytest.raises(PermissionDenied):
-            delete_report_service(db, _valid_user(FUNDER_ID), report.id)
+            await delete_report_service(db, _valid_user(FUNDER_ID), report.id)
 
-    def test_owner_can_update_and_delete_draft_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id)
+    async def test_owner_can_update_and_delete_draft_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id)
         update = ReportUpdate(name="Renamed")
 
-        updated = update_report_service(db, _valid_user(OWNER_ID), report.id, update)
+        updated = await update_report_service(db, _valid_user(OWNER_ID), report.id, update)
         assert updated.name == "Renamed"
 
-        assert delete_report_service(db, _valid_user(OWNER_ID), report.id) is True
+        assert await delete_report_service(db, _valid_user(OWNER_ID), report.id) is True
 
-    def test_update_rejected_when_partial_period_would_invert(self, db):
-        # Regression: report starts at period_start=Jan1/period_end=Mar31
-        # (see _make_report). Moving only period_start past the existing,
-        # untouched period_end used to save silently with no ordering check.
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id)
+    async def test_update_rejected_when_partial_period_would_invert(self, db):
+        # Moving only period_start past the untouched period_end must be rejected.
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id)
         update = ReportUpdate(period_start=date(2026, 4, 1))
 
         with pytest.raises(DomainError):
-            update_report_service(db, _valid_user(OWNER_ID), report.id, update)
+            await update_report_service(db, _valid_user(OWNER_ID), report.id, update)
 
-    def test_cannot_update_non_draft_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_cannot_update_non_draft_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
         update = ReportUpdate(name="Too late")
 
         with pytest.raises(DomainError):
-            update_report_service(db, _valid_user(OWNER_ID), report.id, update)
+            await update_report_service(db, _valid_user(OWNER_ID), report.id, update)
 
-    def test_cannot_delete_non_draft_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_cannot_delete_non_draft_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
         with pytest.raises(DomainError):
-            delete_report_service(db, _valid_user(OWNER_ID), report.id)
+            await delete_report_service(db, _valid_user(OWNER_ID), report.id)
 
 
+@pytest.mark.anyio
 class TestSubmitTransition:
-    def test_submit_draft_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_submit_draft_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
 
-        result = submit_report_service(db, _valid_user(OWNER_ID), report.id)
+        result = await submit_report_service(db, _valid_user(OWNER_ID), report.id)
 
         assert result.status == ReportStatus.submitted
         assert result.submitted_at is not None
 
-    def test_cannot_resubmit_non_draft_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_cannot_resubmit_non_draft_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
         with pytest.raises(DomainError):
-            submit_report_service(db, _valid_user(OWNER_ID), report.id)
+            await submit_report_service(db, _valid_user(OWNER_ID), report.id)
 
-    def test_funder_cannot_submit(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_funder_cannot_submit(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
 
         with pytest.raises(PermissionDenied):
-            submit_report_service(db, _valid_user(FUNDER_ID), report.id)
+            await submit_report_service(db, _valid_user(FUNDER_ID), report.id)
 
 
+@pytest.mark.anyio
 class TestReviewTransition:
-    def test_funder_approves_submitted_report(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_funder_approves_submitted_report(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
         funder_user = _valid_user(FUNDER_ID)
 
-        result = review_report_service(db, funder_user, report.id, ReportStatus.approved)
+        result = await review_report_service(db, funder_user, report.id, ReportStatus.approved)
 
         assert result.status == ReportStatus.approved
         assert result.reviewed_at is not None
         assert str(result.reviewed_by) == funder_user["user_id"]
 
-    def test_funder_rejects_with_notes(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_funder_rejects_with_notes(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
-        result = review_report_service(
+        result = await review_report_service(
             db, _valid_user(FUNDER_ID), report.id, ReportStatus.rejected, "please fix the totals"
         )
 
         assert result.status == ReportStatus.rejected
         assert result.review_notes == "please fix the totals"
 
-    def test_owner_self_reviews_when_no_funder(self, db):
-        budget = _make_budget(db, funding_customer_id=None)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_owner_self_reviews_when_no_funder(self, db):
+        budget = await _make_budget(db, funding_customer_id=None)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
-        result = review_report_service(db, _valid_user(OWNER_ID), report.id, ReportStatus.approved)
+        result = await review_report_service(
+            db, _valid_user(OWNER_ID), report.id, ReportStatus.approved
+        )
 
         assert result.status == ReportStatus.approved
 
-    def test_owner_cannot_review_when_a_real_funder_exists(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_owner_cannot_review_when_a_real_funder_exists(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
         with pytest.raises(PermissionDenied):
-            review_report_service(db, _valid_user(OWNER_ID), report.id, ReportStatus.approved)
+            await review_report_service(db, _valid_user(OWNER_ID), report.id, ReportStatus.approved)
 
-    def test_stranger_cannot_review(self, db):
-        # A stranger has no view access to the budget at all, so this hits the
-        # same info-hiding "not found" path as every other report endpoint —
-        # not PermissionDenied, which would confirm the report exists.
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_stranger_cannot_review(self, db):
+        # No view access to the budget hits the info-hiding not-found path.
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.submitted)
 
         with pytest.raises(DomainError):
-            review_report_service(db, _valid_user(STRANGER_ID), report.id, ReportStatus.approved)
+            await review_report_service(
+                db, _valid_user(STRANGER_ID), report.id, ReportStatus.approved
+            )
 
-    def test_cannot_review_non_submitted_report(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID)
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_cannot_review_non_submitted_report(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID)
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
 
         with pytest.raises(DomainError):
-            review_report_service(db, _valid_user(FUNDER_ID), report.id, ReportStatus.approved)
+            await review_report_service(
+                db, _valid_user(FUNDER_ID), report.id, ReportStatus.approved
+            )
 
 
+@pytest.mark.anyio
 class TestReopenTransition:
-    def test_reopen_rejected_report_to_draft(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.rejected)
+    async def test_reopen_rejected_report_to_draft(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.rejected)
 
-        result = reopen_report_service(db, _valid_user(OWNER_ID), report.id)
+        result = await reopen_report_service(db, _valid_user(OWNER_ID), report.id)
 
         assert result.status == ReportStatus.draft
 
-    def test_cannot_reopen_non_rejected_report(self, db):
-        budget = _make_budget(db)
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_cannot_reopen_non_rejected_report(self, db):
+        budget = await _make_budget(db)
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
 
         with pytest.raises(DomainError):
-            reopen_report_service(db, _valid_user(OWNER_ID), report.id)
+            await reopen_report_service(db, _valid_user(OWNER_ID), report.id)
 
 
 class TestReportRoutesWiring:

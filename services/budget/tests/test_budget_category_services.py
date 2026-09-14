@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import func, select
 
 from app.core.exceptions import DomainError
 from app.models.budget import BudgetCategoryModel
@@ -16,15 +17,17 @@ from app.services.budget_category_services import (
 from tests.factories.budget import BudgetFactory, BudgetLineFactory
 from tests.factories.user import ValidUserFactory
 
+pytestmark = pytest.mark.anyio
+
 OWNER_ID = str(uuid4())
 STRANGER_ID = str(uuid4())
 
 
-def _make_budget(db, owner_id=OWNER_ID, status=BudgetStatus.draft, **overrides):
+async def _make_budget(db, owner_id=OWNER_ID, status=BudgetStatus.draft, **overrides):
     budget = BudgetFactory.build(owner_id=owner_id, status=status, **overrides)
     db.add(budget)
-    db.commit()
-    db.refresh(budget)
+    await db.commit()
+    await db.refresh(budget)
     return budget
 
 
@@ -32,25 +35,25 @@ def _valid_user(customer_id=OWNER_ID, user_id=None):
     return ValidUserFactory(customer_id=customer_id, user_id=user_id or str(uuid4()))
 
 
-def _make_budget_line(db, budget, category, **overrides):
+async def _make_budget_line(db, budget, category, **overrides):
     # Pass real objects, not ids — see budget_category_factory_subfactory_conflict memory.
     line = BudgetLineFactory.build(budget=budget, category=category, **overrides)
     db.add(line)
-    db.commit()
-    db.refresh(line)
+    await db.commit()
+    await db.refresh(line)
     return line
 
 
 class TestGetOrCreateCategoryScoping:
-    def test_same_name_in_two_budgets_creates_two_rows(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
+    async def test_same_name_in_two_budgets_creates_two_rows(self, db):
+        budget_a = await _make_budget(db)
+        budget_b = await _make_budget(db)
         user = _valid_user()
 
-        category_a = get_or_create_category_service(
+        category_a = await get_or_create_category_service(
             db, user, budget_id=budget_a.id, category_name="Travel"
         )
-        category_b = get_or_create_category_service(
+        category_b = await get_or_create_category_service(
             db, user, budget_id=budget_b.id, category_name="Travel"
         )
 
@@ -58,61 +61,73 @@ class TestGetOrCreateCategoryScoping:
         assert category_a.budget_id == budget_a.id
         assert category_b.budget_id == budget_b.id
 
-    def test_same_name_in_one_budget_reuses_the_same_row(self, db):
-        budget = _make_budget(db)
+    async def test_same_name_in_one_budget_reuses_the_same_row(self, db):
+        budget = await _make_budget(db)
         user = _valid_user()
 
-        first = get_or_create_category_service(
+        first = await get_or_create_category_service(
             db, user, budget_id=budget.id, category_name="Travel"
         )
-        second = get_or_create_category_service(
+        second = await get_or_create_category_service(
             db, user, budget_id=budget.id, category_name="Travel"
         )
 
         assert first.id == second.id
         count = (
-            db.query(BudgetCategoryModel).filter(BudgetCategoryModel.budget_id == budget.id).count()
-        )
+            await db.execute(
+                select(func.count()).select_from(
+                    select(BudgetCategoryModel)
+                    .where(BudgetCategoryModel.budget_id == budget.id)
+                    .subquery()
+                )
+            )
+        ).scalar()
         assert count == 1
 
-    def test_category_id_from_another_budget_is_rejected(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
+    async def test_category_id_from_another_budget_is_rejected(self, db):
+        budget_a = await _make_budget(db)
+        budget_b = await _make_budget(db)
         user = _valid_user()
-        other_budget_category = get_or_create_category_service(
+        other_budget_category = await get_or_create_category_service(
             db, user, budget_id=budget_a.id, category_name="Travel"
         )
 
         with pytest.raises(DomainError):
-            get_or_create_category_service(
+            await get_or_create_category_service(
                 db, user, budget_id=budget_b.id, category_id=other_budget_category.id
             )
 
 
 class TestGetOrCreateCategoriesByNamesScoping:
-    def test_repeated_names_in_one_budget_dedupe_to_one_row_each(self, db):
-        budget = _make_budget(db)
+    async def test_repeated_names_in_one_budget_dedupe_to_one_row_each(self, db):
+        budget = await _make_budget(db)
         user = _valid_user()
 
-        result = get_or_create_categories_by_names_service(
+        result = await get_or_create_categories_by_names_service(
             db, user, budget_id=budget.id, category_names=["Travel", "Travel", "Personnel"]
         )
 
         assert set(result.keys()) == {"Travel", "Personnel"}
         count = (
-            db.query(BudgetCategoryModel).filter(BudgetCategoryModel.budget_id == budget.id).count()
-        )
+            await db.execute(
+                select(func.count()).select_from(
+                    select(BudgetCategoryModel)
+                    .where(BudgetCategoryModel.budget_id == budget.id)
+                    .subquery()
+                )
+            )
+        ).scalar()
         assert count == 2
 
-    def test_same_name_across_budgets_is_not_shared(self, db):
-        budget_a = _make_budget(db)
-        budget_b = _make_budget(db)
+    async def test_same_name_across_budgets_is_not_shared(self, db):
+        budget_a = await _make_budget(db)
+        budget_b = await _make_budget(db)
         user = _valid_user()
 
-        result_a = get_or_create_categories_by_names_service(
+        result_a = await get_or_create_categories_by_names_service(
             db, user, budget_id=budget_a.id, category_names=["Personnel"]
         )
-        result_b = get_or_create_categories_by_names_service(
+        result_b = await get_or_create_categories_by_names_service(
             db, user, budget_id=budget_b.id, category_names=["Personnel"]
         )
 
@@ -120,15 +135,15 @@ class TestGetOrCreateCategoriesByNamesScoping:
 
 
 class TestUpdateBudgetCategoryService:
-    def test_owner_can_rename_and_updated_by_is_set(self, db):
-        budget = _make_budget(db)
+    async def test_owner_can_rename_and_updated_by_is_set(self, db):
+        budget = await _make_budget(db)
         owner = _valid_user()
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
         editor = _valid_user(user_id=str(uuid4()))
-        updated = update_budget_category_service(
+        updated = await update_budget_category_service(
             db, editor, category.id, {"name": "Transport", "code": "TRANSPORT"}
         )
 
@@ -136,85 +151,87 @@ class TestUpdateBudgetCategoryService:
         assert updated.code == "TRANSPORT"
         assert str(updated.updated_by) == editor["user_id"]
 
-    def test_rename_rejected_for_another_customers_budget(self, db):
-        budget = _make_budget(db, owner_id=OWNER_ID)
+    async def test_rename_rejected_for_another_customers_budget(self, db):
+        budget = await _make_budget(db, owner_id=OWNER_ID)
         owner = _valid_user(customer_id=OWNER_ID)
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
         stranger = _valid_user(customer_id=STRANGER_ID)
         with pytest.raises(DomainError):
-            update_budget_category_service(db, stranger, category.id, {"name": "Hijacked"})
+            await update_budget_category_service(db, stranger, category.id, {"name": "Hijacked"})
 
-    def test_rename_rejected_once_budget_is_confirmed(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed)
+    async def test_rename_rejected_once_budget_is_confirmed(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed)
         owner = _valid_user()
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
         with pytest.raises(DomainError):
-            update_budget_category_service(db, owner, category.id, {"name": "Transport"})
+            await update_budget_category_service(db, owner, category.id, {"name": "Transport"})
 
-    def test_rename_rejected_for_unknown_category_id(self, db):
+    async def test_rename_rejected_for_unknown_category_id(self, db):
         owner = _valid_user()
         with pytest.raises(DomainError):
-            update_budget_category_service(db, owner, uuid4(), {"name": "Hijacked"})
+            await update_budget_category_service(db, owner, uuid4(), {"name": "Hijacked"})
 
 
 class TestDeleteBudgetCategoryService:
-    def test_owner_can_delete(self, db):
-        budget = _make_budget(db)
+    async def test_owner_can_delete(self, db):
+        budget = await _make_budget(db)
         owner = _valid_user()
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
-        result = delete_budget_category_service(db, owner, category.id)
+        result = await delete_budget_category_service(db, owner, category.id)
 
         assert result is True
         remaining = (
-            db.query(BudgetCategoryModel).filter(BudgetCategoryModel.id == category.id).first()
-        )
+            await db.execute(
+                select(BudgetCategoryModel).where(BudgetCategoryModel.id == category.id)
+            )
+        ).scalar_one_or_none()
         assert remaining is None
 
-    def test_delete_nulls_out_category_id_on_referencing_lines(self, db):
-        budget = _make_budget(db)
+    async def test_delete_nulls_out_category_id_on_referencing_lines(self, db):
+        budget = await _make_budget(db)
         owner = _valid_user()
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
-        line = _make_budget_line(db, budget, category)
+        line = await _make_budget_line(db, budget, category)
         assert line.category_id == category.id
 
-        delete_budget_category_service(db, owner, category.id)
+        await delete_budget_category_service(db, owner, category.id)
 
-        db.refresh(line)
+        await db.refresh(line)
         assert line.category_id is None
 
-    def test_delete_rejected_for_another_customers_budget(self, db):
-        budget = _make_budget(db, owner_id=OWNER_ID)
+    async def test_delete_rejected_for_another_customers_budget(self, db):
+        budget = await _make_budget(db, owner_id=OWNER_ID)
         owner = _valid_user(customer_id=OWNER_ID)
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
         stranger = _valid_user(customer_id=STRANGER_ID)
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, stranger, category.id)
+            await delete_budget_category_service(db, stranger, category.id)
 
-    def test_delete_rejected_once_budget_is_confirmed(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed)
+    async def test_delete_rejected_once_budget_is_confirmed(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed)
         owner = _valid_user()
-        category = get_or_create_category_service(
+        category = await get_or_create_category_service(
             db, owner, budget_id=budget.id, category_name="Travel"
         )
 
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, owner, category.id)
+            await delete_budget_category_service(db, owner, category.id)
 
-    def test_delete_rejected_for_unknown_category_id(self, db):
+    async def test_delete_rejected_for_unknown_category_id(self, db):
         owner = _valid_user()
         with pytest.raises(DomainError):
-            delete_budget_category_service(db, owner, uuid4())
+            await delete_budget_category_service(db, owner, uuid4())

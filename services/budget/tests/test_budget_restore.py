@@ -6,7 +6,6 @@ these behaviors hinge on real BudgetModel column state (status, confirmed_at,
 start_date) rather than a single mocked crud call.
 """
 
-import asyncio
 from datetime import date
 from uuid import uuid4
 
@@ -18,11 +17,13 @@ from app.schemas.budget_schema import BudgetStatus
 from app.services.budget_services import restore_budget_service
 from tests.factories.user import make_valid_user
 
+pytestmark = pytest.mark.anyio
+
 OWNER_ID = str(uuid4())
 STRANGER_ID = str(uuid4())
 
 
-def _make_budget(
+async def _make_budget(
     db,
     owner_id=OWNER_ID,
     status=BudgetStatus.archived,
@@ -39,87 +40,73 @@ def _make_budget(
         local_currency="GBP",
     )
     db.add(budget)
-    db.commit()
-    db.refresh(budget)
+    await db.commit()
+    await db.refresh(budget)
     return budget
 
 
 class TestRestoreArchivedBudget:
-    def test_restore_from_archived_was_confirmed(self, db):
+    async def test_restore_from_archived_was_confirmed(self, db):
         import datetime as dt
 
-        budget = _make_budget(
+        budget = await _make_budget(
             db,
             confirmed_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
             start_date=date(2026, 1, 1),
         )
 
-        result = asyncio.run(
-            restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
-        )
+        result = await restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
 
         assert result.status == BudgetStatus.confirmed
         assert result.start_date == date(2026, 1, 1)
 
-    def test_restore_from_archived_was_draft(self, db):
-        budget = _make_budget(db)
+    async def test_restore_from_archived_was_draft(self, db):
+        budget = await _make_budget(db)
 
-        result = asyncio.run(
-            restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
-        )
+        result = await restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
 
         assert result.status == BudgetStatus.draft
 
-    def test_restore_falls_back_to_draft_when_start_date_missing(self, db):
+    async def test_restore_falls_back_to_draft_when_start_date_missing(self, db):
         import datetime as dt
 
-        budget = _make_budget(
+        budget = await _make_budget(
             db,
             confirmed_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
             start_date=None,
         )
 
-        result = asyncio.run(
-            restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
-        )
+        result = await restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
 
         assert result.status == BudgetStatus.draft
         assert result.confirmed_at is None
 
-    def test_restore_rejected_on_a_non_archived_budget(self, db):
-        budget = _make_budget(db, status=BudgetStatus.draft)
+    async def test_restore_rejected_on_a_non_archived_budget(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.draft)
 
         with pytest.raises(DomainError):
-            asyncio.run(
-                restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
-            )
+            await restore_budget_service(budget.id, make_valid_user(customer_id=OWNER_ID), db)
 
-    def test_restore_rejected_for_a_non_owner_non_superuser_caller(self, db):
-        budget = _make_budget(db)
+    async def test_restore_rejected_for_a_non_owner_non_superuser_caller(self, db):
+        budget = await _make_budget(db)
 
         with pytest.raises(DomainError):
-            asyncio.run(
-                restore_budget_service(budget.id, make_valid_user(customer_id=STRANGER_ID), db)
-            )
+            await restore_budget_service(budget.id, make_valid_user(customer_id=STRANGER_ID), db)
 
-    def test_superuser_without_matching_session_cannot_restore(self, db):
+    async def test_superuser_without_matching_session_cannot_restore(self, db):
         """No active impersonation session for this owner means not-found."""
-        budget = _make_budget(db)
+        budget = await _make_budget(db)
 
         with pytest.raises(DomainError):
-            asyncio.run(
-                restore_budget_service(
-                    budget.id, make_valid_user(customer_id=STRANGER_ID, role="superuser"), db
-                )
+            await restore_budget_service(
+                budget.id, make_valid_user(customer_id=STRANGER_ID, role="superuser"), db
             )
 
-    def test_superuser_impersonating_the_owner_can_restore(self, db):
-        budget = _make_budget(db)
+    async def test_superuser_impersonating_the_owner_can_restore(self, db):
+        budget = await _make_budget(db)
 
-        result = asyncio.run(
-            restore_budget_service(
-                budget.id, make_valid_user(customer_id=OWNER_ID, role="superuser"), db
-            )
+        result = await restore_budget_service(
+            budget.id, make_valid_user(customer_id=OWNER_ID, role="superuser"), db
         )
 
         assert result.status == BudgetStatus.draft

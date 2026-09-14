@@ -121,25 +121,37 @@ class TestFundedBudgetsListEndpoint:
         assert response.status_code == 403
 
 
-def _sqlite_session():
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
+@pytest.fixture
+async def sqlite_session():
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import StaticPool
     from app.models.base import Base
     from app.models.budget import BudgetModel, BudgetLineModel
 
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[BudgetModel.__table__, BudgetLineModel.__table__])
-    return sessionmaker(bind=engine)()
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            Base.metadata.create_all, tables=[BudgetModel.__table__, BudgetLineModel.__table__]
+        )
+    maker = async_sessionmaker(bind=engine, expire_on_commit=False)
+    async with maker() as session:
+        yield session
+    await engine.dispose()
 
 
+@pytest.mark.anyio
 class TestFundedBudgetsCrud:
     """Direct coverage of the new aggregation queries, against a real sqlite session."""
 
-    def test_summary_totals_only_this_donors_budgets(self):
+    async def test_summary_totals_only_this_donors_budgets(self, sqlite_session):
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         other_donor_id = uuid.uuid4()
 
@@ -179,33 +191,33 @@ class TestFundedBudgetsCrud:
             # not a uuid.UUID (unlike sibling models), which trips SQLAlchemy's
             # batched-insert sentinel matching when >1 row flushes at once.
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        summary = get_funded_budgets_summary(session, donor_id)
+        summary = await get_funded_budgets_summary(session, donor_id)
 
         assert summary == {
             "total_budgets": 2,
             "total_allocated_by_currency": [{"currency": "GBP", "total_allocated": 1500.0}],
         }
 
-    def test_summary_zero_for_donor_with_no_funded_budgets(self):
+    async def test_summary_zero_for_donor_with_no_funded_budgets(self, sqlite_session):
         from app.crud.budget_crud import get_funded_budgets_summary
 
-        session = _sqlite_session()
-        summary = get_funded_budgets_summary(session, uuid.uuid4())
+        session = sqlite_session
+        summary = await get_funded_budgets_summary(session, uuid.uuid4())
 
         assert summary == {
             "total_budgets": 0,
             "total_allocated_by_currency": [],
         }
 
-    def test_summary_keeps_currencies_separate_not_blended(self):
+    async def test_summary_keeps_currencies_separate_not_blended(self, sqlite_session):
         """A donor funding budgets in different currencies must not get one
         blended sum mislabeled with an arbitrary currency (see #139 review)."""
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
 
         for budget in (
@@ -231,9 +243,9 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        summary = get_funded_budgets_summary(session, donor_id)
+        summary = await get_funded_budgets_summary(session, donor_id)
 
         assert summary["total_budgets"] == 2
         by_currency = {
@@ -241,7 +253,7 @@ class TestFundedBudgetsCrud:
         }
         assert by_currency == {"GBP": pytest.approx(3000.0), "USD": pytest.approx(5000.0)}
 
-    def test_summary_excludes_budgets_missing_a_usable_rate(self):
+    async def test_summary_excludes_budgets_missing_a_usable_rate(self, sqlite_session):
         """A confirmed budget with no actual_currency/estimated_exchange_rate
         set (e.g. confirmed before those fields existed — no backfill, see
         design.md's migration plan) still counts toward total_budgets, but
@@ -253,7 +265,7 @@ class TestFundedBudgetsCrud:
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
 
         for budget in (
@@ -287,16 +299,18 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        summary = get_funded_budgets_summary(session, donor_id)
+        summary = await get_funded_budgets_summary(session, donor_id)
 
         assert summary["total_budgets"] == 3
         assert summary["total_allocated_by_currency"] == [
             {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
         ]
 
-    def test_summary_excludes_unconfirmed_budgets_even_with_a_usable_rate(self):
+    async def test_summary_excludes_unconfirmed_budgets_even_with_a_usable_rate(
+        self, sqlite_session
+    ):
         """A draft budget with actual_currency/estimated_exchange_rate already
         set still counts toward total_budgets, but doesn't contribute to the
         currency-grouped figure until it's confirmed — a draft's total can
@@ -304,7 +318,7 @@ class TestFundedBudgetsCrud:
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_budgets_summary
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
 
         for budget in (
@@ -330,20 +344,20 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        summary = get_funded_budgets_summary(session, donor_id)
+        summary = await get_funded_budgets_summary(session, donor_id)
 
         assert summary["total_budgets"] == 2
         assert summary["total_allocated_by_currency"] == [
             {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
         ]
 
-    def test_grantees_groups_by_owner_across_multiple_budgets(self):
+    async def test_grantees_groups_by_owner_across_multiple_budgets(self, sqlite_session):
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         grantee_id = uuid.uuid4()
         other_grantee_id = uuid.uuid4()
@@ -391,9 +405,9 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        grantees = get_funded_grantees(session, donor_id)
+        grantees = await get_funded_grantees(session, donor_id)
         by_owner = {g["owner_id"]: g for g in grantees}
 
         assert by_owner[grantee_id]["budgets_count"] == 3
@@ -405,13 +419,13 @@ class TestFundedBudgetsCrud:
             {"currency": "GBP", "total_allocated": pytest.approx(50.0)}
         ]
 
-    def test_grantees_keeps_currencies_separate_not_blended(self):
+    async def test_grantees_keeps_currencies_separate_not_blended(self, sqlite_session):
         """Same grantee funded via budgets in two different currencies must not
         be blended into one mislabeled sum (see #139 review)."""
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         grantee_id = uuid.uuid4()
 
@@ -438,9 +452,9 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        grantees = get_funded_grantees(session, donor_id)
+        grantees = await get_funded_grantees(session, donor_id)
         assert len(grantees) == 1
         grantee = grantees[0]
         assert grantee["budgets_count"] == 2
@@ -449,7 +463,9 @@ class TestFundedBudgetsCrud:
         }
         assert by_currency == {"GBP": pytest.approx(3000.0), "USD": pytest.approx(5000.0)}
 
-    def test_grantees_excludes_budget_missing_a_usable_rate_from_currency_total(self):
+    async def test_grantees_excludes_budget_missing_a_usable_rate_from_currency_total(
+        self, sqlite_session
+    ):
         """Regression test: a confirmed budget with no actual_currency/
         estimated_exchange_rate set (e.g. confirmed before those fields
         existed — no backfill, see design.md's migration plan) still counts
@@ -459,7 +475,7 @@ class TestFundedBudgetsCrud:
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         grantee_id = uuid.uuid4()
 
@@ -484,9 +500,9 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        grantees = get_funded_grantees(session, donor_id)
+        grantees = await get_funded_grantees(session, donor_id)
         assert len(grantees) == 1
         grantee = grantees[0]
         assert grantee["budgets_count"] == 2
@@ -494,14 +510,14 @@ class TestFundedBudgetsCrud:
             {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
         ]
 
-    def test_grantees_excludes_unconfirmed_budgets_from_currency_total(self):
+    async def test_grantees_excludes_unconfirmed_budgets_from_currency_total(self, sqlite_session):
         """A grantee's draft budget with actual_currency/estimated_exchange_rate
         already set still counts toward budgets_count, but doesn't contribute
         to the currency-grouped total until it's confirmed."""
         from app.models.budget import BudgetModel, BudgetStatus
         from app.crud.budget_crud import get_funded_grantees
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         grantee_id = uuid.uuid4()
 
@@ -528,9 +544,9 @@ class TestFundedBudgetsCrud:
             ),
         ):
             session.add(budget)
-            session.commit()
+            await session.commit()
 
-        grantees = get_funded_grantees(session, donor_id)
+        grantees = await get_funded_grantees(session, donor_id)
         assert len(grantees) == 1
         grantee = grantees[0]
         assert grantee["budgets_count"] == 2
@@ -538,11 +554,11 @@ class TestFundedBudgetsCrud:
             {"currency": "GBP", "total_allocated": pytest.approx(3000.0)}
         ]
 
-    def test_list_budgets_funding_filter_excludes_other_donors(self):
+    async def test_list_budgets_funding_filter_excludes_other_donors(self, sqlite_session):
         from app.models.budget import BudgetModel
         from app.crud.budget_crud import list_budgets
 
-        session = _sqlite_session()
+        session = sqlite_session
         donor_id = uuid.uuid4()
         other_donor_id = uuid.uuid4()
 
@@ -551,10 +567,10 @@ class TestFundedBudgetsCrud:
             name="Theirs", owner_id=uuid.uuid4(), funding_customer_id=other_donor_id
         )
         session.add(mine)
-        session.commit()
+        await session.commit()
         session.add(theirs)
-        session.commit()
+        await session.commit()
 
-        results = list_budgets(session, funding_customer_id=donor_id)
+        results = await list_budgets(session, funding_customer_id=donor_id)
 
         assert [b.name for b in results] == ["Mine"]

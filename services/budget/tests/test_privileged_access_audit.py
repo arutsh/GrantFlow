@@ -7,11 +7,26 @@ correctly through the shared sink builder."""
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.models.base import Base
 from app.models.privileged_access_log import PrivilegedAccessLog
 from shared.security.privileged_access import make_privileged_access_sink
 
 ACTOR_ID = str(uuid4())
 CUSTOMER_ID = str(uuid4())
+
+
+@pytest.fixture
+def db():
+    """Dedicated sync in-memory session — privileged_access_audit.py's sink
+    deliberately runs on its own sync engine, independent of the app's
+    (async) primary session, so it needs its own sync db fixture here too."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=[PrivilegedAccessLog.__table__])
+    return sessionmaker(bind=engine)()
 
 
 def _request(method="GET", path="/api/v1/budgets"):

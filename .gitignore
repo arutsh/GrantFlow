@@ -247,3 +247,4 @@ frontend-typescript/tsconfig.tsbuildinfo
 .vscode/settings.json
 uploads/
 *.db
+.codex/
