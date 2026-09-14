@@ -1,10 +1,12 @@
-from sqlalchemy.orm import Session, contains_eager
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 from app.models.budget import BudgetCategoryModel, BudgetModel
 from uuid import UUID
 
 
-def create_budget_category(
-    session: Session,
+async def create_budget_category(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     name: str,
@@ -18,35 +20,35 @@ def create_budget_category(
         updated_by=user_id,
     )
     session.add(budget_category)
-    session.commit()
+    await session.commit()
     return budget_category
 
 
-def get_budget_category_by_name(
-    session: Session, budget_id: UUID, name: str
+async def get_budget_category_by_name(
+    session: AsyncSession, budget_id: UUID, name: str
 ) -> BudgetCategoryModel | None:
-    return (
-        session.query(BudgetCategoryModel)
-        .filter(BudgetCategoryModel.budget_id == budget_id, BudgetCategoryModel.name == name)
-        .first()
+    result = await session.execute(
+        select(BudgetCategoryModel).where(
+            BudgetCategoryModel.budget_id == budget_id, BudgetCategoryModel.name == name
+        )
     )
+    return result.scalar_one_or_none()
 
 
-def get_budget_categories_by_names(
-    session: Session, budget_id: UUID, names: list[str]
+async def get_budget_categories_by_names(
+    session: AsyncSession, budget_id: UUID, names: list[str]
 ) -> list[BudgetCategoryModel]:
-    return (
-        session.query(BudgetCategoryModel)
-        .filter(
+    result = await session.execute(
+        select(BudgetCategoryModel).where(
             BudgetCategoryModel.budget_id == budget_id,
             BudgetCategoryModel.name.in_(names),
         )
-        .all()
     )
+    return list(result.scalars().all())
 
 
-def bulk_create_budget_categories(
-    session: Session,
+async def bulk_create_budget_categories(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     names_and_codes: list[tuple[str, str | None]],
@@ -62,32 +64,36 @@ def bulk_create_budget_categories(
         for name, code in names_and_codes
     ]
     session.add_all(categories)
-    session.commit()
+    await session.commit()
     return categories
 
 
-def get_budget_category(
-    session: Session, category_id: UUID, customer_id: UUID | None = None
+async def get_budget_category(
+    session: AsyncSession, category_id: UUID, customer_id: UUID | None = None
 ) -> BudgetCategoryModel | None:
-    query = session.query(BudgetCategoryModel).filter(BudgetCategoryModel.id == category_id)
+    query = select(BudgetCategoryModel).where(BudgetCategoryModel.id == category_id)
     if customer_id:
         query = (
             query.join(BudgetCategoryModel.budget)
-            .filter(BudgetModel.owner_id == customer_id)
+            .where(BudgetModel.owner_id == customer_id)
             .options(contains_eager(BudgetCategoryModel.budget))
         )
-    return query.first()
+    result = await session.execute(query)
+    return result.scalar_one_or_none()
 
 
-def list_budget_categories(session: Session, budget_id: UUID | None = None, limit: int = 100):
-    query = session.query(BudgetCategoryModel)
+async def list_budget_categories(
+    session: AsyncSession, budget_id: UUID | None = None, limit: int = 100
+):
+    query = select(BudgetCategoryModel)
     if budget_id:
-        query = query.filter(BudgetCategoryModel.budget_id == budget_id)
-    return query.limit(limit).all()
+        query = query.where(BudgetCategoryModel.budget_id == budget_id)
+    result = await session.execute(query.limit(limit))
+    return list(result.scalars().all())
 
 
-def update_budget_category(
-    session: Session,
+async def update_budget_category(
+    session: AsyncSession,
     category: BudgetCategoryModel,
     user_id: UUID,
     name: str,
@@ -96,11 +102,11 @@ def update_budget_category(
     category.name = name
     category.code = code
     category.updated_by = user_id
-    session.commit()
+    await session.commit()
     return category
 
 
-def delete_budget_category(session: Session, category: BudgetCategoryModel) -> bool:
-    session.delete(category)
-    session.commit()
+async def delete_budget_category(session: AsyncSession, category: BudgetCategoryModel) -> bool:
+    await session.delete(category)
+    await session.commit()
     return True

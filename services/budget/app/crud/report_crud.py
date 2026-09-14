@@ -1,14 +1,16 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy.orm import Session, contains_eager
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager, selectinload
 from app.models.budget import BudgetModel
 from app.models.report import ReportModel
 from app.schemas.report_schema import ReportStatus
 from uuid import UUID
 
 
-def create_report(
-    session: Session,
+async def create_report(
+    session: AsyncSession,
     user_id: UUID,
     budget_id: UUID,
     name: str,
@@ -25,29 +27,37 @@ def create_report(
         updated_by=user_id,
     )
     session.add(report)
-    session.commit()
+    await session.commit()
     return report
 
 
-def get_report(session: Session, report_id: UUID) -> ReportModel | None:
-    return session.query(ReportModel).filter(ReportModel.id == report_id).first()
+async def get_report(
+    session: AsyncSession, report_id: UUID, load_lines: bool = False
+) -> ReportModel | None:
+    query = select(ReportModel).where(ReportModel.id == report_id)
+    if load_lines:
+        query = query.options(selectinload(ReportModel.lines))
+    result = await session.execute(query)
+    return result.scalar_one_or_none()
 
 
-def get_reports_by_creator(session: Session, user_id: UUID) -> list[ReportModel]:
+async def get_reports_by_creator(session: AsyncSession, user_id: UUID) -> list[ReportModel]:
     """Data-subject-rights export — see get_budgets_by_creator in
     budget_crud.py for the cross-service call this backs."""
-    return session.query(ReportModel).filter(ReportModel.created_by == user_id).all()
+    result = await session.execute(select(ReportModel).where(ReportModel.created_by == user_id))
+    return list(result.scalars().all())
 
 
-def list_reports(session: Session, budget_id: UUID | None = None) -> list[ReportModel]:
-    query = session.query(ReportModel)
+async def list_reports(session: AsyncSession, budget_id: UUID | None = None) -> list[ReportModel]:
+    query = select(ReportModel)
     if budget_id:
-        query = query.filter(ReportModel.budget_id == budget_id)
-    return query.all()
+        query = query.where(ReportModel.budget_id == budget_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def list_all_reports(
-    session: Session,
+async def list_all_reports(
+    session: AsyncSession,
     customer_id: UUID | str | None,
     status: ReportStatus | None = None,
     budget_id: UUID | None = None,
@@ -65,23 +75,24 @@ def list_all_reports(
     status/funder without a per-row lookup.
     """
     query = (
-        session.query(ReportModel)
+        select(ReportModel)
         .join(BudgetModel, ReportModel.budget_id == BudgetModel.id)
         .options(contains_eager(ReportModel.budget))
     )
     if customer_id is not None:
-        query = query.filter(BudgetModel.owner_id == customer_id)
+        query = query.where(BudgetModel.owner_id == customer_id)
     if status:
-        query = query.filter(ReportModel.status == status)
+        query = query.where(ReportModel.status == status)
     if budget_id:
-        query = query.filter(ReportModel.budget_id == budget_id)
+        query = query.where(ReportModel.budget_id == budget_id)
     if funding_customer_id:
-        query = query.filter(BudgetModel.funding_customer_id == funding_customer_id)
-    return query.all()
+        query = query.where(BudgetModel.funding_customer_id == funding_customer_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def list_funded_reports(
-    session: Session,
+async def list_funded_reports(
+    session: AsyncSession,
     funding_customer_id: UUID | str,
     status: ReportStatus | None = None,
     budget_id: UUID | None = None,
@@ -94,22 +105,23 @@ def list_funded_reports(
     list_all_reports's `funding_customer_id` narrowing on the owner side.
     """
     query = (
-        session.query(ReportModel)
+        select(ReportModel)
         .join(BudgetModel, ReportModel.budget_id == BudgetModel.id)
         .options(contains_eager(ReportModel.budget))
-        .filter(BudgetModel.funding_customer_id == funding_customer_id)
+        .where(BudgetModel.funding_customer_id == funding_customer_id)
     )
     if status:
-        query = query.filter(ReportModel.status == status)
+        query = query.where(ReportModel.status == status)
     if budget_id:
-        query = query.filter(ReportModel.budget_id == budget_id)
+        query = query.where(ReportModel.budget_id == budget_id)
     if owner_id:
-        query = query.filter(BudgetModel.owner_id == owner_id)
-    return query.all()
+        query = query.where(BudgetModel.owner_id == owner_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def list_overlapping_reports(
-    session: Session,
+async def list_overlapping_reports(
+    session: AsyncSession,
     budget_id: UUID,
     period_start: date,
     period_end: date,
@@ -117,18 +129,19 @@ def list_overlapping_reports(
 ) -> list[ReportModel]:
     """Any report for this budget whose period overlaps the given range,
     regardless of status — the non-overlap rule applies to all reports."""
-    query = session.query(ReportModel).filter(
+    query = select(ReportModel).where(
         ReportModel.budget_id == budget_id,
         ReportModel.period_start <= period_end,
         ReportModel.period_end >= period_start,
     )
     if exclude_report_id:
-        query = query.filter(ReportModel.id != exclude_report_id)
-    return query.all()
+        query = query.where(ReportModel.id != exclude_report_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def update_report(
-    session: Session,
+async def update_report(
+    session: AsyncSession,
     report: ReportModel,
     name: str | None = None,
     period_start: date | None = None,
@@ -140,18 +153,18 @@ def update_report(
         report.period_start = period_start
     if period_end is not None:
         report.period_end = period_end
-    session.commit()
+    await session.commit()
     return report
 
 
-def delete_report(session: Session, report: ReportModel) -> bool:
-    session.delete(report)
-    session.commit()
+async def delete_report(session: AsyncSession, report: ReportModel) -> bool:
+    await session.delete(report)
+    await session.commit()
     return True
 
 
-def transition_status(
-    session: Session,
+async def transition_status(
+    session: AsyncSession,
     report: ReportModel,
     new_status: ReportStatus,
     user_id: UUID | None = None,
@@ -165,5 +178,5 @@ def transition_status(
         report.reviewed_at = now
         report.reviewed_by = user_id
         report.review_notes = review_notes
-    session.commit()
+    await session.commit()
     return report

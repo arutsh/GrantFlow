@@ -1,13 +1,14 @@
 from datetime import date, datetime
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetStatus
 from uuid import UUID
 
 
-def create_budget(
-    session: Session,
+async def create_budget(
+    session: AsyncSession,
     user_id: UUID,
     name: str,
     funding_customer_id: UUID | None = None,
@@ -21,6 +22,7 @@ def create_budget(
     total_amount: float | None = None,
     donor_total_amount: float | None = None,
     estimated_exchange_rate: float | None = None,
+    load_lines: bool = False,
 ) -> BudgetModel:
     kwargs = {
         "name": name,
@@ -49,54 +51,72 @@ def create_budget(
     }
     budget = BudgetModel(**kwargs)
     session.add(budget)
-    session.commit()
+    await session.commit()
+    if load_lines:
+        await session.refresh(budget, attribute_names=["lines"])
     return budget
 
 
-def get_budgets_by_creator(session: Session, user_id: UUID) -> list[BudgetModel]:
+async def get_budgets_by_creator(session: AsyncSession, user_id: UUID) -> list[BudgetModel]:
     """Data-subject-rights export (GET /users/me/export on the users
     service) — a listing of financial records the requesting user created,
     called cross-service via the no-auth internal
     GET /budgets/by-creator/{user_id} endpoint."""
-    return session.query(BudgetModel).filter(BudgetModel.created_by == user_id).all()
+    result = await session.execute(select(BudgetModel).where(BudgetModel.created_by == user_id))
+    return list(result.scalars().all())
 
 
-def get_budget(
-    session: Session, budget_id: UUID, customer_id: UUID | None = None
+async def get_budget(
+    session: AsyncSession,
+    budget_id: UUID,
+    customer_id: UUID | None = None,
+    load_lines: bool = False,
+    load_reports: bool = False,
 ) -> BudgetModel | None:
-    query = session.query(BudgetModel)
+    query = select(BudgetModel)
     if customer_id:
-        return query.filter(
-            BudgetModel.id == budget_id, BudgetModel.owner_id == customer_id
-        ).first()
-    return query.filter(BudgetModel.id == budget_id).first()
+        query = query.where(BudgetModel.id == budget_id, BudgetModel.owner_id == customer_id)
+    else:
+        query = query.where(BudgetModel.id == budget_id)
+    if load_lines:
+        query = query.options(selectinload(BudgetModel.lines))
+    if load_reports:
+        query = query.options(selectinload(BudgetModel.reports))
+    result = await session.execute(query)
+    return result.scalar_one_or_none()
 
 
-def list_budgets(
-    session: Session,
+async def list_budgets(
+    session: AsyncSession,
     customer_id: UUID | None = None,
     funding_customer_id: UUID | None = None,
     limit: int = 100,
+    load_lines: bool = False,
 ):
-    query = session.query(BudgetModel)
+    query = select(BudgetModel)
     if customer_id:
-        query = query.filter(BudgetModel.owner_id == customer_id)
+        query = query.where(BudgetModel.owner_id == customer_id)
     if funding_customer_id:
-        query = query.filter(BudgetModel.funding_customer_id == funding_customer_id)
-    return query.limit(limit).all()
+        query = query.where(BudgetModel.funding_customer_id == funding_customer_id)
+    if load_lines:
+        query = query.options(selectinload(BudgetModel.lines))
+    result = await session.execute(query.limit(limit))
+    return list(result.scalars().all())
 
 
-def update_budget_name(session: Session, budget_id: UUID, new_name: str) -> BudgetModel | None:
-    budget = get_budget(session, budget_id)
+async def update_budget_name(
+    session: AsyncSession, budget_id: UUID, new_name: str
+) -> BudgetModel | None:
+    budget = await get_budget(session, budget_id)
     if not budget:
         return None
     budget.name = new_name
-    session.commit()
+    await session.commit()
     return budget
 
 
-def update_budget(
-    session: Session,
+async def update_budget(
+    session: AsyncSession,
     budget_id: UUID,
     name: str | None = None,
     owner_id: UUID | None = None,
@@ -114,7 +134,8 @@ def update_budget(
     confirmed_at: datetime | None = None,
     clear_confirmed_at: bool = False,
 ) -> BudgetModel | None:
-    budget = get_budget(session, budget_id)
+    # load_lines=True: response-building always reads budget.lines (via _can_save_as_template).
+    budget = await get_budget(session, budget_id, load_lines=True)
     if not budget:
         return None
 
@@ -157,17 +178,17 @@ def update_budget(
         budget.confirmed_at = None
     elif confirmed_at is not None:
         budget.confirmed_at = confirmed_at
-    session.commit()
+    await session.commit()
     return budget
 
 
-def delete_budget(session: Session, budget: BudgetModel) -> bool:
-    session.delete(budget)
-    session.commit()
+async def delete_budget(session: AsyncSession, budget: BudgetModel) -> bool:
+    await session.delete(budget)
+    await session.commit()
     return True
 
 
-def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> dict:
+async def get_funded_budgets_summary(session: AsyncSession, funding_customer_id: UUID) -> dict:
     """Grouped by `actual_currency` and summed from `total_amount ÷
     estimated_exchange_rate` — the real, line-derived total converted into
     the donor's own currency — not the flat `donor_total_amount` promise
@@ -184,27 +205,31 @@ def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> d
     currency-grouped figure is scoped to `confirmed` only — draft totals can
     still change."""
     total_budgets = (
-        session.query(func.count(BudgetModel.id))
-        .filter(BudgetModel.funding_customer_id == funding_customer_id)
-        .scalar()
-    )
+        await session.execute(
+            select(func.count(BudgetModel.id)).where(
+                BudgetModel.funding_customer_id == funding_customer_id
+            )
+        )
+    ).scalar()
     currency_rows = (
-        session.query(
-            BudgetModel.actual_currency,
-            func.sum(
-                func.coalesce(BudgetModel.total_amount, 0.0) / BudgetModel.estimated_exchange_rate
-            ),
+        await session.execute(
+            select(
+                BudgetModel.actual_currency,
+                func.sum(
+                    func.coalesce(BudgetModel.total_amount, 0.0)
+                    / BudgetModel.estimated_exchange_rate
+                ),
+            )
+            .where(
+                BudgetModel.funding_customer_id == funding_customer_id,
+                BudgetModel.status == BudgetStatus.confirmed,
+                BudgetModel.actual_currency.isnot(None),
+                BudgetModel.estimated_exchange_rate.isnot(None),
+                BudgetModel.estimated_exchange_rate != 0,
+            )
+            .group_by(BudgetModel.actual_currency)
         )
-        .filter(
-            BudgetModel.funding_customer_id == funding_customer_id,
-            BudgetModel.status == BudgetStatus.confirmed,
-            BudgetModel.actual_currency.isnot(None),
-            BudgetModel.estimated_exchange_rate.isnot(None),
-            BudgetModel.estimated_exchange_rate != 0,
-        )
-        .group_by(BudgetModel.actual_currency)
-        .all()
-    )
+    ).all()
     return {
         "total_budgets": total_budgets,
         "total_allocated_by_currency": [
@@ -215,7 +240,7 @@ def get_funded_budgets_summary(session: Session, funding_customer_id: UUID) -> d
 
 
 # TODO I guess return can be done with pydantic / revisit
-def get_funded_grantees(session: Session, funding_customer_id: UUID) -> list[dict]:
+async def get_funded_grantees(session: AsyncSession, funding_customer_id: UUID) -> list[dict]:
     """`budgets_count` counts every budget funded for that grantee, regardless
     of status. `total_allocated_by_currency` is grouped by `actual_currency`
     and summed from `total_amount ÷ estimated_exchange_rate` (see
@@ -223,32 +248,35 @@ def get_funded_grantees(session: Session, funding_customer_id: UUID) -> list[dic
     `local_currency`), scoped to `confirmed` budgets only, so it's computed
     separately and only covers the subset with a usable rate on file."""
     count_rows = (
-        session.query(
-            BudgetModel.owner_id,
-            func.count(BudgetModel.id).label("budgets_count"),
+        await session.execute(
+            select(
+                BudgetModel.owner_id,
+                func.count(BudgetModel.id).label("budgets_count"),
+            )
+            .where(BudgetModel.funding_customer_id == funding_customer_id)
+            .group_by(BudgetModel.owner_id)
         )
-        .filter(BudgetModel.funding_customer_id == funding_customer_id)
-        .group_by(BudgetModel.owner_id)
-        .all()
-    )
+    ).all()
     currency_rows = (
-        session.query(
-            BudgetModel.owner_id,
-            BudgetModel.actual_currency,
-            func.sum(
-                func.coalesce(BudgetModel.total_amount, 0.0) / BudgetModel.estimated_exchange_rate
-            ).label("total_allocated"),
+        await session.execute(
+            select(
+                BudgetModel.owner_id,
+                BudgetModel.actual_currency,
+                func.sum(
+                    func.coalesce(BudgetModel.total_amount, 0.0)
+                    / BudgetModel.estimated_exchange_rate
+                ).label("total_allocated"),
+            )
+            .where(
+                BudgetModel.funding_customer_id == funding_customer_id,
+                BudgetModel.status == BudgetStatus.confirmed,
+                BudgetModel.actual_currency.isnot(None),
+                BudgetModel.estimated_exchange_rate.isnot(None),
+                BudgetModel.estimated_exchange_rate != 0,
+            )
+            .group_by(BudgetModel.owner_id, BudgetModel.actual_currency)
         )
-        .filter(
-            BudgetModel.funding_customer_id == funding_customer_id,
-            BudgetModel.status == BudgetStatus.confirmed,
-            BudgetModel.actual_currency.isnot(None),
-            BudgetModel.estimated_exchange_rate.isnot(None),
-            BudgetModel.estimated_exchange_rate != 0,
-        )
-        .group_by(BudgetModel.owner_id, BudgetModel.actual_currency)
-        .all()
-    )
+    ).all()
     grantees: dict = {
         row.owner_id: {
             "owner_id": row.owner_id,
@@ -268,17 +296,19 @@ def get_funded_grantees(session: Session, funding_customer_id: UUID) -> list[dic
     return list(grantees.values())
 
 
-def recalculate_budget_total(session: Session, budget_id: UUID) -> BudgetModel | None:
+async def recalculate_budget_total(session: AsyncSession, budget_id: UUID) -> BudgetModel | None:
     """Recompute total_amount from this budget's lines and persist it."""
-    budget = get_budget(session, budget_id)
+    budget = await get_budget(session, budget_id)
     if not budget:
         return None
 
     total = (
-        session.query(func.coalesce(func.sum(BudgetLineModel.amount), 0))
-        .filter(BudgetLineModel.budget_id == budget_id)
-        .scalar()
-    )
+        await session.execute(
+            select(func.coalesce(func.sum(BudgetLineModel.amount), 0)).where(
+                BudgetLineModel.budget_id == budget_id
+            )
+        )
+    ).scalar()
     budget.total_amount = total
-    session.commit()
+    await session.commit()
     return budget

@@ -2,20 +2,21 @@ from typing import Dict, Any, Optional, List, cast
 from uuid import UUID
 
 import structlog
+from sqlalchemy import select
 
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.models.user_cache import UserProfileModel
 from app.services.user_client import get_user, get_users_by_ids
 
 logger = structlog.get_logger(__name__)
 
 
-def get_user_from_cache(user_id: UUID) -> Optional[Dict[str, Any]]:
-    session = SessionLocal()
-    try:
-        profile = (
-            session.query(UserProfileModel).filter(UserProfileModel.user_id == user_id).first()
+async def get_user_from_cache(user_id: UUID) -> Optional[Dict[str, Any]]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(UserProfileModel).where(UserProfileModel.user_id == user_id)
         )
+        profile = result.scalar_one_or_none()
 
         if not profile:
             logger.debug("cache_miss", user_id=str(user_id))
@@ -31,12 +32,10 @@ def get_user_from_cache(user_id: UUID) -> Optional[Dict[str, Any]]:
             "customer_id": str(profile.customer_id) if profile.customer_id else None,
             "role": profile.role,
         }
-    finally:
-        session.close()
 
 
-def get_user_from_cache_or_fallback(user_id: UUID, token: str) -> Optional[Dict[str, Any]]:
-    cached = get_user_from_cache(user_id)
+async def get_user_from_cache_or_fallback(user_id: UUID, token: str) -> Optional[Dict[str, Any]]:
+    cached = await get_user_from_cache(user_id)
     if cached:
         return cached
 
@@ -45,11 +44,11 @@ def get_user_from_cache_or_fallback(user_id: UUID, token: str) -> Optional[Dict[
     try:
         user = get_user(str(user_id), token)
 
-        session = SessionLocal()
-        try:
-            profile = (
-                session.query(UserProfileModel).filter(UserProfileModel.user_id == user_id).first()
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(UserProfileModel).where(UserProfileModel.user_id == user_id)
             )
+            profile = result.scalar_one_or_none()
 
             if profile:
                 profile.email = cast(str, user.get("email"))
@@ -74,10 +73,8 @@ def get_user_from_cache_or_fallback(user_id: UUID, token: str) -> Optional[Dict[
                 )
                 session.add(profile)
 
-            session.commit()
+            await session.commit()
             logger.info("cache_populated_from_fallback", user_id=str(user_id))
-        finally:
-            session.close()
 
         return user
     except Exception as e:
@@ -94,12 +91,12 @@ async def get_users_by_ids_cached(ids: List[str], token: str) -> Dict[str, Dict[
     if not ids:
         return {}
 
-    session = SessionLocal()
-    try:
+    async with AsyncSessionLocal() as session:
         user_uuids = [uid if isinstance(uid, UUID) else UUID(uid) for uid in ids]
-        profiles = (
-            session.query(UserProfileModel).filter(UserProfileModel.user_id.in_(user_uuids)).all()
+        result = await session.execute(
+            select(UserProfileModel).where(UserProfileModel.user_id.in_(user_uuids))
         )
+        profiles = result.scalars().all()
 
         cached_map = {
             str(p.user_id): {
@@ -128,9 +125,10 @@ async def get_users_by_ids_cached(ids: List[str], token: str) -> Dict[str, Dict[
 
             for user_id, user_data in http_users.items():
                 uid = UUID(user_id)
-                existing = (
-                    session.query(UserProfileModel).filter(UserProfileModel.user_id == uid).first()
+                existing_result = await session.execute(
+                    select(UserProfileModel).where(UserProfileModel.user_id == uid)
                 )
+                existing = existing_result.scalar_one_or_none()
 
                 if existing:
                     existing.email = cast(str, user_data.get("email"))
@@ -157,11 +155,11 @@ async def get_users_by_ids_cached(ids: List[str], token: str) -> Dict[str, Dict[
                     )
                     session.add(profile)
 
-            session.commit()
+            await session.commit()
             logger.info("cache_populated_from_http", count=len(http_users))
             cached_map.update(http_users)
         except Exception as e:
-            session.rollback()
+            await session.rollback()
             logger.error(
                 "batch_fallback_http_failed",
                 missing_count=len(missing_ids),
@@ -170,5 +168,3 @@ async def get_users_by_ids_cached(ids: List[str], token: str) -> Dict[str, Dict[
             raise
 
         return cached_map
-    finally:
-        session.close()

@@ -84,13 +84,11 @@ class TestPrepareExcelImport:
             detected_structure={"category_col": 0, "description_col": 1, "amount_col": 2},
         )
         db.add(template)
-        db.commit()
-        db.refresh(template)
+        await db.commit()
+        await db.refresh(template)
 
         with patch("app.services.excel_import_service.storage_client.save"):
-            result = await prepare_excel_import_service(
-                db, ValidUserFactory(), _upload_file(data)
-            )
+            result = await prepare_excel_import_service(db, ValidUserFactory(), _upload_file(data))
 
         assert result.matched is True
         assert result.donor_template_id == template.id

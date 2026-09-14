@@ -8,6 +8,7 @@ token) to list a user's financial records.
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from main import app
@@ -20,37 +21,39 @@ from tests.factories.report import ReportFactory
 client = TestClient(app)
 
 
+@pytest.mark.anyio
 class TestGetBudgetsByCreator:
-    def test_returns_only_that_users_budgets(self, db):
+    async def test_returns_only_that_users_budgets(self, db):
         creator_id = uuid4()
         other_id = uuid4()
         mine = BudgetFactory.build(created_by=creator_id)
         theirs = BudgetFactory.build(created_by=other_id)
         db.add_all([mine, theirs])
-        db.commit()
+        await db.commit()
 
-        result = get_budgets_by_creator(db, creator_id)
+        result = await get_budgets_by_creator(db, creator_id)
 
         assert [b.id for b in result] == [mine.id]
 
-    def test_no_budgets_returns_empty_list(self, db):
-        assert get_budgets_by_creator(db, uuid4()) == []
+    async def test_no_budgets_returns_empty_list(self, db):
+        assert await get_budgets_by_creator(db, uuid4()) == []
 
 
+@pytest.mark.anyio
 class TestGetReportsByCreator:
-    def test_returns_only_that_users_reports(self, db):
+    async def test_returns_only_that_users_reports(self, db):
         creator_id = uuid4()
         other_id = uuid4()
         budget = BudgetFactory.build(created_by=creator_id)
         db.add(budget)
-        db.commit()
+        await db.commit()
 
         mine = ReportFactory.build(budget_id=budget.id, created_by=creator_id)
         theirs = ReportFactory.build(budget_id=budget.id, created_by=other_id)
         db.add_all([mine, theirs])
-        db.commit()
+        await db.commit()
 
-        result = get_reports_by_creator(db, creator_id)
+        result = await get_reports_by_creator(db, creator_id)
 
         assert [r.id for r in result] == [mine.id]
 

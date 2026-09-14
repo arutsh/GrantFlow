@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from openpyxl import Workbook
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import DomainError
 from app.models.budget import BudgetModel
@@ -63,7 +64,7 @@ class TestSaveAsTemplateEligibility:
         user = ValidUserFactory()
         created = await _import_fresh_budget(db, user)
 
-        budget = db.get(BudgetModel, created["id"])
+        budget = await db.get(BudgetModel, created["id"], options=[selectinload(BudgetModel.lines)])
         assert budget.excel_import_fingerprint is not None
         assert budget.donor_template_id is None
         assert len(budget.lines) == budget.excel_import_lines_locked_count
@@ -71,11 +72,11 @@ class TestSaveAsTemplateEligibility:
     async def test_not_eligible_once_a_line_is_edited(self, db):
         user = ValidUserFactory()
         created = await _import_fresh_budget(db, user)
-        budget = db.get(BudgetModel, created["id"])
+        budget = await db.get(BudgetModel, created["id"], options=[selectinload(BudgetModel.lines)])
 
         line = budget.lines[0]
         line.amount = 9999.0
-        db.commit()
+        await db.commit()
 
         with pytest.raises(DomainError) as exc_info:
             await save_budget_as_template_service(budget.id, "Acme Template", user, db)
@@ -85,7 +86,7 @@ class TestSaveAsTemplateEligibility:
         from app.crud.budget_crud import create_budget
 
         user = ValidUserFactory()
-        budget = create_budget(
+        budget = await create_budget(
             session=db,
             user_id=user["user_id"],
             name="Manual budget",
@@ -103,7 +104,7 @@ class TestSaveAsTemplate:
     async def test_creates_template_and_sets_donor_template_id(self, db):
         user = ValidUserFactory()
         created = await _import_fresh_budget(db, user)
-        budget = db.get(BudgetModel, created["id"])
+        budget = await db.get(BudgetModel, created["id"])
         fingerprint = budget.excel_import_fingerprint
 
         template = await save_budget_as_template_service(budget.id, "Acme Donor", user, db)
@@ -112,7 +113,7 @@ class TestSaveAsTemplate:
         assert template.fingerprint == fingerprint
         assert template.detected_structure["amount_col"] == 2
 
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.donor_template_id == template.id
 
     async def test_subsequent_upload_with_same_fingerprint_is_matched(self, db):
@@ -120,7 +121,7 @@ class TestSaveAsTemplate:
         other_org = ValidUserFactory()
 
         created = await _import_fresh_budget(db, owner)
-        budget = db.get(BudgetModel, created["id"])
+        budget = await db.get(BudgetModel, created["id"])
         await save_budget_as_template_service(budget.id, "Acme Donor", owner, db)
 
         with patch("app.services.excel_import_service.storage_client.save"):

@@ -32,22 +32,22 @@ from app.services.user_client import get_customers_by_ids
 logger = structlog.get_logger(__name__)
 
 
-def _get_report_or_404(db, report_id: UUID):
-    report = get_report(db, report_id)
+async def _get_report_or_404(db, report_id: UUID, load_lines: bool = False):
+    report = await get_report(db, report_id, load_lines=load_lines)
     if not report:
         raise DomainError("Report Not found", status.HTTP_400_BAD_REQUEST)
     return report
 
 
-def _get_budget_or_404(db, budget_id: UUID) -> BudgetModel:
-    budget = get_budget(db, budget_id)
+async def _get_budget_or_404(db, budget_id: UUID) -> BudgetModel:
+    budget = await get_budget(db, budget_id)
     if not budget:
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
     return budget
 
 
-def get_viewable_budget(db, valid_user: dict, budget_id: UUID) -> BudgetModel:
-    budget = _get_budget_or_404(db, budget_id)
+async def get_viewable_budget(db, valid_user: dict, budget_id: UUID) -> BudgetModel:
+    budget = await _get_budget_or_404(db, budget_id)
     if not _can_view_budget(budget, valid_user):
         raise DomainError("Budget Not found", status.HTTP_400_BAD_REQUEST)
     return budget
@@ -71,16 +71,16 @@ def _validate_period(period_start, period_end) -> None:
         raise DomainError("period_end cannot be before period_start", status.HTTP_400_BAD_REQUEST)
 
 
-def _get_owned_report(db, valid_user: dict, report_id: UUID):
-    report = _get_report_or_404(db, report_id)
-    budget = get_viewable_budget(db, valid_user, report.budget_id)
+async def _get_owned_report(db, valid_user: dict, report_id: UUID):
+    report = await _get_report_or_404(db, report_id)
+    budget = await get_viewable_budget(db, valid_user, report.budget_id)
     if not is_owner(budget, valid_user):
         raise PermissionDenied()
     return report
 
 
-def create_report_service(db, valid_user: dict, report: ReportCreate):
-    budget = get_viewable_budget(db, valid_user, report.budget_id)
+async def create_report_service(db, valid_user: dict, report: ReportCreate):
+    budget = await get_viewable_budget(db, valid_user, report.budget_id)
 
     if budget.status != BudgetStatus.confirmed:
         raise DomainError(
@@ -108,14 +108,14 @@ def create_report_service(db, valid_user: dict, report: ReportCreate):
 
     _validate_period(period_start, period_end)
 
-    overlapping = list_overlapping_reports(db, budget.id, period_start, period_end)
+    overlapping = await list_overlapping_reports(db, budget.id, period_start, period_end)
     if overlapping:
         raise DomainError(
             "Report period overlaps an existing report for this budget",
             status.HTTP_400_BAD_REQUEST,
         )
 
-    return create_report(
+    return await create_report(
         session=db,
         user_id=valid_user["user_id"],
         budget_id=budget.id,
@@ -125,15 +125,16 @@ def create_report_service(db, valid_user: dict, report: ReportCreate):
     )
 
 
-def get_report_service(db, valid_user: dict, report_id: UUID):
-    report = _get_report_or_404(db, report_id)
-    get_viewable_budget(db, valid_user, report.budget_id)
+async def get_report_service(db, valid_user: dict, report_id: UUID):
+    # load_lines=True: this backs GET /reports/{id} (response_model=ReportWithLines).
+    report = await _get_report_or_404(db, report_id, load_lines=True)
+    await get_viewable_budget(db, valid_user, report.budget_id)
     return report
 
 
-def list_reports_service(db, valid_user: dict, budget_id: UUID):
-    get_viewable_budget(db, valid_user, budget_id)
-    return list_reports(db, budget_id=budget_id)
+async def list_reports_service(db, valid_user: dict, budget_id: UUID):
+    await get_viewable_budget(db, valid_user, budget_id)
+    return await list_reports(db, budget_id=budget_id)
 
 
 def _report_with_budget_info(report, owner_name: str | None = None) -> ReportWithBudgetInfo:
@@ -150,7 +151,7 @@ def _report_with_budget_info(report, owner_name: str | None = None) -> ReportWit
     )
 
 
-def list_all_reports_service(
+async def list_all_reports_service(
     db,
     valid_user: dict,
     status: ReportStatus | None = None,
@@ -167,7 +168,7 @@ def list_all_reports_service(
     if not customer_id:
         return []
 
-    reports = list_all_reports(
+    reports = await list_all_reports(
         db,
         customer_id=customer_id,
         status=status,
@@ -195,7 +196,7 @@ async def list_funded_reports_service(
     if not customer_id:
         return []
 
-    reports = list_funded_reports(
+    reports = await list_funded_reports(
         db,
         funding_customer_id=customer_id,
         status=status,
@@ -229,8 +230,8 @@ async def list_funded_reports_service(
     ]
 
 
-def update_report_service(db, valid_user: dict, report_id: UUID, report_update: ReportUpdate):
-    report = _get_owned_report(db, valid_user, report_id)
+async def update_report_service(db, valid_user: dict, report_id: UUID, report_update: ReportUpdate):
+    report = await _get_owned_report(db, valid_user, report_id)
     if report.status != ReportStatus.draft:
         raise DomainError("Only a draft report can be updated", status.HTTP_400_BAD_REQUEST)
 
@@ -238,7 +239,7 @@ def update_report_service(db, valid_user: dict, report_id: UUID, report_update: 
     period_end = report_update.period_end or report.period_end
     if report_update.period_start or report_update.period_end:
         _validate_period(period_start, period_end)
-        overlapping = list_overlapping_reports(
+        overlapping = await list_overlapping_reports(
             db, report.budget_id, period_start, period_end, exclude_report_id=report.id
         )
         if overlapping:
@@ -247,7 +248,7 @@ def update_report_service(db, valid_user: dict, report_id: UUID, report_update: 
                 status.HTTP_400_BAD_REQUEST,
             )
 
-    return update_report(
+    return await update_report(
         session=db,
         report=report,
         name=report_update.name,
@@ -256,21 +257,21 @@ def update_report_service(db, valid_user: dict, report_id: UUID, report_update: 
     )
 
 
-def delete_report_service(db, valid_user: dict, report_id: UUID):
-    report = _get_owned_report(db, valid_user, report_id)
+async def delete_report_service(db, valid_user: dict, report_id: UUID):
+    report = await _get_owned_report(db, valid_user, report_id)
     if report.status != ReportStatus.draft:
         raise DomainError("Only a draft report can be deleted", status.HTTP_400_BAD_REQUEST)
-    return delete_report(db, report)
+    return await delete_report(db, report)
 
 
-def submit_report_service(db, valid_user: dict, report_id: UUID):
-    report = _get_owned_report(db, valid_user, report_id)
+async def submit_report_service(db, valid_user: dict, report_id: UUID):
+    report = await _get_owned_report(db, valid_user, report_id)
     if report.status != ReportStatus.draft:
         raise DomainError("Only a draft report can be submitted", status.HTTP_400_BAD_REQUEST)
-    return transition_status(db, report, ReportStatus.submitted)
+    return await transition_status(db, report, ReportStatus.submitted)
 
 
-def review_report_service(
+async def review_report_service(
     db,
     valid_user: dict,
     report_id: UUID,
@@ -282,28 +283,28 @@ def review_report_service(
             "Review decision must be approved or rejected", status.HTTP_400_BAD_REQUEST
         )
 
-    report = _get_report_or_404(db, report_id)
+    report = await _get_report_or_404(db, report_id)
     # Visibility gate first (owner-or-funder), same info-hiding as every other
     # report endpoint: a total stranger gets "not found", not a permission
     # error that would confirm the report exists. Only a user who can already
     # see the report (but isn't the funder) reaches the review-specific check
     # below and gets PermissionDenied — that discloses nothing new to them.
-    budget = get_viewable_budget(db, valid_user, report.budget_id)
+    budget = await get_viewable_budget(db, valid_user, report.budget_id)
     if not _can_review(budget, valid_user):
         raise PermissionDenied()
 
     if report.status != ReportStatus.submitted:
         raise DomainError("Only a submitted report can be reviewed", status.HTTP_400_BAD_REQUEST)
 
-    return transition_status(
+    return await transition_status(
         db, report, decision, user_id=valid_user["user_id"], review_notes=review_notes
     )
 
 
-def reopen_report_service(db, valid_user: dict, report_id: UUID):
-    report = _get_owned_report(db, valid_user, report_id)
+async def reopen_report_service(db, valid_user: dict, report_id: UUID):
+    report = await _get_owned_report(db, valid_user, report_id)
     if report.status != ReportStatus.rejected:
         raise DomainError(
             "Only a rejected report can be reopened to draft", status.HTTP_400_BAD_REQUEST
         )
-    return transition_status(db, report, ReportStatus.draft)
+    return await transition_status(db, report, ReportStatus.draft)

@@ -14,6 +14,7 @@ from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.exceptions import DomainError
 from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
@@ -38,7 +39,7 @@ def _valid_user(customer_id):
     return make_valid_user(customer_id=customer_id)
 
 
-def _make_budget(
+async def _make_budget(
     db,
     owner_id=OWNER_ID,
     funding_customer_id=None,
@@ -56,12 +57,12 @@ def _make_budget(
         local_currency="GBP",
     )
     db.add(budget)
-    db.commit()
-    db.refresh(budget)
+    await db.commit()
+    await db.refresh(budget)
     return budget
 
 
-def _make_report(db, budget_id, status=ReportStatus.draft):
+async def _make_report(db, budget_id, status=ReportStatus.draft):
     report = ReportModel(
         budget_id=budget_id,
         name="Interim report",
@@ -70,79 +71,60 @@ def _make_report(db, budget_id, status=ReportStatus.draft):
         period_end=date(2026, 3, 31),
     )
     db.add(report)
-    db.commit()
-    db.refresh(report)
+    await db.commit()
+    await db.refresh(report)
     return report
 
 
+@pytest.mark.anyio
 class TestFunderCanConfirm:
-    def test_matching_funder_can_confirm_a_draft_budget(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
+    async def test_matching_funder_can_confirm_a_draft_budget(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
         payload = BudgetUpdate(status=BudgetStatus.confirmed, start_date=date(2026, 2, 1))
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
 
         assert result.status == BudgetStatus.confirmed
         assert result.start_date == date(2026, 2, 1)
 
-    def test_matching_funder_can_confirm_an_ai_draft_budget(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.ai_draft)
+    async def test_matching_funder_can_confirm_an_ai_draft_budget(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.ai_draft)
         payload = BudgetUpdate(status=BudgetStatus.confirmed, start_date=date(2026, 2, 1))
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
 
         assert result.status == BudgetStatus.confirmed
 
-    def test_stranger_cannot_confirm(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
+    async def test_stranger_cannot_confirm(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
         payload = BudgetUpdate(status=BudgetStatus.confirmed, start_date=date(2026, 2, 1))
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(STRANGER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(STRANGER_ID), db)
 
-    def test_funder_cannot_edit_metadata(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
+    async def test_funder_cannot_edit_metadata(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
         payload = BudgetUpdate(name="Renamed by funder")
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
 
-    def test_funder_cannot_bundle_a_confirm_with_a_metadata_edit(self, db):
-        budget = _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
+    async def test_funder_cannot_bundle_a_confirm_with_a_metadata_edit(self, db):
+        budget = await _make_budget(db, funding_customer_id=FUNDER_ID, status=BudgetStatus.draft)
         payload = BudgetUpdate(
             status=BudgetStatus.confirmed,
             start_date=date(2026, 2, 1),
             name="Renamed while confirming",
         )
 
-        import asyncio
-
         with pytest.raises(DomainError, match="metadata"):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
 
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.status == BudgetStatus.draft
 
-    def test_funder_cannot_revert_a_confirmed_budget(self, db):
-        budget = _make_budget(
+    async def test_funder_cannot_revert_a_confirmed_budget(self, db):
+        budget = await _make_budget(
             db,
             funding_customer_id=FUNDER_ID,
             status=BudgetStatus.confirmed,
@@ -150,98 +132,80 @@ class TestFunderCanConfirm:
         )
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(FUNDER_ID), db)
 
 
+@pytest.mark.anyio
 class TestRevertToDraft:
-    def test_owner_can_revert_a_confirmed_budget_with_no_reports(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_owner_can_revert_a_confirmed_budget_with_no_reports(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.status == BudgetStatus.draft
 
-    def test_revert_clears_confirmed_at(self, db):
-        # Nothing reads confirmed_at on a draft budget today, but leaving a
-        # stale confirm timestamp behind would misrepresent the budget's
-        # history the moment something does.
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_revert_clears_confirmed_at(self, db):
+        # Leaving a stale confirm timestamp behind would misrepresent history.
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         budget.confirmed_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        db.commit()
+        await db.commit()
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.confirmed_at is None
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.confirmed_at is None
 
-    def test_revert_blocked_by_a_submitted_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        _make_report(db, budget.id, status=ReportStatus.submitted)
+    async def test_revert_blocked_by_a_submitted_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        await _make_report(db, budget.id, status=ReportStatus.submitted)
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.status == BudgetStatus.confirmed
 
-    def test_revert_blocked_by_an_approved_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        _make_report(db, budget.id, status=ReportStatus.approved)
+    async def test_revert_blocked_by_an_approved_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        await _make_report(db, budget.id, status=ReportStatus.approved)
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-    def test_revert_succeeds_and_deletes_draft_reports(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_revert_succeeds_and_deletes_draft_reports(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
         report_id = report.id
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.status == BudgetStatus.draft
-        remaining = db.query(ReportModel).filter(ReportModel.budget_id == budget.id).all()
+        remaining = (
+            (await db.execute(select(ReportModel).where(ReportModel.budget_id == budget.id)))
+            .scalars()
+            .all()
+        )
         assert remaining == []
-        assert db.query(ReportModel).filter(ReportModel.id == report_id).first() is None
+        deleted = (
+            await db.execute(select(ReportModel).where(ReportModel.id == report_id))
+        ).scalar_one_or_none()
+        assert deleted is None
 
-    def test_revert_succeeds_and_deletes_draft_report_with_lines(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_revert_succeeds_and_deletes_draft_report_with_lines(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         budget_line = BudgetLineModel(budget_id=budget.id, description="Line", amount=100)
         db.add(budget_line)
-        db.commit()
-        db.refresh(budget_line)
+        await db.commit()
+        await db.refresh(budget_line)
 
-        report = _make_report(db, budget.id, status=ReportStatus.draft)
+        report = await _make_report(db, budget.id, status=ReportStatus.draft)
         report_line = ReportLineModel(
             report_id=report.id,
             budget_line_id=budget_line.id,
@@ -250,145 +214,109 @@ class TestRevertToDraft:
             expense_date=date(2026, 6, 15),
         )
         db.add(report_line)
-        db.commit()
+        await db.commit()
         report_id = report.id
         report_line_id = report_line.id
 
         payload = BudgetUpdate(status=BudgetStatus.draft)
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.status == BudgetStatus.draft
-        assert db.query(ReportModel).filter(ReportModel.id == report_id).first() is None
-        assert (
-            db.query(ReportLineModel).filter(ReportLineModel.id == report_line_id).first()
-            is None
-        )
+        deleted_report = (
+            await db.execute(select(ReportModel).where(ReportModel.id == report_id))
+        ).scalar_one_or_none()
+        deleted_line = (
+            await db.execute(select(ReportLineModel).where(ReportLineModel.id == report_line_id))
+        ).scalar_one_or_none()
+        assert deleted_report is None
+        assert deleted_line is None
 
 
+@pytest.mark.anyio
 class TestConfirmStatusGuard:
-    def test_owner_cannot_reconfirm_an_already_confirmed_budget(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_owner_cannot_reconfirm_an_already_confirmed_budget(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(status=BudgetStatus.confirmed, start_date=date(2026, 2, 1))
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.start_date == date(2026, 1, 1)
 
-    def test_owner_cannot_confirm_an_archived_budget(self, db):
-        budget = _make_budget(db, status=BudgetStatus.archived)
+    async def test_owner_cannot_confirm_an_archived_budget(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.archived)
         payload = BudgetUpdate(status=BudgetStatus.confirmed, start_date=date(2026, 2, 1))
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
 
+@pytest.mark.anyio
 class TestStartDateLockedOnceConfirmed:
-    def test_bare_start_date_edit_is_rejected_on_a_confirmed_budget(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_bare_start_date_edit_is_rejected_on_a_confirmed_budget(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(start_date=date(2027, 1, 1))
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-        db.refresh(budget)
+        await db.refresh(budget)
         assert budget.start_date == date(2026, 1, 1)
 
 
+@pytest.mark.anyio
 class TestEditLockedOnceConfirmed:
     """Budget metadata/lines lock as soon as the budget is `confirmed` — not
-    only once a report exists. A report can only ever be created against an
-    already-confirmed budget (create_report_service), so "confirmed" is a
-    strictly broader (and correct) condition than "has a report": there's a
-    real window — confirmed, before any report is created — where the old
-    report-based guard would have wrongly allowed edits."""
+    only once a report exists (a report can only be created against an
+    already-confirmed budget, so "confirmed" is strictly broader)."""
 
-    def test_metadata_edit_blocked_when_confirmed_even_without_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_metadata_edit_blocked_when_confirmed_even_without_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(name="Renamed")
-
-        import asyncio
 
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-    def test_metadata_edit_blocked_when_confirmed_with_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_metadata_edit_blocked_when_confirmed_with_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        await _make_report(db, budget.id, status=ReportStatus.draft)
         payload = BudgetUpdate(name="Renamed")
-
-        import asyncio
 
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-    def test_metadata_edit_allowed_on_a_draft_budget(self, db):
-        budget = _make_budget(db, status=BudgetStatus.draft)
+    async def test_metadata_edit_allowed_on_a_draft_budget(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.draft)
         payload = BudgetUpdate(name="Renamed")
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.name == "Renamed"
         # A bare metadata edit that omits `status` must not silently reset it.
         assert result.status == BudgetStatus.draft
 
-    def test_actual_currency_can_be_set_on_a_confirmed_budget(self, db):
-        # currency-ledger-ui's "set actual currency" prompt only ever appears
-        # on an already-confirmed budget (design.md task 6.7) — actual_currency
-        # is deliberately excluded from the metadata lock so that flow works.
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_actual_currency_can_be_set_on_a_confirmed_budget(self, db):
+        # actual_currency is deliberately excluded from the metadata lock.
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(actual_currency="USD")
 
-        import asyncio
-
-        result = asyncio.run(
-            update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-        )
+        result = await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
         assert result.actual_currency == "USD"
         assert result.status == BudgetStatus.confirmed
 
-    def test_actual_currency_alongside_another_metadata_field_still_blocked(self, db):
-        # The carve-out is currency-only: bundling actual_currency with a
-        # still-locked field (name) must not smuggle the name change through.
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_actual_currency_alongside_another_metadata_field_still_blocked(self, db):
+        # The carve-out is currency-only: bundling with a locked field must not smuggle it through.
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetUpdate(actual_currency="USD", name="Renamed")
 
-        import asyncio
-
         with pytest.raises(DomainError):
-            asyncio.run(
-                update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
-            )
+            await update_budget_service(budget.id, payload, _valid_user(OWNER_ID), db)
 
-    def test_create_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+    async def test_create_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
         payload = BudgetLineCreate(
             budget_id=budget.id,
             description="New line",
@@ -397,11 +325,11 @@ class TestEditLockedOnceConfirmed:
         )
 
         with pytest.raises(DomainError):
-            create_budget_line_service(db, _valid_user(OWNER_ID), payload)
+            await create_budget_line_service(db, _valid_user(OWNER_ID), payload)
 
-    def test_create_budget_line_blocked_when_confirmed_with_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_create_budget_line_blocked_when_confirmed_with_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        await _make_report(db, budget.id, status=ReportStatus.draft)
         payload = BudgetLineCreate(
             budget_id=budget.id,
             description="New line",
@@ -410,57 +338,57 @@ class TestEditLockedOnceConfirmed:
         )
 
         with pytest.raises(DomainError):
-            create_budget_line_service(db, _valid_user(OWNER_ID), payload)
+            await create_budget_line_service(db, _valid_user(OWNER_ID), payload)
 
-    def _make_line(self, db, budget_id):
+    async def _make_line(self, db, budget_id):
         category = BudgetCategoryModel(name="Personnel", code="PERSONNEL", budget_id=budget_id)
         db.add(category)
-        db.commit()
-        db.refresh(category)
+        await db.commit()
+        await db.refresh(category)
         line = BudgetLineModel(
             budget_id=budget_id, category_id=category.id, description="Line", amount=100.0
         )
         db.add(line)
-        db.commit()
-        db.refresh(line)
+        await db.commit()
+        await db.refresh(line)
         return line
 
-    def test_update_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        line = self._make_line(db, budget.id)
+    async def test_update_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        line = await self._make_line(db, budget.id)
 
         with pytest.raises(DomainError):
-            update_budget_line_service(
+            await update_budget_line_service(
                 db,
                 _valid_user(OWNER_ID),
                 line.id,
                 BudgetLineUpdate(budget_id=budget.id, amount=200.0),
             )
 
-    def test_update_budget_line_blocked_when_confirmed_with_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        line = self._make_line(db, budget.id)
-        _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_update_budget_line_blocked_when_confirmed_with_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        line = await self._make_line(db, budget.id)
+        await _make_report(db, budget.id, status=ReportStatus.draft)
 
         with pytest.raises(DomainError):
-            update_budget_line_service(
+            await update_budget_line_service(
                 db,
                 _valid_user(OWNER_ID),
                 line.id,
                 BudgetLineUpdate(budget_id=budget.id, amount=200.0),
             )
 
-    def test_delete_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        line = self._make_line(db, budget.id)
+    async def test_delete_budget_line_blocked_when_confirmed_even_without_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        line = await self._make_line(db, budget.id)
 
         with pytest.raises(DomainError):
-            delete_budget_line_service(line.id, _valid_user(OWNER_ID), db)
+            await delete_budget_line_service(line.id, _valid_user(OWNER_ID), db)
 
-    def test_delete_budget_line_blocked_when_confirmed_with_a_report(self, db):
-        budget = _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
-        line = self._make_line(db, budget.id)
-        _make_report(db, budget.id, status=ReportStatus.draft)
+    async def test_delete_budget_line_blocked_when_confirmed_with_a_report(self, db):
+        budget = await _make_budget(db, status=BudgetStatus.confirmed, start_date=date(2026, 1, 1))
+        line = await self._make_line(db, budget.id)
+        await _make_report(db, budget.id, status=ReportStatus.draft)
 
         with pytest.raises(DomainError):
-            delete_budget_line_service(line.id, _valid_user(OWNER_ID), db)
+            await delete_budget_line_service(line.id, _valid_user(OWNER_ID), db)

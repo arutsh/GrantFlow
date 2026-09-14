@@ -6,6 +6,7 @@ import uuid
 import re
 
 from fastapi import UploadFile, status
+from sqlalchemy import select
 
 from app.core.exceptions import DomainError
 from app.models.mapping import DonorTemplateModel
@@ -124,9 +125,13 @@ async def prepare_excel_import_service(
     storage_key = f"budget-imports/{customer_id}/{uuid.uuid4()}_{file.filename}"
     storage_client.save(storage_key, data, content_type=file.content_type)
 
-    matched_template = (
-        db.query(DonorTemplateModel).filter(DonorTemplateModel.fingerprint == fingerprint).first()
+    result = await db.execute(
+        select(DonorTemplateModel)
+        .where(DonorTemplateModel.fingerprint == fingerprint)
+        .order_by(DonorTemplateModel.id)
+        .limit(1)
     )
+    matched_template = result.scalar_one_or_none()
 
     if matched_template and matched_template.detected_structure:
         line_dicts, currency = _extract_via_template(grid, matched_template.detected_structure)

@@ -1,10 +1,11 @@
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.report import AttachmentModel
 from uuid import UUID
 
 
-def create_attachment(
-    session: Session,
+async def create_attachment(
+    session: AsyncSession,
     user_id: UUID,
     report_line_id: UUID,
     filename: str,
@@ -22,22 +23,28 @@ def create_attachment(
         updated_by=user_id,
     )
     session.add(attachment)
-    session.commit()
+    await session.commit()
     return attachment
 
 
-def get_attachment(session: Session, attachment_id: UUID) -> AttachmentModel | None:
-    return session.query(AttachmentModel).filter(AttachmentModel.id == attachment_id).first()
+async def get_attachment(session: AsyncSession, attachment_id: UUID) -> AttachmentModel | None:
+    result = await session.execute(
+        select(AttachmentModel).where(AttachmentModel.id == attachment_id)
+    )
+    return result.scalar_one_or_none()
 
 
-def list_attachments(session: Session, report_line_id: UUID | None = None) -> list[AttachmentModel]:
-    query = session.query(AttachmentModel)
+async def list_attachments(
+    session: AsyncSession, report_line_id: UUID | None = None
+) -> list[AttachmentModel]:
+    query = select(AttachmentModel)
     if report_line_id:
-        query = query.filter(AttachmentModel.report_line_id == report_line_id)
-    return query.all()
+        query = query.where(AttachmentModel.report_line_id == report_line_id)
+    result = await session.execute(query)
+    return list(result.scalars().all())
 
 
-def delete_attachment(session: Session, attachment: AttachmentModel) -> bool:
-    session.delete(attachment)
-    session.commit()
+async def delete_attachment(session: AsyncSession, attachment: AttachmentModel) -> bool:
+    await session.delete(attachment)
+    await session.commit()
     return True

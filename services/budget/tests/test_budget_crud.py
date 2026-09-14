@@ -9,7 +9,7 @@ class TestCreateBudget:
     async def test_omitted_fields_use_model_defaults(self, db):
         user = ValidUserFactory()
 
-        budget = create_budget(
+        budget = await create_budget(
             session=db, user_id=user["user_id"], name="No extras", owner_id=user["customer_id"]
         )
 
@@ -19,7 +19,7 @@ class TestCreateBudget:
     async def test_provided_fields_are_persisted(self, db):
         user = ValidUserFactory()
 
-        budget = create_budget(
+        budget = await create_budget(
             session=db,
             user_id=user["user_id"],
             name="With extras",
