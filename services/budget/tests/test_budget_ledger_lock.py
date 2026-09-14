@@ -36,7 +36,8 @@ async def pg_session():
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
-    except OperationalError:
+    except (OperationalError, OSError):
+        # OSError catches raw connect failures (e.g. DNS) asyncpg raises unwrapped.
         pytest.skip(f"Postgres not reachable at {settings.budget_database_url}")
     session = async_sessionmaker(engine, expire_on_commit=False)()
     yield session
