@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from uuid import UUID
@@ -46,7 +47,11 @@ async def get_or_create_category_service(
 
 
 async def get_or_create_categories_by_names_service(
-    db: AsyncSession, valid_user: dict, budget_id: UUID, category_names: list[str]
+    db: AsyncSession,
+    valid_user: dict,
+    budget_id: UUID,
+    category_names: list[str],
+    commit: bool = True,
 ) -> dict[str, BudgetCategoryModel]:
     """Batched form of get_or_create_category_service for a list of names — avoids N+1 lookups."""
     unique_names = list(dict.fromkeys(category_names))
@@ -61,14 +66,18 @@ async def get_or_create_categories_by_names_service(
         names_and_codes: list[tuple[str, str | None]] = [
             (name, "_".join(name.split()).upper()) for name in missing_names
         ]
+        # commit=False: SAVEPOINT the insert so a race can't roll back the caller's flushed budget.
+        savepoint = db.begin_nested() if not commit else nullcontext()
         try:
-            created = await bulk_create_budget_categories(
-                db, valid_user["user_id"], budget_id, names_and_codes
-            )
+            async with savepoint:
+                created = await bulk_create_budget_categories(
+                    db, valid_user["user_id"], budget_id, names_and_codes, commit=commit
+                )
         except IntegrityError:
             # budget_id is freshly created by the caller, so nothing else can
             # already reference it — this race almost impossible situation.
-            await db.rollback()
+            if commit:
+                await db.rollback()
             created = await get_budget_categories_by_names(db, budget_id, unique_names)
             if len(created) != len(unique_names):
                 raise DomainError(
@@ -77,8 +86,6 @@ async def get_or_create_categories_by_names_service(
                 )
             result = {category.name: category for category in created}
         else:
-            # created rows are expired post-commit (expire_on_commit=True), so use
-            # the already-known names instead of reading .name and triggering N+1 selects.
             result.update({name: category for (name, _), category in zip(names_and_codes, created)})
 
     return result

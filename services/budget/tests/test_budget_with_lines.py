@@ -1,12 +1,17 @@
 import pytest
 from typing import Any
 from unittest.mock import patch, MagicMock, AsyncMock
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from uuid import uuid4
 
 from main import app
 from app.api.budget_routes import get_validated_user
-from tests.factories.user import make_valid_user
+from app.models.budget import BudgetModel, BudgetLineModel, BudgetCategoryModel
+from app.schemas.with_lines_schema import BudgetLineInput, CreateBudgetWithLinesRequest
+from app.services.budget_services import create_budget_with_lines_service
+from tests.factories.user import ValidUserFactory
 from tests.factories.budget import BudgetLineFactory, BudgetCategoryFactory
 
 client = TestClient(app)
@@ -31,7 +36,7 @@ VALID_PAYLOAD: dict[str, Any] = {
 
 
 def _mock_valid_user():
-    return make_valid_user(user_id=USER_ID, customer_id=CUSTOMER_ID)
+    return ValidUserFactory(user_id=USER_ID, customer_id=CUSTOMER_ID)
 
 
 def _mock_budget(budget_id=None):
@@ -105,9 +110,7 @@ class TestCreateBudgetWithLinesEndpoint:
                 "app.services.budget_services.get_or_create_categories_by_names_service",
                 return_value=_mock_categories_by_name("Personnel", "Supplies"),
             ),
-            patch(
-                "app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines
-            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines),
             patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
@@ -157,8 +160,8 @@ class TestCreateBudgetWithLinesEndpoint:
         assert response.status_code == 401
         app.dependency_overrides[get_validated_user] = _mock_valid_user
 
-    def test_rolls_back_budget_if_category_resolution_fails(self):
-        """Category resolution fails before the bulk insert runs — no lines to clean up."""
+    def test_returns_500_if_category_resolution_fails(self):
+        """Failures roll back the transaction now, not compensating deletes."""
         mock_budget = _mock_budget()
 
         with (
@@ -167,18 +170,14 @@ class TestCreateBudgetWithLinesEndpoint:
                 "app.services.budget_services.get_or_create_categories_by_names_service",
                 side_effect=Exception("DB error"),
             ),
-            patch("app.services.budget_services.delete_budget_line") as mock_delete_line,
-            patch("app.services.budget_services.delete_budget") as mock_delete_budget,
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
 
         assert response.status_code == 500
-        mock_delete_line.assert_not_called()
-        mock_delete_budget.assert_called_once()
 
-    def test_rolls_back_budget_if_bulk_line_insert_fails(self):
+    def test_returns_500_if_bulk_line_insert_fails(self):
         """The bulk insert is one commit for all lines, so a failure there is
-        all-or-nothing — no partially-created lines to clean up, only the budget."""
+        all-or-nothing — no partially-created lines to roll back individually."""
         mock_budget = _mock_budget()
 
         with (
@@ -191,14 +190,10 @@ class TestCreateBudgetWithLinesEndpoint:
                 "app.services.budget_services.bulk_create_budget_lines",
                 side_effect=Exception("DB error"),
             ),
-            patch("app.services.budget_services.delete_budget_line") as mock_delete_line,
-            patch("app.services.budget_services.delete_budget") as mock_delete_budget,
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
 
         assert response.status_code == 500
-        mock_delete_line.assert_not_called()
-        mock_delete_budget.assert_called_once()
 
     def test_duration_months_is_optional(self):
         payload = {
@@ -250,9 +245,7 @@ class TestCreateBudgetWithLinesEndpoint:
                 "app.services.budget_services.get_or_create_categories_by_names_service",
                 return_value=_mock_categories_by_name("Personnel", "Supplies"),
             ),
-            patch(
-                "app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines
-            ),
+            patch("app.services.budget_services.bulk_create_budget_lines", return_value=mock_lines),
             patch("app.services.budget_services.recalculate_budget_total"),
             patch(
                 "app.services.budget_services.get_budget_service",
@@ -292,11 +285,54 @@ class TestCreateBudgetWithLinesEndpoint:
                 "app.services.budget_services.bulk_create_budget_lines",
                 side_effect=Exception("DB error"),
             ),
-            patch("app.services.budget_services.delete_budget_line"),
-            patch("app.services.budget_services.delete_budget"),
             patch("app.services.budget_services.set_span_attributes") as mock_set_span_attrs,
         ):
             response = client.post("/api/v1/budgets/with-lines", json=VALID_PAYLOAD)
 
         assert response.status_code == 500
         mock_set_span_attrs.assert_any_call(budget_id=mock_budget.id)
+
+
+@pytest.mark.anyio
+class TestCreateBudgetWithLinesAtomicity:
+    """Real-DB (not mocked crud) proof of design.md Decision 5's atomic-write requirement."""
+
+    async def test_success_commits_exactly_once(self, db):
+        user = ValidUserFactory()
+        request = CreateBudgetWithLinesRequest(
+            budget_name="Atomic Budget",
+            external_funder_name="Acme Foundation",
+            local_currency="GBP",
+            lines=[
+                BudgetLineInput(category_name="Personnel", description="Staff", amount=1000.0),
+                BudgetLineInput(category_name="Supplies", description="Kits", amount=200.0),
+            ],
+        )
+
+        with patch.object(db, "commit", wraps=db.commit) as mock_commit:
+            result = await create_budget_with_lines_service(request, user, db)
+
+        assert mock_commit.await_count == 1
+        assert len(result["lines"]) == 2
+
+    async def test_failure_after_lines_flushed_commits_nothing(self, db):
+        user = ValidUserFactory()
+        request = CreateBudgetWithLinesRequest(
+            budget_name="Doomed Budget",
+            external_funder_name="Acme Foundation",
+            local_currency="GBP",
+            lines=[
+                BudgetLineInput(category_name="Personnel", description="Staff", amount=1000.0),
+            ],
+        )
+
+        with patch(
+            "app.services.budget_services.recalculate_budget_total",
+            side_effect=RuntimeError("simulated failure after budget/category/line flush"),
+        ):
+            with pytest.raises(HTTPException):
+                await create_budget_with_lines_service(request, user, db)
+
+        assert (await db.execute(select(BudgetModel))).scalars().all() == []
+        assert (await db.execute(select(BudgetLineModel))).scalars().all() == []
+        assert (await db.execute(select(BudgetCategoryModel))).scalars().all() == []

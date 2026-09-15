@@ -15,6 +15,7 @@ async def create_budget_line(
     description: str,
     amount: float,
     extra_fields: dict | None = None,
+    commit: bool = True,
 ) -> BudgetLineModel:
     """
     Create a budget line after validating NGO and Donor IDs.
@@ -31,7 +32,10 @@ async def create_budget_line(
         updated_by=user_id,
     )
     session.add(budget_line)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     # The response schema always nests `category`; refresh it explicitly rather than
     # relying on it happening to already sit in the identity map.
     await session.refresh(budget_line, attribute_names=["category"])
@@ -43,6 +47,7 @@ async def bulk_create_budget_lines(
     user_id: UUID,
     budget_id: UUID,
     lines: list[dict],
+    commit: bool = True,
 ) -> list[BudgetLineModel]:
     """Create multiple budget lines with a single insert + commit."""
     budget_lines = [
@@ -58,7 +63,10 @@ async def bulk_create_budget_lines(
         for line in lines
     ]
     session.add_all(budget_lines)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
 
     line_ids = [budget_line.id for budget_line in budget_lines]
     result = await session.execute(
@@ -120,7 +128,12 @@ async def update_budget_line(
     return existing_line
 
 
-async def delete_budget_line(session: AsyncSession, budget_line: BudgetLineModel) -> bool:
+async def delete_budget_line(
+    session: AsyncSession, budget_line: BudgetLineModel, commit: bool = True
+) -> bool:
     await session.delete(budget_line)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return True
