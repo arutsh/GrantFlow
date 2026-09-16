@@ -23,6 +23,7 @@ async def create_budget(
     donor_total_amount: float | None = None,
     estimated_exchange_rate: float | None = None,
     load_lines: bool = False,
+    commit: bool = True,
 ) -> BudgetModel:
     kwargs = {
         "name": name,
@@ -51,7 +52,10 @@ async def create_budget(
     }
     budget = BudgetModel(**kwargs)
     session.add(budget)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     if load_lines:
         await session.refresh(budget, attribute_names=["lines"])
     return budget
@@ -182,9 +186,12 @@ async def update_budget(
     return budget
 
 
-async def delete_budget(session: AsyncSession, budget: BudgetModel) -> bool:
+async def delete_budget(session: AsyncSession, budget: BudgetModel, commit: bool = True) -> bool:
     await session.delete(budget)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return True
 
 
@@ -296,7 +303,9 @@ async def get_funded_grantees(session: AsyncSession, funding_customer_id: UUID) 
     return list(grantees.values())
 
 
-async def recalculate_budget_total(session: AsyncSession, budget_id: UUID) -> BudgetModel | None:
+async def recalculate_budget_total(
+    session: AsyncSession, budget_id: UUID, commit: bool = True
+) -> BudgetModel | None:
     """Recompute total_amount from this budget's lines and persist it."""
     budget = await get_budget(session, budget_id)
     if not budget:
@@ -310,5 +319,8 @@ async def recalculate_budget_total(session: AsyncSession, budget_id: UUID) -> Bu
         )
     ).scalar()
     budget.total_amount = total
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return budget

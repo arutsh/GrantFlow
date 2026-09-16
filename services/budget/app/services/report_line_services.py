@@ -68,9 +68,7 @@ async def create_report_line_service(db, valid_user: dict, report_line: ReportLi
         try:
             await allocate_fifo_service(db, created)
         except Exception:
-            # Compensating rollback — same pattern as
-            # budget_services.create_budget_with_lines_service: a failure here
-            # must not leave a report line the client was told failed to create.
+            # Compensating delete: don't leave a report line the client was told failed to create.
             await delete_report_line(db, created)
             raise
     return created

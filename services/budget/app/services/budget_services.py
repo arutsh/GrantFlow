@@ -15,7 +15,7 @@ from app.crud.budget_crud import (
     get_funded_grantees,
     recalculate_budget_total,
 )
-from app.crud.budget_line_crud import delete_budget_line, bulk_create_budget_lines
+from app.crud.budget_line_crud import bulk_create_budget_lines
 from app.services.budget_category_services import get_or_create_categories_by_names_service
 from app.crud.dashboard_crud import (
     count_budgets_by_status,
@@ -62,6 +62,7 @@ async def create_budget_service(
     db,
     include_user_datails: bool = False,
     budget_status: BudgetStatus | None = None,
+    commit: bool = True,
 ):
 
     if budget.funding_customer_id:
@@ -107,6 +108,7 @@ async def create_budget_service(
         donor_total_amount=budget.donor_total_amount,
         estimated_exchange_rate=budget.estimated_exchange_rate,
         load_lines=include_user_datails,
+        commit=commit,
     )
     if not include_user_datails:
         return new_budget
@@ -595,8 +597,6 @@ async def create_budget_with_lines_service(
     valid_user: dict,
     db,
 ):
-    new_budget = None
-    created_lines = []
     try:
         owner_id = request.owner_id or valid_user.get("customer_id")
 
@@ -605,6 +605,8 @@ async def create_budget_with_lines_service(
             # Fall back to the org's default currency (Decision 8); errors propagate, no silent GBP.
             local_currency = get_customer_cached(owner_id).get("currency")
 
+        # commit=False throughout: budget + categories + lines + total are flushed only,
+        # one db.commit() below makes the whole operation atomic (design.md Decision 5).
         new_budget = await create_budget_service(
             BudgetCreate(
                 name=request.budget_name,
@@ -619,6 +621,7 @@ async def create_budget_with_lines_service(
             valid_user,
             db,
             budget_status=BudgetStatus.ai_draft,
+            commit=False,
         )
         set_span_attributes(budget_id=new_budget.id)
 
@@ -627,6 +630,7 @@ async def create_budget_with_lines_service(
             valid_user,
             budget_id=new_budget.id,
             category_names=[line_input.category_name for line_input in request.lines],
+            commit=False,
         )
         category_ids_by_name = {name: category.id for name, category in categories_by_name.items()}
         line_specs = []
@@ -641,9 +645,9 @@ async def create_budget_with_lines_service(
             )
 
         created_lines = await bulk_create_budget_lines(
-            db, valid_user["user_id"], new_budget.id, line_specs
+            db, valid_user["user_id"], new_budget.id, line_specs, commit=False
         )
-        await recalculate_budget_total(db, new_budget.id)
+        await recalculate_budget_total(db, new_budget.id, commit=False)
 
         # Excel-import provenance, set only by chat's import-excel orchestration.
         if any(
@@ -659,7 +663,8 @@ async def create_budget_with_lines_service(
             new_budget.excel_import_fingerprint = request.excel_import_fingerprint
             new_budget.excel_import_structure = request.excel_import_structure
             new_budget.excel_import_lines_locked_count = request.excel_import_lines_locked_count
-            await db.commit()
+
+        await db.commit()
 
         from app.schemas.budget_line_schema import BudgetLine
 
@@ -670,18 +675,10 @@ async def create_budget_with_lines_service(
         return enriched
 
     except (HTTPException, DomainError):
-        # Validation/permission errors — roll back any lines created before re-raising
-        for line in reversed(created_lines):
-            await delete_budget_line(db, line)
-        if new_budget:
-            await delete_budget(db, new_budget)
+        await db.rollback()
         raise
     except Exception as e:
-        # Unexpected DB/infra error — compensating transaction then 500
-        for line in reversed(created_lines):
-            await delete_budget_line(db, line)
-        if new_budget:
-            await delete_budget(db, new_budget)
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create budget with lines. Changes have been rolled back.",

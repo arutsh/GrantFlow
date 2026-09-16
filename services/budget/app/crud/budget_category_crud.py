@@ -52,6 +52,7 @@ async def bulk_create_budget_categories(
     user_id: UUID,
     budget_id: UUID,
     names_and_codes: list[tuple[str, str | None]],
+    commit: bool = True,
 ) -> list[BudgetCategoryModel]:
     categories = [
         BudgetCategoryModel(
@@ -64,7 +65,10 @@ async def bulk_create_budget_categories(
         for name, code in names_and_codes
     ]
     session.add_all(categories)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return categories
 
 
