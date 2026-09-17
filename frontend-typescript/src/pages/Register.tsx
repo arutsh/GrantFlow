@@ -69,7 +69,7 @@ export default function Register() {
         <h1 className="text-3xl font-bold text-center text-slate-900 mb-2">
           Create Account
         </h1>
-        <p className="text-center text-gray-500 mb-8">Join GrandFlow today</p>
+        <p className="text-center text-gray-500 mb-8">Join OpenGrantFlow today</p>
 
         {/* Error Message */}
         {error && (
