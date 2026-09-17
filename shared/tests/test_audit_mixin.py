@@ -89,6 +89,27 @@ class TestAuditMixinListener:
 
         assert widget.updated_by is None
 
+    def test_manually_set_created_by_is_not_clobbered_when_context_unset(self, session):
+        manual_user_id = uuid.uuid4()
+        widget = _WidgetModel(created_by=manual_user_id, updated_by=manual_user_id)
+        session.add(widget)
+        session.commit()
+
+        assert widget.created_by == manual_user_id
+        assert widget.updated_by == manual_user_id
+
+    def test_manually_set_updated_by_is_not_clobbered_when_context_unset(self, session):
+        widget = _WidgetModel()
+        session.add(widget)
+        session.commit()
+
+        manual_user_id = uuid.uuid4()
+        widget.name = "renamed"
+        widget.updated_by = manual_user_id
+        session.commit()
+
+        assert widget.updated_by == manual_user_id
+
 
 class TestAuditColumnsMixinListener:
     def test_created_by_set_on_insert_when_context_set(self, session):
