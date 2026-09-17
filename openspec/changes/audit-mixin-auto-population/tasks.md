@@ -2,11 +2,11 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 ## 1. Shared audit-trail infrastructure
 
-- [ ] 1.1 Add `shared/security/current_user_context.py` with a `ContextVar[uuid.UUID | None]` (default `None`) and a small `set`/reset helper.
-- [ ] 1.2 In `shared/db/audit_mixin.py`, split `AuditMixin` into the existing `id`-bearing `AuditMixin` plus a new PK-less `AuditColumnsMixin` (`created_at`/`updated_at`/`created_by`/`updated_by` only), sharing common column definitions.
-- [ ] 1.3 Register a SQLAlchemy mapper event listener at import time in `shared/db/audit_mixin.py` (`before_insert` sets `created_by`/`updated_by` from the contextvar; `before_update` sets `updated_by`), bound with `propagate=True` so it applies to both mixins and every subclass.
-- [ ] 1.4 Unit test the listener logic in isolation (in-memory sqlite, a throwaway test model per mixin) covering: contextvar set → columns populated; contextvar unset (`None`) → columns stay `NULL`, no exception.
-- [ ] 1.5 Run `shared`'s test suite clean; PR merged.
+- [x] 1.1 Add `shared/security/current_user_context.py` with a `ContextVar[uuid.UUID | None]` (default `None`) and a small `set`/reset helper.
+- [x] 1.2 In `shared/db/audit_mixin.py`, split `AuditMixin` into the existing `id`-bearing `AuditMixin` plus a new PK-less `AuditColumnsMixin` (`created_at`/`updated_at`/`created_by`/`updated_by` only), sharing common column definitions.
+- [x] 1.3 Register a SQLAlchemy mapper event listener at import time in `shared/db/audit_mixin.py` (`before_insert` sets `created_by`/`updated_by` from the contextvar; `before_update` sets `updated_by`), bound with `propagate=True` so it applies to both mixins and every subclass.
+- [x] 1.4 Unit test the listener logic in isolation (in-memory sqlite, a throwaway test model per mixin) covering: contextvar set → columns populated; contextvar unset (`None`) → columns stay `NULL`, no exception.
+- [ ] 1.5 Run `shared`'s test suite clean; PR merged. (suite ran clean — 112 passed, 1 pre-existing unrelated failure in worktree-scanning test; PR not yet opened)
 
 ## 2. Wire current-user capture into the shared auth dependency — depends on 1
 
