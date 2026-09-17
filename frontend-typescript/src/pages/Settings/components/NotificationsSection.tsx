@@ -1,8 +1,6 @@
 import { SectionHead } from "@/components/ui/SectionHead";
 
-// Proposed section, not wired to a backend: every email GrandFlow sends
-// today (verification, receipts) is transactional/mandatory, so there's no
-// preference to store yet. Placeholder for when opt-in notifications exist.
+// Proposed section, not wired to a backend: no opt-in notifications exist yet, only mandatory transactional email.
 const STUB_PREFERENCES = [
   {
     label: "Budget approval needed",
