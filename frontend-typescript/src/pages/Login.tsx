@@ -65,7 +65,7 @@ export default function Login() {
         </div>
 
         <h1 className="text-3xl font-bold text-center text-slate-900 mb-2">
-          GrandFlow
+          OpenGrantFlow
         </h1>
         <p className="text-center text-gray-500 mb-8">Welcome back</p>
 

@@ -37,7 +37,7 @@ function ConsentSummary() {
       <p className="text-sm font-medium text-gray-900">Data processing</p>
       <p className="text-xs text-gray-500">
         {data?.data_processing_granted
-          ? `Required to use GrandFlow — granted${dataProcessingAt ? ` on ${dataProcessingAt}` : ""}.`
+          ? `Required to use OpenGrantFlow — granted${dataProcessingAt ? ` on ${dataProcessingAt}` : ""}.`
           : "Not granted."}
       </p>
     </div>
@@ -60,10 +60,7 @@ function MarketingConsentToggle() {
 
   if (isLoading) return <p className="text-sm text-gray-400">Loading…</p>;
 
-  // Only a "granted at" timestamp exists — withdrawing clears it rather than
-  // recording when (design.md decision 1: current/last-known state only, no
-  // separate consent-change history for v1), so there's no "withdrawn on
-  // <date>" to show here yet.
+  // Only "granted at" is stored (design.md decision 1), so no "withdrawn on <date>" to show yet.
   const marketingAt = formatDate(data?.marketing_at ?? null);
 
   return (
