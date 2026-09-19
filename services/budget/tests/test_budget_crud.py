@@ -1,6 +1,9 @@
+import uuid
+
 import pytest
 
-from app.crud.budget_crud import create_budget
+from app.crud.budget_crud import create_budget, update_budget
+from shared.security.current_user_context import reset_current_user_id, set_current_user_id
 from tests.factories.user import ValidUserFactory
 
 
@@ -36,3 +39,31 @@ class TestCreateBudget:
         assert budget.duration_months == 12
         assert budget.donor_total_amount == 5000.0
         assert budget.estimated_exchange_rate == 1.1
+
+
+@pytest.mark.anyio
+class TestUpdateBudgetAuditTrail:
+    async def test_updated_by_reflects_the_editing_user_not_the_creator(self, db):
+        """update_budget never touches updated_by itself — only the listener should."""
+        creator = ValidUserFactory()
+        editor = ValidUserFactory()
+        creator_id = uuid.UUID(creator["user_id"])
+        editor_id = uuid.UUID(editor["user_id"])
+
+        token = set_current_user_id(creator_id)
+        try:
+            budget = await create_budget(
+                session=db, user_id=creator_id, name="Original", owner_id=creator["customer_id"]
+            )
+        finally:
+            reset_current_user_id(token)
+
+        assert budget.updated_by == creator_id
+
+        token = set_current_user_id(editor_id)
+        try:
+            updated = await update_budget(session=db, budget_id=budget.id, name="Edited")
+        finally:
+            reset_current_user_id(token)
+
+        assert updated.updated_by == editor_id
