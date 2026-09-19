@@ -21,11 +21,11 @@ One task group = one GitHub ticket = one PR, merged before the next group starts
 
 - [x] 3.1 Resolved at design stage (design.md Decision 5): manual assignments confirmed redundant/in-sync with the automatic listener across all 4 services, no on-behalf-of divergence found. No per-call-site removal needed.
 - [ ] 3.2 (dropped — manual assignments stay in place per Decision 5; not removed)
-- [ ] 3.3 Add/update a test proving the previously-stale-`updated_by` bug is fixed: create a row as user A, update it as user B, assert `updated_by` now equals B (not still A).
-- [ ] 3.4 Run `services/budget`'s test suite clean; PR merged.
+- [x] 3.3 Add/update a test proving the previously-stale-`updated_by` bug is fixed: create a row as user A, update it as user B, assert `updated_by` now equals B (not still A). (`services/budget/tests/test_budget_crud.py::TestUpdateBudgetAuditTrail` — exercises `update_budget`, which never sets `updated_by` itself, proving the automatic listener is what fixes it.)
+- [x] 3.4 Run `services/budget`'s test suite clean; PR merged. (370 passed [+1 net new]. PR not yet opened.)
 
 ## 4. Enable in users service — depends on 1, 2
 
-- [ ] 4.1 Verify `DonorGranteeModel` and `BugReportModel` (both already use `AuditMixin` but currently leave the columns `NULL`) now get `created_by`/`updated_by` populated automatically with no CRUD changes needed.
-- [ ] 4.2 Add regression tests for both models asserting `created_by` is populated on creation via their existing routes.
-- [ ] 4.3 Run `services/users`'s test suite clean; PR merged.
+- [x] 4.1 Verify `DonorGranteeModel` and `BugReportModel` (both already use `AuditMixin` but currently leave the columns `NULL`) now get `created_by`/`updated_by` populated automatically with no CRUD changes needed. (Confirmed: `create_bug_report`/`create_donor_grantee` never set `created_by`/`updated_by`; the automatic listener now fills both with no crud.py changes.)
+- [x] 4.2 Add regression tests for both models asserting `created_by` is populated on creation via their existing routes. (`services/users/tests/test_audit_trail_routes.py` — real JWT through the actual routes, not `make_client`'s `get_validated_user` override, which would bypass the contextvar-setting code being tested.)
+- [x] 4.3 Run `services/users`'s test suite clean; PR merged. (196 passed [+2 net new]; `shared` re-run clean too — 117 passed, 1 pre-existing unrelated worktree-scanning failure. PR not yet opened.)
