@@ -50,7 +50,7 @@ def _require_same_company(valid_user: dict, target_customer_id) -> UUID:
 async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
     sessions = await revoke_all_sessions_for_user(session, user_id)
     for s in sessions:
-        mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+        await mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
 
 async def invite_user_service(

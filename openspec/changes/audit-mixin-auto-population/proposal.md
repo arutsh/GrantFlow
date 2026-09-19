@@ -9,7 +9,7 @@
 - Wire the dependency and event listener into all 4 services' app/session setup: `services/ai`, `services/budget`, `services/chat`, `services/users`.
 - Ensure the contextvar resolves to `None` (not an exception) on paths with no request context — Celery worker tasks, seed/migration scripts, unauthenticated endpoints — with an explicit test covering at least one such path.
 - Split `shared/db/audit_mixin.py`'s `AuditMixin` into the existing `id`-bearing `AuditMixin` (unchanged behavior for current 11 adopters) plus a new PK-less `AuditColumnsMixin` (`created_at`/`updated_at`/`created_by`/`updated_by` only) for models with non-`id` primary keys.
-- Remove the now-redundant manual `created_by=`/`updated_by=` assignments in the 8 budget CRUD functions that set them today, relying on the event listener instead.
+- Leave the manual `created_by=`/`updated_by=` assignments in the 8 budget CRUD functions in place; confirmed redundant (in sync with the event listener) but kept for now as a harmless no-op override rather than removed.
 
 ## Capabilities
 
@@ -23,6 +23,6 @@
 
 - `shared/db/audit_mixin.py` (split into two mixins), `shared/security/dependencies.py` (or a new sibling module) for the contextvar-setting dependency.
 - Session/app startup wiring in `services/ai/app`, `services/budget/app`, `services/chat/app`, `services/users/app`.
-- CRUD functions in `services/budget/app/crud/*.py` that currently set `created_by`/`updated_by` manually (8 models) — assignments removed, behavior preserved via the event listener.
+- CRUD functions in `services/budget/app/crud/*.py` that currently set `created_by`/`updated_by` manually (8 models) — assignments left in place (confirmed redundant, kept as a no-op override), behavior preserved via the event listener.
 - No database migration needed — this change only affects how existing columns get populated, not schema.
 - No FK constraint is added from `created_by`/`updated_by` to the users table — that's intentional, since users live in a separate service/database.

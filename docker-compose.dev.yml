@@ -27,7 +27,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: grandflow-minio
     command: server /data --console-address ":9001"
     ports:
@@ -39,7 +39,7 @@ services:
     volumes:
       - grandflow_dev_minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 5
