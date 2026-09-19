@@ -92,9 +92,7 @@ class TestGetValidatedUserRequiresVerifiedEmail:
 
     async def test_unverified_token_rejected_with_403(self):
         user_id = "99999999-9999-9999-9999-999999999999"
-        current_user = await _current_user(
-            _token_for(user_id, "session-i", email_verified=False)
-        )
+        current_user = await _current_user(_token_for(user_id, "session-i", email_verified=False))
 
         with pytest.raises(HTTPException) as exc_info:
             await get_validated_user(user=current_user)
@@ -148,9 +146,7 @@ class TestGetValidatedUserPrivilegedAccessHook:
     async def test_impersonation_token_logs(self):
         user_id = "77777777-7777-7777-7777-777777777777"
         customer_id = "88888888-8888-8888-8888-888888888888"
-        current_user = await _current_user(
-            _impersonation_token(user_id, customer_id, "session-h")
-        )
+        current_user = await _current_user(_impersonation_token(user_id, customer_id, "session-h"))
 
         with patch("shared.security.dependencies.log_privileged_access") as mock_log:
             await get_validated_user(user=current_user)
