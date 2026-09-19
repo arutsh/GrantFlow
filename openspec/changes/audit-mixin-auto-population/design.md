@@ -1,6 +1,6 @@
 ## Context
 
-Each of the 4 services (`ai`, `budget`, `chat`, `users`) runs its own independent SQLAlchemy stack — separate `Base` (`app/models/base.py`), separate engine/session factory (`app/db/session.py`), separate database. `ai` and `chat` are async (`create_async_engine`); `budget` and `users` are sync (`create_engine`). There is no shared session layer to hook once.
+Each of the 4 services (`ai`, `budget`, `chat`, `users`) runs its own independent SQLAlchemy stack — separate `Base` (`app/models/base.py`), separate engine/session factory (`app/db/session.py`), separate database. All 4 now use async engines (`create_async_engine`) — `budget` and `users` were migrated from sync to async SQLAlchemy in commit `64ce555`, after this proposal/design were first written but before group 2 started; there is no sync-engine service left. There is no shared session layer to hook once.
 
 `get_db` is *not* centralized — it's copy-pasted per route file in `ai`/`budget`, and `chat` doesn't use a `get_db` dependency at all (opens `AsyncSessionLocal()` ad hoc inline in `chat_routes.py`). By contrast, `Depends(get_validated_user)` (from `shared/security/dependencies.py`) *is* used consistently as a `Depends()` across every protected route in all 4 services — this is the one integration point common to every service, so it's where the current-user context should be captured, not `get_db`.
 
@@ -34,11 +34,18 @@ Relying purely on Starlette/asyncio per-request context isolation would likely b
 **4. `AuditMixin` split: `AuditMixin` (unchanged, `id`-bearing) + new `AuditColumnsMixin` (no PK) sharing the event-listener logic.**
 Both get the same `before_insert`/`before_update` hooks registered against a common base so the listener code isn't duplicated.
 
+**5. Manual `created_by=`/`updated_by=` CRUD assignments in the 8 budget call sites stay in place, not deleted.**
+Confirmed at design-review: all 4 services' manual assignments already produce values in sync with what the automatic listener sets — no on-behalf-of divergence found. Rather than removing the 8 call sites, they're left in place as a harmless no-op override for now; cleanup is a future follow-up, not a blocker for groups 3/4.
+
+**6. `before_update` scopes `updated_by` to actual tracked-column changes, not any dirty attribute.**
+The group-1 implementation sets `updated_by` whenever SQLAlchemy's unit-of-work marks *any* attribute dirty, including relationship-only changes with no real column edit — non-deterministic and can misattribute the audit trail. Revised so `updated_by` is only set when at least one actual column (not relationship) has changed.
+
 ## Risks / Trade-offs
 
 - **[Risk]** SQLAlchemy's async support runs ORM flush machinery (including mapper events) inside a greenlet via `greenlet_spawn`; contextvar propagation through that boundary is expected to work (this is documented SQLAlchemy asyncio behavior) but hasn't been exercised in this codebase. → **Mitigation**: explicit test in both an async service (`ai` or `chat`) and a sync service (`budget` or `users`) asserting `created_by` is actually populated end-to-end through a real request, not just a unit test of the listener in isolation.
-- **[Risk]** Starlette runs sync `Depends()` functions (as in `budget`/`users`) in a thread pool (`anyio.to_thread.run_sync`); contextvars set in the main request task must propagate into that thread. → **Mitigation**: same end-to-end test as above covers this; `anyio.to_thread.run_sync` copies the calling context by default, so this is expected to work, but must be verified rather than assumed.
-- **[Risk]** Removing the manual `created_by=`/`updated_by=` assignments in the 8 budget CRUD functions changes behavior if any caller currently passes a `user_id` that differs from the authenticated request's user (e.g., a background/admin-on-behalf-of flow). → **Mitigation**: audit each of the 8 call sites before removing the manual assignment; keep the manual path as an explicit override if any such case exists instead of deleting it outright.
+- **[Risk, confirmed and fixed]** Starlette runs sync (`def`) `Depends()` functions in a thread pool via `anyio.to_thread.run_sync`, which copies the *caller's* context into the thread — but a `.set()` made *inside* that thread happens on the thread's own copy and never propagates back out. `get_current_user`/`get_validated_user` were plain `def`, so the contextvar set there would have been silently invisible to the later flush. **Fix**: both are now `async def` (with `get_current_user` an async generator, resetting via `finally`), so they run in the request's own task instead of a throwaway thread copy. Confirmed by `shared/tests/test_audit_context_propagation_e2e.py`.
+- **[Risk, found in review and fixed]** The `def`→`async def` conversion above initially kept `is_session_revoked`'s existing sync `redis` client, wrapped in `run_in_threadpool` so the blocking Redis call wouldn't run on the event loop. That dispatches every authenticated request across all 4 services through Starlette's shared thread-pool capacity limiter (default 40 workers) just for a sub-millisecond check, competing with `log_privileged_access`'s own threadpool hop on the impersonation path. **Fix**: `shared/security/session_revocation.py` now uses `redis.asyncio` (the pattern already established in `services/ai/app/services/rate_limiter.py`) so `is_session_revoked`/`mark_session_revoked` are natively async — no threadpool hop at all. All callers of `mark_session_revoked` (`auth_routes.py`, `user_routes.py`, `admin_management_services.py`, and the `revoke_unverified_sessions` maintenance script) updated to `await` it.
+- **[Risk, resolved]** Removing the manual `created_by=`/`updated_by=` assignments in the 8 budget CRUD functions would change behavior if any caller currently passes a `user_id` that differs from the authenticated request's user (e.g., a background/admin-on-behalf-of flow). → **Resolution**: no divergence found across the 4 services' manual assignments vs. the automatic listener; rather than removing them, they stay in place as a harmless no-op override (see Decision 5).
 - **[Trade-off]** Centralizing registration inside `shared/db/audit_mixin.py` means the event listener always fires for every model using the mixin — there's no per-model opt-out. Acceptable since the whole point is universal, un-forgettable coverage.
 
 ## Migration Plan
@@ -47,5 +54,4 @@ No database migration. This is a behavior-only change (how existing columns get 
 
 ## Open Questions
 
-- Should the manual `created_by=`/`updated_by=` CRUD assignments be deleted outright, or left in place as a harmless no-op override, pending the per-call-site audit noted above?
-- `before_update` fires whenever SQLAlchemy's unit-of-work marks *any* attribute dirty, including relationship-only changes with no meaningful column update — is that granularity acceptable for `updated_by`, or should it be scoped to specific column changes?
+(none — both prior open questions resolved; see Decisions 5 and 6)

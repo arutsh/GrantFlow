@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import DateTime, event
+from sqlalchemy import DateTime, event, inspect
 
 from shared.db.type_decorators import GUID
 from shared.security.current_user_context import get_current_user_id
@@ -40,6 +40,16 @@ def _set_created_by_and_updated_by_on_insert(mapper, connection, target: AuditCo
 
 @event.listens_for(AuditColumnsMixin, "before_update", propagate=True)
 def _set_updated_at_and_updated_by_on_update(mapper, connection, target: AuditColumnsMixin) -> None:
+    # Skip relationship-only dirty state (e.g. a collection append) — only real column edits count.
+    state = inspect(target)
+    tracked_column_changed = any(
+        state.attrs[attr.key].history.has_changes()
+        for attr in mapper.column_attrs
+        if attr.key not in ("updated_at", "updated_by")
+    )
+    if not tracked_column_changed:
+        return
+
     target.updated_at = datetime.now(timezone.utc)
     user_id = get_current_user_id()
     if user_id is not None:

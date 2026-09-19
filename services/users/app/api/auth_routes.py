@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -398,7 +399,7 @@ async def reset_password_endpoint(
 
     sessions = await revoke_all_sessions_for_user(db, user.id)
     for s in sessions:
-        mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+        await mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
     return ResetPasswordResponse(reset=True)
 
@@ -460,7 +461,7 @@ async def _revoke_session_everywhere(db: AsyncSession, session) -> None:
     see shared/security/session_revocation.py for why a DB lookup alone
     can't be shared across services)."""
     await revoke_session(db, session)
-    mark_session_revoked(str(session.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+    await mark_session_revoked(str(session.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
 
 @router.post("/auth/logout")
@@ -522,7 +523,8 @@ async def start_impersonation(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     # Log the mint here — get_validated_user's audit hook won't fire for this request.
-    log_privileged_access(
+    await run_in_threadpool(
+        log_privileged_access,
         {"user_id": str(current_user["user_id"]), "customer_id": str(customer.id)},
         request,
     )

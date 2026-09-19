@@ -352,7 +352,7 @@ async def delete_my_account(
 
     sessions = await revoke_all_sessions_for_user(db, user_id)
     for s in sessions:
-        mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
+        await mark_session_revoked(str(s.id), ttl_seconds=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600)
 
     await soft_delete_user(db, user)
     return {"deleted": True}

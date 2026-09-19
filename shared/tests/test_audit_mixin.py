@@ -1,8 +1,8 @@
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy import ForeignKey, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 from shared.db.audit_mixin import AuditColumnsMixin, AuditMixin
 from shared.security.current_user_context import reset_current_user_id, set_current_user_id
@@ -18,6 +18,17 @@ class _WidgetModel(_Base, AuditMixin):
     __tablename__ = "widgets"
 
     name: Mapped[str] = mapped_column(default="widget")
+    gadgets: Mapped[list["_GadgetModel"]] = relationship(back_populates="widget")
+
+
+class _GadgetModel(_Base):
+    """Throwaway related model whose FK lives on its own table, not the widget's."""
+
+    __tablename__ = "gadgets"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    widget_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("widgets.id"))
+    widget: Mapped["_WidgetModel"] = relationship(back_populates="gadgets")
 
 
 class _TagModel(_Base, AuditColumnsMixin):
@@ -109,6 +120,28 @@ class TestAuditMixinListener:
         session.commit()
 
         assert widget.updated_by == manual_user_id
+
+    def test_relationship_only_mutation_does_not_update_updated_by(self, session):
+        creator_id = uuid.uuid4()
+        token = set_current_user_id(creator_id)
+        try:
+            widget = _WidgetModel()
+            session.add(widget)
+            session.commit()
+        finally:
+            reset_current_user_id(token)
+
+        other_user_id = uuid.uuid4()
+        token = set_current_user_id(other_user_id)
+        try:
+            gadget = _GadgetModel()
+            session.add(gadget)
+            widget.gadgets.append(gadget)
+            session.commit()
+        finally:
+            reset_current_user_id(token)
+
+        assert widget.updated_by == creator_id
 
 
 class TestAuditColumnsMixinListener:
